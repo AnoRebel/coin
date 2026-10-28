@@ -1,0 +1,120 @@
+{
+  "cases": [
+    {
+      "name": "nil",
+      "hex": "f6",
+      "json": null
+    },
+    {
+      "name": "false",
+      "hex": "f4",
+      "json": false
+    },
+    {
+      "name": "true",
+      "hex": "f5",
+      "json": true
+    },
+    {
+      "name": "uint-0",
+      "hex": "00",
+      "json": 0
+    },
+    {
+      "name": "uint-23",
+      "hex": "17",
+      "json": 23
+    },
+    {
+      "name": "uint-24",
+      "hex": "1818",
+      "json": 24
+    },
+    {
+      "name": "uint-255",
+      "hex": "18ff",
+      "json": 255
+    },
+    {
+      "name": "uint-256",
+      "hex": "190100",
+      "json": 256
+    },
+    {
+      "name": "uint-max",
+      "hex": "1bffffffffffffffff",
+      "json": 18446744073709551615
+    },
+    {
+      "name": "neg-1",
+      "hex": "20",
+      "json": -1
+    },
+    {
+      "name": "neg-1000",
+      "hex": "3903e7",
+      "json": -1000
+    },
+    {
+      "name": "text-empty",
+      "hex": "60",
+      "json": ""
+    },
+    {
+      "name": "text-arne",
+      "hex": "6461726e65",
+      "json": "arne"
+    },
+    {
+      "name": "text-unicode",
+      "hex": "70416e6f726562656c436f696e20e29aa1",
+      "json": "AnorebelCoin ⚡"
+    },
+    {
+      "name": "bytes-empty",
+      "hex": "40",
+      "json": {
+        "$bytes": ""
+      }
+    },
+    {
+      "name": "bytes",
+      "hex": "45000102feff",
+      "json": {
+        "$bytes": "000102feff"
+      }
+    },
+    {
+      "name": "array",
+      "hex": "83016374776f4103",
+      "json": [
+        1,
+        "two",
+        {
+          "$bytes": "03"
+        }
+      ]
+    },
+    {
+      "name": "map-short-keys",
+      "hex": "a3616101626262026363636303",
+      "json": {
+        "a": 1,
+        "bb": 2,
+        "ccc": 3
+      }
+    },
+    {
+      "name": "map-nested",
+      "hex": "a1616ba1617882f5f6",
+      "json": {
+        "k": {
+          "x": [
+            true,
+            null
+          ]
+        }
+      }
+    }
+  ]
+}

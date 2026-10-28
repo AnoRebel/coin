@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Build and runtime output
+bin/
+tmp/
+.arne-devnet/
+*.db
+coverage.out
+.pytest_cache/
+.ruff_cache/
+
+# AI
+.claude/
+.opencode/
+.pi/
+
+# OS
+.DS_Store
+
+# Retired code kept locally; it has its own git remotes.
+legacy/

@@ -1,0 +1,101 @@
+# Security, privacy, and compliance
+
+## Status
+
+This is an unaudited reference implementation. The ledger, signatures, and
+encoding have tests and cross-language vectors, but no external audit. Do not
+use it to custody real value.
+
+## Assets and trust boundaries
+
+| Asset | Protection |
+| --- | --- |
+| User funds | Ed25519 signatures; exact nonce; network/chain binding; expiry |
+| Mnemonics/keys | Never sent to the node; held by the client |
+| API writes | Optional bearer keys with `write`/`admin` scopes |
+| Node data | SHA-256 checksummed records; atomic block+state commit |
+| Devnet faucet | Devnet-only; holds a key by design |
+| Consensus | **Not implemented**; the devnet has one producer |
+
+Trust boundaries: the client signs; the node executes deterministically; storage
+is trusted to be intact (checksums catch corruption, not an attacker with write
+access). A host compromise owns the node's key and data.
+
+## Cryptography
+
+- Signatures: Ed25519 (`ed25519-v1`). BLS12-381 aggregation and hybrid ML-DSA are
+  specified for validator/account migration, not implemented.
+- Hashes: SHA-256 for addresses, transaction hashes, state tree, and storage
+  checksums. BLAKE3 is not used yet.
+- Encoding: canonical deterministic CBOR with strict decoding (no floats, tags,
+  indefinite lengths, duplicate keys, or non-shortest forms).
+- Domain separation: signatures cover `dom`, network, chain, suite, purpose, and
+  expiry, so a signature cannot be replayed across networks or purposes.
+- Randomness: keys use the OS CSPRNG. The ledger itself uses no randomness.
+
+Constant-time comparison and zeroization are not comprehensively audited; Go and
+`cryptography` primitives are the vetted implementations used.
+
+## Threats addressed
+
+- Replay across networks/chains: `WRONG_NETWORK`, chain-bound signatures.
+- Replay of a transaction: exact nonce.
+- Tampered envelopes: signature verification before execution.
+- Integer/float confusion: integer-only ledger amounts and canonical CBOR.
+- Non-atomic transfers: journaled rollback; batches are all-or-nothing.
+- Supply inflation: conservation check after every transaction and block; a
+  violation halts the node.
+- Storage corruption: checksum on every record.
+
+## Threats not addressed (yet)
+
+- Eclipse/partition and long-range attacks: no P2P consensus or fork choice.
+- Double-sign/slashing: no validator set.
+- MEV/ordering manipulation: single producer; deterministic ordering exists but
+  no fair ordering or encrypted mempool.
+- DoS: rate limits and a 2 MiB body cap exist; there is no peer scoring, proof of
+  work, or fee-on-failure. Failed transactions are free.
+- Key compromise: no social recovery, passkeys, or hardware signer integration.
+- Metadata privacy: transfers, memos, and amounts are public. Shielded transfers
+  are specified, not implemented.
+- Side channels in the Python implementation: not audited for constant time.
+
+## Privacy
+
+- On-chain data is public and permanent: addresses, amounts, asset IDs, memos,
+  escrow parties, and timestamps.
+- Memos are plaintext. Do not put names, invoice details, or personal data in
+  them. There is no encrypted memo or MLS messaging runtime yet.
+- The node does not require KYC and stores no PII. If you build a compliance
+  layer, keep PII off-chain and store only commitments or verifiable credentials.
+- Telemetry: none is collected by the node. Reverse proxies and hosting providers
+  may log IPs; configure retention accordingly.
+
+## Compliance
+
+The design targets FATF Travel Rule/IVMS101, EU MiCA, and ISO 20022 profiles, and
+the API has stable references (transaction hash, asset ID, network ID) that map
+cleanly to those flows. **None of the compliance features are implemented**:
+
+- no jurisdiction policy engine, sanctions screening, or Travel Rule exchange;
+- no verifiable-credential/KYB verification;
+- no auditor access grants, retention/legal hold, or monitoring cases;
+- no ISO 20022/ILP/EVM connector runtime.
+
+Nothing here is legal advice. Operators are responsible for licensing, KYC/AML,
+sanctions, tax, and consumer-protection obligations in their jurisdiction.
+
+## Secure deployment checklist
+
+- [ ] Node bound to localhost or behind a TLS proxy.
+- [ ] `--api-key` set; keys are long, random, and rotated.
+- [ ] `--allow-origin` restricted; no wildcard credentialed CORS.
+- [ ] Data directory permissions restricted to the node user.
+- [ ] Backups encrypted; restore tested.
+- [ ] Logs do not contain mnemonics, API keys, or raw transactions with memos.
+- [ ] Devnet faucet disabled on any non-devnet network.
+- [ ] Monitoring alerts on halt, stalled height, and mempool growth.
+
+## Disclosure
+
+See [SECURITY.md](../SECURITY.md). Report privately; do not open a public issue.

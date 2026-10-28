@@ -1,0 +1,563 @@
+// Package api exposes the ARNE node over REST /v1, JSON-RPC 2.0, and SSE.
+package api
+
+import (
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/labstack/echo/v5"
+
+	"github.com/anorebel/anorebelcoin/internal/ledger"
+	"github.com/anorebel/anorebelcoin/internal/node"
+	"github.com/anorebel/anorebelcoin/internal/smt"
+)
+
+// Config configures the HTTP surface.
+type Config struct {
+	APIKeys        map[string][]string // key -> scopes ("read","write","admin")
+	AllowedOrigins []string
+	RateLimit      int // requests per second per IP; 0 disables
+	Devnet         bool
+}
+
+// Server serves the node API.
+type Server struct {
+	node *node.Node
+	cfg  Config
+	lim  *limiter
+}
+
+// New builds an Echo server.
+func New(n *node.Node, cfg Config) *echo.Echo {
+	s := &Server{node: n, cfg: cfg}
+	if cfg.RateLimit > 0 {
+		s.lim = newLimiter(cfg.RateLimit, cfg.RateLimit*2)
+	}
+	e := echo.New()
+	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		writeError(c, err)
+	}
+	e.Use(s.securityHeaders)
+	e.Use(s.limitMiddleware)
+	e.Use(s.corsMiddleware)
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.Set("started", time.Now())
+			return next(c)
+		}
+	})
+
+	e.GET("/v1/health", s.health)
+	e.GET("/v1/version", s.version)
+	e.GET("/v1/status", s.status)
+	e.GET("/v1/assets", s.listAssets)
+	e.GET("/v1/assets/:id", s.getAsset)
+	e.GET("/v1/accounts/:address", s.getAccount)
+	e.GET("/v1/accounts/:address/proof", s.accountProof)
+	e.GET("/v1/supply/:asset", s.supply)
+	e.GET("/v1/escrows/:id", s.getEscrow)
+	e.GET("/v1/allowances/:owner/:spender/:asset", s.getAllowance)
+	e.GET("/v1/blocks", s.listBlocks)
+	e.GET("/v1/blocks/:height", s.getBlock)
+	e.GET("/v1/transactions/:hash", s.getTx)
+	e.GET("/v1/events", s.events)
+	e.GET("/v1/proofs/*", s.keyProof)
+
+	e.POST("/v1/transactions", s.submitTx, s.require("write"))
+	e.POST("/v1/transactions/simulate", s.simulateTx)
+	e.POST("/v1/blocks/produce", s.produceBlock, s.require("admin"))
+	e.POST("/v1/faucet", s.faucet, s.require("write"))
+	e.POST("/rpc", s.rpc)
+	return e
+}
+
+func (s *Server) securityHeaders(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		w := c.Response()
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		return next(c)
+	}
+}
+
+func (s *Server) corsMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		origin := c.Request().Header.Get("Origin")
+		if origin != "" {
+			for _, allowed := range s.cfg.AllowedOrigins {
+				if allowed == origin {
+					w := c.Response()
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+					break
+				}
+			}
+		}
+		if c.Request().Method == http.MethodOptions {
+			return c.NoContent(http.StatusNoContent)
+		}
+		return next(c)
+	}
+}
+
+func (s *Server) limitMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if s.lim != nil && !s.lim.allow(c.RealIP()) {
+			return apiErr(http.StatusTooManyRequests, "RATE_LIMITED", "too many requests")
+		}
+		return next(c)
+	}
+}
+
+func (s *Server) require(scope string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if len(s.cfg.APIKeys) == 0 {
+				return next(c)
+			}
+			key := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+			scopes, ok := s.cfg.APIKeys[key]
+			if !ok {
+				return apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid API key")
+			}
+			for _, sc := range scopes {
+				if sc == scope || sc == "admin" {
+					return next(c)
+				}
+			}
+			return apiErr(http.StatusForbidden, "FORBIDDEN", "missing scope "+scope)
+		}
+	}
+}
+
+// --- read handlers ---
+
+func (s *Server) health(c *echo.Context) error {
+	st := s.node.Status()
+	status := http.StatusOK
+	if st.Halted != "" {
+		status = http.StatusServiceUnavailable
+	}
+	return c.JSON(status, map[string]any{"status": map[bool]string{true: "halted", false: "ok"}[st.Halted != ""], "height": st.Height})
+}
+
+func (s *Server) version(c *echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]any{
+		"protocol": "arne/1", "tx_version": 1, "api": "v1",
+		"cbor": "deterministic", "state": "smt-sha256",
+	})
+}
+
+func (s *Server) status(c *echo.Context) error {
+	return c.JSON(http.StatusOK, s.node.Status())
+}
+
+func (s *Server) listAssets(c *echo.Context) error {
+	st := s.node.State()
+	ids := st.Assets()
+	out := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		a, _, err := st.Asset(id)
+		if err != nil {
+			return err
+		}
+		out = append(out, assetView(a, st.Supply(id), st.Burned(id)))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": out})
+}
+
+func assetView(a any, supply, burned uint64) map[string]any {
+	b, _ := json.Marshal(a)
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	m["supply"] = supply
+	m["burned"] = burned
+	return m
+}
+
+func (s *Server) getAsset(c *echo.Context) error {
+	st := s.node.State()
+	id := c.Param("id")
+	a, ok, err := st.Asset(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apiErr(http.StatusNotFound, "UNKNOWN_ASSET", "asset not found")
+	}
+	return c.JSON(http.StatusOK, assetView(a, st.Supply(id), st.Burned(id)))
+}
+
+func (s *Server) getAccount(c *echo.Context) error {
+	addr := c.Param("address")
+	st := s.node.State()
+	info, created := st.Account(addr)
+	if !created {
+		return c.JSON(http.StatusOK, map[string]any{"address": addr, "exists": false, "balances": map[string]uint64{}, "nonce": 0})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"address": info.Address, "exists": true, "nonce": info.Nonce,
+		"auth": info.Auth, "balances": info.Balances,
+	})
+}
+
+func (s *Server) accountProof(c *echo.Context) error {
+	addr := c.Param("address")
+	asset := c.QueryParam("asset")
+	key := "account/" + addr + "/nonce"
+	if asset != "" {
+		key = "balance/" + addr + "/" + asset
+	}
+	p, err := s.node.Proof(key)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, proofView(p))
+}
+
+func (s *Server) keyProof(c *echo.Context) error {
+	key := c.Param("*")
+	p, err := s.node.Proof(key)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, proofView(p))
+}
+
+func proofView(p smt.Proof) map[string]any {
+	siblings := make([]string, len(p.Siblings))
+	for i, sib := range p.Siblings {
+		siblings[i] = hex.EncodeToString(sib[:])
+	}
+	value := ""
+	if p.Value != nil {
+		value = hex.EncodeToString(p.Value)
+	}
+	return map[string]any{
+		"key": p.Key, "value": value, "included": p.Value != nil,
+		"depth": p.Depth, "terminal": hex.EncodeToString(p.Terminal[:]),
+		"siblings": siblings,
+	}
+}
+
+func (s *Server) supply(c *echo.Context) error {
+	id := c.Param("asset")
+	st := s.node.State()
+	if _, ok, _ := st.Asset(id); !ok {
+		return apiErr(http.StatusNotFound, "UNKNOWN_ASSET", "asset not found")
+	}
+	return c.JSON(http.StatusOK, map[string]any{"asset": id, "supply": st.Supply(id), "burned": st.Burned(id)})
+}
+
+func (s *Server) getEscrow(c *echo.Context) error {
+	e, ok, err := s.node.State().Escrow(c.Param("id"))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apiErr(http.StatusNotFound, "ESCROW_NOT_FOUND", "escrow not found")
+	}
+	return c.JSON(http.StatusOK, e)
+}
+
+func (s *Server) getAllowance(c *echo.Context) error {
+	st := s.node.State()
+	owner, spender, asset := c.Param("owner"), c.Param("spender"), c.Param("asset")
+	return c.JSON(http.StatusOK, map[string]any{
+		"owner": owner, "spender": spender, "asset": asset,
+		"remaining":  st.Allowance(owner, spender, asset),
+		"expires_at": st.AllowanceExpiry(owner, spender, asset),
+	})
+}
+
+func (s *Server) listBlocks(c *echo.Context) error {
+	limit, _ := strconv.Atoi(c.QueryParamOr("limit", "50"))
+	before, _ := strconv.ParseUint(c.QueryParamOr("before", "0"), 10, 64)
+	blocks := s.node.Blocks(limit, before)
+	out := make([]map[string]any, 0, len(blocks))
+	for _, b := range blocks {
+		out = append(out, blockView(b))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": out})
+}
+
+func blockView(b ledger.Block) map[string]any {
+	h, _ := b.Hash()
+	var next uint64
+	if b.Height > 1 {
+		next = b.Height - 1
+	}
+	return map[string]any{
+		"height": b.Height, "hash": h, "time": b.Time, "proposer": b.Proposer,
+		"prev_root": b.PrevRoot, "state_root": b.StateRoot, "tx_root": b.TxRoot,
+		"tx_hashes": b.TxHashes, "cursor": next,
+	}
+}
+
+func (s *Server) getBlock(c *echo.Context) error {
+	height, err := strconv.ParseUint(c.Param("height"), 10, 64)
+	if err != nil {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "height must be a number")
+	}
+	b, ok := s.node.Block(height)
+	if !ok {
+		return apiErr(http.StatusNotFound, "BLOCK_NOT_FOUND", "block not found")
+	}
+	return c.JSON(http.StatusOK, blockView(b))
+}
+
+func (s *Server) getTx(c *echo.Context) error {
+	r, ok := s.node.Receipt(c.Param("hash"))
+	if !ok {
+		return apiErr(http.StatusNotFound, "TX_NOT_FOUND", "transaction not found")
+	}
+	return c.JSON(http.StatusOK, r)
+}
+
+// --- write handlers ---
+
+const maxBody = 2 << 20
+
+func readBody(c *echo.Context) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(c.Request().Body, maxBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxBody {
+		return nil, apiErr(http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "request body above 2 MiB")
+	}
+	return body, nil
+}
+
+// txBytes accepts raw canonical CBOR or {"tx": "<base64 or hex>"}.
+func txBytes(body []byte) ([]byte, error) {
+	body = []byte(strings.TrimSpace(string(body)))
+	if len(body) == 0 {
+		return nil, apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "empty body")
+	}
+	if body[0] == '{' {
+		var wrapper struct {
+			Tx string `json:"tx"`
+		}
+		if err := json.Unmarshal(body, &wrapper); err != nil {
+			return nil, apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		}
+		if wrapper.Tx == "" {
+			return nil, apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "tx field required")
+		}
+		if b, err := base64.StdEncoding.DecodeString(wrapper.Tx); err == nil {
+			return b, nil
+		}
+		return hex.DecodeString(wrapper.Tx)
+	}
+	return body, nil
+}
+
+func (s *Server) submitTx(c *echo.Context) error {
+	body, err := readBody(c)
+	if err != nil {
+		return err
+	}
+	raw, err := txBytes(body)
+	if err != nil {
+		return err
+	}
+	hash, err := s.node.SubmitTx(raw)
+	if err != nil {
+		return mapLedgerError(err)
+	}
+	return c.JSON(http.StatusAccepted, map[string]any{"hash": hash, "status": "accepted"})
+}
+
+func (s *Server) simulateTx(c *echo.Context) error {
+	body, err := readBody(c)
+	if err != nil {
+		return err
+	}
+	raw, err := txBytes(body)
+	if err != nil {
+		return err
+	}
+	r, err := s.node.Simulate(raw)
+	if err != nil {
+		return mapLedgerError(err)
+	}
+	return c.JSON(http.StatusOK, r)
+}
+
+func (s *Server) produceBlock(c *echo.Context) error {
+	b, err := s.node.ProduceBlock(uint64(time.Now().Unix()))
+	if err != nil {
+		return mapLedgerError(err)
+	}
+	return c.JSON(http.StatusOK, blockView(b))
+}
+
+func (s *Server) faucet(c *echo.Context) error {
+	if !s.cfg.Devnet {
+		return apiErr(http.StatusNotFound, "NOT_FOUND", "faucet disabled")
+	}
+	var req struct {
+		Address string `json:"address"`
+	}
+	body, err := readBody(c)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Address == "" {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "address required")
+	}
+	hash, err := s.node.Faucet(req.Address)
+	if err != nil {
+		return mapLedgerError(err)
+	}
+	return c.JSON(http.StatusAccepted, map[string]any{"hash": hash})
+}
+
+// --- SSE ---
+
+func (s *Server) events(c *echo.Context) error {
+	w := c.Response()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return apiErr(http.StatusInternalServerError, "UNSUPPORTED", "streaming unsupported")
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	from, _ := strconv.ParseUint(c.QueryParamOr("from", "0"), 10, 64)
+	if from > 0 {
+		blocks := s.node.Blocks(1000, 0)
+		for i := len(blocks) - 1; i >= 0; i-- {
+			if blocks[i].Height < from {
+				continue
+			}
+			data, _ := json.Marshal(blockEvent(blocks[i]))
+			fmt.Fprintf(w, "id: %d\nevent: block\ndata: %s\n\n", blocks[i].Height, data)
+		}
+		flusher.Flush()
+	}
+
+	ch, cancel := s.node.Subscribe()
+	defer cancel()
+	for {
+		select {
+		case <-c.Request().Context().Done():
+			return nil
+		case e, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			data, _ := json.Marshal(e)
+			fmt.Fprintf(w, "id: %d\nevent: block\ndata: %s\n\n", e.Height, data)
+			flusher.Flush()
+		}
+	}
+}
+
+func blockEvent(b ledger.Block) node.Event {
+	h, _ := b.Hash()
+	return node.Event{Type: "block", Height: b.Height, Time: b.Time, Hash: h, TxHashes: b.TxHashes}
+}
+
+// --- errors ---
+
+type apiError struct {
+	status int
+	code   string
+	msg    string
+}
+
+func (e *apiError) Error() string { return e.code + ": " + e.msg }
+
+func apiErr(status int, code, msg string) error {
+	return &apiError{status: status, code: code, msg: msg}
+}
+
+func writeError(c *echo.Context, err error) {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		_ = c.JSON(ae.status, map[string]any{"error": map[string]string{"code": ae.code, "message": ae.msg}})
+		return
+	}
+	var le *ledger.Error
+	if errors.As(err, &le) {
+		_ = c.JSON(statusFor(le.Code), map[string]any{"error": map[string]string{"code": string(le.Code), "message": le.Message}})
+		return
+	}
+	_ = c.JSON(http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "INTERNAL", "message": err.Error()}})
+}
+
+func mapLedgerError(err error) error {
+	var le *ledger.Error
+	if errors.As(err, &le) {
+		return &apiError{status: statusFor(le.Code), code: string(le.Code), msg: le.Message}
+	}
+	return err
+}
+
+func statusFor(code ledger.Code) int {
+	switch code {
+	case ledger.CodeUnauthorized:
+		return http.StatusForbidden
+	case ledger.CodeEscrowNotFound, ledger.CodeUnknownAsset:
+		return http.StatusNotFound
+	case ledger.CodeLimitExceeded:
+		return http.StatusTooManyRequests
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+// --- rate limiting ---
+
+type bucket struct {
+	tokens float64
+	last   time.Time
+}
+
+type limiter struct {
+	mu      sync.Mutex
+	rate    float64
+	burst   float64
+	buckets map[string]*bucket
+}
+
+func newLimiter(rate, burst int) *limiter {
+	return &limiter{rate: float64(rate), burst: float64(burst), buckets: map[string]*bucket{}}
+}
+
+func (l *limiter) allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	b, ok := l.buckets[ip]
+	if !ok {
+		b = &bucket{tokens: l.burst, last: now}
+		l.buckets[ip] = b
+	}
+	b.tokens += now.Sub(b.last).Seconds() * l.rate
+	if b.tokens > l.burst {
+		b.tokens = l.burst
+	}
+	b.last = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}

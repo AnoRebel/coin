@@ -1,0 +1,15 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/arned ./cmd/arned"
+  bin = "./tmp/arned"
+  delay = 800
+  include_ext = ["go"]
+  exclude_dir = ["legacy", "tmp", "bin", ".venv", "node_modules", "spec", "python", "docs"]
+  exclude_regex = ["_test\\.go"]
+  kill_delay = 500
+
+[run]
+  cmd = "./tmp/arned devnet --ephemeral"
+  delay = 1000

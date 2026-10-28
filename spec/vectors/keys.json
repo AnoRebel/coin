@@ -1,0 +1,54 @@
+{
+  "derivations": [
+    {
+      "path": [
+        44,
+        9999,
+        0,
+        0,
+        0
+      ],
+      "private": "b736c780921580894aacf48b5d4b0f8e8557472f408ded838a680bf636a6d110",
+      "public": "f9dbc57dc6652dc4183bd47f31cfce4671d448571204de0dcdd6fb752ed7d94e",
+      "address": {
+        "arne:consortium/acme": "arce-consortium1qxqew42ve7ed8503377ypzfnchqqtphmku9phw37",
+        "arne:devnet": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+        "arne:mainnet": "arce1qxqew42ve7ed8503377ypzfnchqqtphmkuwhjt4a"
+      }
+    },
+    {
+      "path": [
+        44,
+        9999,
+        0,
+        0,
+        1
+      ],
+      "private": "ab716bca8c481ef18ba60b0f5398b662c5fd005d07780450966763d905758ed4",
+      "public": "9945a5df5e4ef15670e89c74c0664bf431669a6d3c884f827df6e23d9a7eae58",
+      "address": {
+        "arne:consortium/acme": "arce-consortium1qx8ehqz4azl2h9fh635ejpg09r4gmsqwys889fed",
+        "arne:devnet": "arce-devnet1qx8ehqz4azl2h9fh635ejpg09r4gmsqwysyjk7ac",
+        "arne:mainnet": "arce1qx8ehqz4azl2h9fh635ejpg09r4gmsqwysv3qvaw"
+      }
+    },
+    {
+      "path": [
+        44,
+        9999,
+        0,
+        0,
+        2
+      ],
+      "private": "ffc46eb144494031ddb013690e067d1c4d46e3dad85ca0c796699bdb1ba73d95",
+      "public": "2bdc8e6c618dfed51310c4057b3544449629ec3763327c110e4ac2202034f41b",
+      "address": {
+        "arne:consortium/acme": "arce-consortium1q99wezt7epsdfx437cruqf4wcuztc8my4u24ggwu",
+        "arne:devnet": "arce-devnet1q99wezt7epsdfx437cruqf4wcuztc8my4ufqml2f",
+        "arne:mainnet": "arce1q99wezt7epsdfx437cruqf4wcuztc8my4uprdd2l"
+      }
+    }
+  ],
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "passphrase": ""
+}

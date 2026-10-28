@@ -1,0 +1,18 @@
+# Reference Python node (parity implementation).
+FROM python:3.11-slim AS build
+RUN pip install --no-cache-dir uv
+WORKDIR /src
+COPY pyproject.toml uv.lock README.md ./
+COPY python ./python
+RUN uv sync --no-dev --no-editable
+
+FROM python:3.11-slim
+WORKDIR /src
+COPY --from=build /src/.venv /src/.venv
+COPY pyproject.toml uv.lock ./
+COPY python ./python
+ENV PATH="/src/.venv/bin:$PATH"
+WORKDIR /data
+EXPOSE 8081
+ENTRYPOINT ["arne"]
+CMD ["devnet", "--listen", "0.0.0.0:8081", "--data-dir", "/data"]

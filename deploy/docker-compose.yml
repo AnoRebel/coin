@@ -1,0 +1,41 @@
+services:
+  node:
+    build: .
+    command:
+      - devnet
+      - --listen
+      - 0.0.0.0:8080
+      - --data-dir
+      - /data
+    ports:
+      - "8080:8080"
+    volumes:
+      - arne-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/arned", "status", "--url", "http://127.0.0.1:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Reference Python node (parity implementation). Enable with:
+  #   docker compose --profile python up
+  python:
+    profiles: ["python"]
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    command:
+      - devnet
+      - --listen
+      - 0.0.0.0:8081
+      - --data-dir
+      - /data
+    ports:
+      - "8081:8081"
+    volumes:
+      - arne-python-data:/data
+
+volumes:
+  arne-data:
+  arne-python-data:

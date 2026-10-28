@@ -1,0 +1,398 @@
+// Package node wires the ledger, mempool, block production, and persistence.
+package node
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/anorebel/anorebelcoin/internal/ledger"
+	"github.com/anorebel/anorebelcoin/internal/protocol"
+	"github.com/anorebel/anorebelcoin/internal/smt"
+	"github.com/anorebel/anorebelcoin/internal/storage"
+)
+
+// Config configures a node.
+type Config struct {
+	Network       string
+	Chain         string
+	Params        ledger.Params
+	Proposer      string
+	MaxBlockTxs   int
+	BlockInterval time.Duration
+	Faucet        *protocol.KeyPair
+	FaucetAmount  uint64
+	Devnet        bool
+}
+
+// Event is a broadcast block notification.
+type Event struct {
+	Type     string   `json:"type"`
+	Height   uint64   `json:"height"`
+	Time     uint64   `json:"time"`
+	Hash     string   `json:"hash"`
+	TxHashes []string `json:"tx_hashes"`
+}
+
+// Node is a single-process ARNE node. Consensus is pluggable; this service owns
+// deterministic block production and all query surfaces.
+type Node struct {
+	mu       sync.RWMutex
+	cfg      Config
+	state    *ledger.State
+	store    storage.Store
+	mempool  map[string]protocol.Tx
+	receipts map[string]ledger.Receipt
+	blocks   map[uint64]ledger.Block
+	subs     map[chan Event]struct{}
+	halted   string
+}
+
+// New opens or initializes a node.
+func New(cfg Config, genesis ledger.Genesis, store storage.Store) (*Node, error) {
+	if cfg.MaxBlockTxs <= 0 {
+		cfg.MaxBlockTxs = 500
+	}
+	n := &Node{
+		cfg: cfg, store: store,
+		mempool:  map[string]protocol.Tx{},
+		receipts: map[string]ledger.Receipt{},
+		blocks:   map[uint64]ledger.Block{},
+		subs:     map[chan Event]struct{}{},
+	}
+	snap, height, ok, err := store.LoadState()
+	if err != nil {
+		return nil, err
+	}
+	if ok && height > 0 {
+		s, err := ledger.StateFromSnapshot(cfg.Network, cfg.Chain, cfg.Params, snap)
+		if err != nil {
+			return nil, err
+		}
+		n.state = s
+		if err := n.loadBlocks(); err != nil {
+			return nil, err
+		}
+		return n, nil
+	}
+	s, err := ledger.NewGenesis(genesis)
+	if err != nil {
+		return nil, err
+	}
+	n.state = s
+	if err := store.SaveState(0, s.Snapshot()); err != nil {
+		return nil, err
+	}
+	return n, nil
+}
+
+func (n *Node) loadBlocks() error {
+	height := n.state.Height()
+	for h := uint64(1); h <= height; h++ {
+		b, ok, err := n.store.Block(h)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		n.blocks[h] = b
+		for i, hash := range b.TxHashes {
+			if i < len(b.Receipts) {
+				n.receipts[hash] = b.Receipts[i]
+			}
+		}
+	}
+	return nil
+}
+
+// State exposes the ledger for read-only callers. Callers must not mutate it.
+func (n *Node) State() *ledger.State {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state
+}
+
+// Status is the node status read model.
+type Status struct {
+	Network   string `json:"network"`
+	Chain     string `json:"chain"`
+	Height    uint64 `json:"height"`
+	StateRoot string `json:"state_root"`
+	Time      uint64 `json:"time"`
+	Mempool   int    `json:"mempool"`
+	Halted    string `json:"halted,omitempty"`
+	Devnet    bool   `json:"devnet"`
+	Protocol  string `json:"protocol_version"`
+}
+
+// Status returns a snapshot of node state.
+func (n *Node) Status() Status {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	root := n.state.Root()
+	return Status{
+		Network: n.cfg.Network, Chain: n.cfg.Chain, Height: n.state.Height(),
+		StateRoot: protocol.HashHex(root[:]), Time: n.state.BlockTime(),
+		Mempool: len(n.mempool), Halted: n.halted, Devnet: n.cfg.Devnet,
+		Protocol: "arne/1",
+	}
+}
+
+// SubmitTx validates a raw canonical transaction and adds it to the mempool.
+func (n *Node) SubmitTx(raw []byte) (string, error) {
+	m, err := protocol.DecodeMap(raw)
+	if err != nil {
+		return "", fmt.Errorf("%w: decode: %v", protocol.ErrValidation, err)
+	}
+	tx, err := protocol.TxFromCBOR(m)
+	if err != nil {
+		return "", err
+	}
+	hash, err := tx.Hash()
+	if err != nil {
+		return "", err
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.halted != "" {
+		return "", errors.New("node is halted: " + n.halted)
+	}
+	if _, exists := n.mempool[hash]; exists {
+		return hash, nil
+	}
+	now := uint64(time.Now().Unix())
+	if err := n.state.CheckTx(tx, now); err != nil {
+		return "", err
+	}
+	// One live transaction per signer+nonce; the higher priority fee wins.
+	for h, other := range n.mempool {
+		if other.Signer == tx.Signer && other.Nonce == tx.Nonce {
+			if other.PriorityFee >= tx.PriorityFee {
+				return hash, nil
+			}
+			delete(n.mempool, h)
+		}
+	}
+	if len(n.mempool) >= 10_000 {
+		return "", errors.New("mempool full")
+	}
+	n.mempool[hash] = tx
+	return hash, nil
+}
+
+// ProduceBlock finalizes a block. It returns the block (possibly empty).
+func (n *Node) ProduceBlock(now uint64) (ledger.Block, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.halted != "" {
+		return ledger.Block{}, errors.New("node is halted: " + n.halted)
+	}
+	selected := n.selectTxs()
+	prevMempool := n.mempool
+	// ApplyTx is atomic per transaction, so a failed tx leaves state intact.
+	block, receipts, err := n.state.ApplyBlock(selected, now, n.state.Height()+1, n.cfg.Proposer)
+	if err != nil {
+		if errors.Is(err, ledger.ErrConservation) || errors.Is(err, ledger.ErrInvariant) {
+			n.halted = err.Error()
+		}
+		return ledger.Block{}, err
+	}
+	n.mempool = map[string]protocol.Tx{}
+	for h, tx := range prevMempool {
+		kept := true
+		for _, r := range receipts {
+			if r.Hash == h && r.Success {
+				kept = false
+				break
+			}
+		}
+		if kept {
+			n.mempool[h] = tx
+		}
+	}
+	if err := n.store.SaveBlock(block); err != nil {
+		n.halted = "storage failure: " + err.Error()
+		return ledger.Block{}, err
+	}
+	if err := n.store.SaveState(block.Height, n.state.Snapshot()); err != nil {
+		n.halted = "storage failure: " + err.Error()
+		return ledger.Block{}, err
+	}
+	n.blocks[block.Height] = block
+	for i, h := range block.TxHashes {
+		if i < len(receipts) {
+			n.receipts[h] = receipts[i]
+		}
+	}
+	n.broadcast(Event{
+		Type: "block", Height: block.Height, Time: block.Time,
+		Hash: mustHash(block), TxHashes: block.TxHashes,
+	})
+	return block, nil
+}
+
+// selectTxs picks executable transactions in canonical order.
+func (n *Node) selectTxs() []protocol.Tx {
+	all := make([]protocol.Tx, 0, len(n.mempool))
+	for _, tx := range n.mempool {
+		all = append(all, tx)
+	}
+	ordered := ledger.OrderTxs(all)
+	expected := map[string]uint64{}
+	next := func(signer string) uint64 {
+		if v, ok := expected[signer]; ok {
+			return v
+		}
+		info, _ := n.state.Account(signer)
+		return info.Nonce
+	}
+	out := make([]protocol.Tx, 0, len(ordered))
+	for _, tx := range ordered {
+		if len(out) >= n.cfg.MaxBlockTxs {
+			break
+		}
+		if tx.Nonce != next(tx.Signer) {
+			continue
+		}
+		// Simulate against current state so obviously invalid txs do not block.
+		r := n.state.SimulateTx(tx, uint64(time.Now().Unix()), n.state.Height()+1)
+		if !r.Success {
+			continue
+		}
+		out = append(out, tx)
+		expected[tx.Signer] = tx.Nonce + 1
+	}
+	return out
+}
+
+func mustHash(b ledger.Block) string {
+	h, err := b.Hash()
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// Block returns a block by height.
+func (n *Node) Block(height uint64) (ledger.Block, bool) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	b, ok := n.blocks[height]
+	return b, ok
+}
+
+// Blocks returns blocks at or below from, newest first, up to limit.
+func (n *Node) Blocks(limit int, before uint64) []ledger.Block {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	heights := make([]uint64, 0, len(n.blocks))
+	for h := range n.blocks {
+		if before == 0 || h < before {
+			heights = append(heights, h)
+		}
+	}
+	sort.Slice(heights, func(i, j int) bool { return heights[i] > heights[j] })
+	if limit <= 0 || limit > len(heights) {
+		limit = len(heights)
+	}
+	out := make([]ledger.Block, 0, limit)
+	for _, h := range heights[:limit] {
+		out = append(out, n.blocks[h])
+	}
+	return out
+}
+
+// Receipt returns a transaction receipt.
+func (n *Node) Receipt(hash string) (ledger.Receipt, bool) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	r, ok := n.receipts[hash]
+	return r, ok
+}
+
+// Simulate dry-runs a transaction without touching state.
+func (n *Node) Simulate(raw []byte) (ledger.Receipt, error) {
+	m, err := protocol.DecodeMap(raw)
+	if err != nil {
+		return ledger.Receipt{}, err
+	}
+	tx, err := protocol.TxFromCBOR(m)
+	if err != nil {
+		return ledger.Receipt{}, err
+	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.SimulateTx(tx, uint64(time.Now().Unix()), n.state.Height()+1), nil
+}
+
+// Subscribe returns an event channel and a cancel function.
+func (n *Node) Subscribe() (<-chan Event, func()) {
+	ch := make(chan Event, 64)
+	n.mu.Lock()
+	n.subs[ch] = struct{}{}
+	n.mu.Unlock()
+	return ch, func() {
+		n.mu.Lock()
+		if _, ok := n.subs[ch]; ok {
+			delete(n.subs, ch)
+			close(ch)
+		}
+		n.mu.Unlock()
+	}
+}
+
+func (n *Node) broadcast(e Event) {
+	for ch := range n.subs {
+		select {
+		case ch <- e:
+		default: // slow consumer: drop rather than block consensus
+		}
+	}
+}
+
+// Faucet sends devnet ARCE to an address from the node's faucet key.
+func (n *Node) Faucet(addr string) (string, error) {
+	if n.cfg.Faucet == nil || !n.cfg.Devnet {
+		return "", errors.New("faucet is only available on devnet")
+	}
+	if err := protocol.ValidateAddress(addr, n.cfg.Network); err != nil {
+		return "", err
+	}
+	n.mu.RLock()
+	info, _ := n.state.Account(n.cfg.Faucet.Address)
+	n.mu.RUnlock()
+	amount := n.cfg.FaucetAmount
+	if amount == 0 {
+		amount = 10_000_000_000 // 100 ARCE
+	}
+	native := protocol.NativeAsset(n.cfg.Network)
+	balance := info.Balances[native]
+	if balance <= amount {
+		return "", errors.New("faucet empty")
+	}
+	tx := protocol.Tx{
+		Version: protocol.CurrentTxVersion, Network: n.cfg.Network, Chain: n.cfg.Chain,
+		Type: protocol.TxTransfer, Signer: n.cfg.Faucet.Address, Nonce: info.Nonce,
+		CreatedAt: uint64(time.Now().Unix()), ExpiresAt: uint64(time.Now().Unix()) + 3600,
+		FeeAsset: native, MaxFee: n.cfg.Params.BaseFee,
+		Payload: map[string]any{"asset": native, "to": addr, "amount": amount},
+	}
+	if err := tx.Sign(n.cfg.Faucet); err != nil {
+		return "", err
+	}
+	enc, err := protocol.Encode(tx.ToCBOR())
+	if err != nil {
+		return "", err
+	}
+	return n.SubmitTx(enc)
+}
+
+// Proof returns a state proof for a namespaced key.
+func (n *Node) Proof(key string) (smt.Proof, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Tree().Prove(key), nil
+}
