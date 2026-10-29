@@ -1,8 +1,9 @@
 # Operator guide
 
-Scope: running the implemented single-node devnet/reference node. Multi-node
-consensus (CometBFT), pruning, snapshots, and production key management are
-**not implemented**; see the "Missing before production" section.
+Scope: running the implemented reference node, either the in-process `devnet`
+or the CometBFT-backed `start` node. Multi-node consensus, pruning, snapshots,
+and production key management are **not implemented**; see the "Missing before
+production" section.
 
 ## Build
 
@@ -52,6 +53,51 @@ the whole surface. Keep a unit file or Compose file as the source of truth.
 
 Python uses the same flags on `serve`/`devnet`; `--wait` is available on client
 commands.
+
+## Consensus node (CometBFT)
+
+`arned start` runs the same ledger as an ABCI 2.0 application under a real
+CometBFT node. The app produces no blocks itself: CometBFT orders the mempool,
+`PrepareProposal`/`ProcessProposal` filter and accept it, `FinalizeBlock` executes
+the decided order, and `Commit` persists the block and state snapshot.
+
+```sh
+./bin/arned start \
+  --home /var/lib/arne-consensus \
+  --network arne:devnet \
+  --listen 127.0.0.1:8080 \
+  --rpc tcp://127.0.0.1:26657 \
+  --p2p tcp://0.0.0.0:26656 \
+  --block-interval 1s
+```
+
+Flags beyond the `devnet` set:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--home` | `.arne` | CometBFT home: `config/`, `data/`, keys |
+| `--rpc` | `tcp://127.0.0.1:26657` | CometBFT RPC listen address |
+| `--p2p` | `tcp://0.0.0.0:26656` | CometBFT P2P listen address |
+| `--block-interval` | `1s` | Consensus `timeout_commit` |
+| `--data-dir` | `<home>/app` | Pebble directory for ledger blocks/state |
+| `--ephemeral` | false | Temporary home plus in-memory ledger |
+
+Layout under `--home`: `config/genesis.json`, `config/priv_validator_key.json`,
+`config/node_key.json`, `data/` (CometBFT blockstore/state), and `app/` (Pebble).
+
+Genesis is created automatically **only for `arne:devnet`**; it funds the funder
+and faucet accounts derived from `--mnemonic`, so pass the same mnemonic on
+restart if the faucet must keep working. For every other network, place the
+network's `genesis.json` in `<home>/config/` before first start. Genesis
+`app_state` must be the canonical ledger genesis with a matching `chain` field.
+
+REST `/v1` still works as documented; transactions submitted there are forwarded
+to CometBFT via `broadcast_tx_sync`. `/v1/status` reports the ledger height and
+the CometBFT mempool size. CometBFT's own endpoints (`/status`, `/block`,
+`/tx`) are on the RPC address.
+
+Restart the node at the last committed height; do not delete `data/` to "fix" a
+startup error. Back up both `data/` and `app/` while stopped.
 
 ## Data and persistence
 
@@ -125,8 +171,9 @@ capture a torn write.
 - **Halted node**: a conservation/invariant check failed. Stop it, preserve the
   data directory and logs, do not restart in a loop. Restore from the last known
   good backup and report the block height.
-- **Divergence**: compare `state_root` at the same height with a peer. Without
-  CometBFT there is no automatic fork choice; treat divergence as a bug.
+- **Divergence**: compare `state_root` at the same height with a peer. CometBFT
+  decides the chain, but a divergent app hash is still a bug; preserve both
+  data directories and report the height.
 - **Key exposure**: rotate the API keys and any operator mnemonic; move funds
   from the exposed account. There is no on-chain key rotation.
 - **Disk full**: the node halts on storage errors. Free space, restart, verify
@@ -136,7 +183,7 @@ capture a torn write.
 
 Do not describe this node as production-ready until these exist:
 
-- BFT consensus and multi-node networking (CometBFT adapter);
+- multi-node consensus networking, validator admission, staking and slashing;
 - TLS, OIDC/JWT, mTLS, and secrets management;
 - metrics, tracing, structured logs, dashboards, alerts;
 - online snapshots, pruning, archive mode, and migrations;

@@ -58,7 +58,7 @@
 ## 6. Transactions, blocks, consensus, and ABCI
 
 - [ ] 6.1 Define the versioned transaction envelope and block structure with canonical encoding; verify encode/decode vectors and unknown-critical-field rejection
-- [ ] 6.2 Implement the ABCI 2.0 application (`CheckTx`, `PrepareProposal`, `ProcessProposal`, `FinalizeBlock`, `Commit`, `Query`); verify a single-node CometBFT devnet finalizes blocks
+- [x] 6.2 Implement the ABCI 2.0 application (`CheckTx`, `PrepareProposal`, `ProcessProposal`, `FinalizeBlock`, `Commit`, `Query`); verify a single-node CometBFT devnet finalizes blocks
 - [x] 6.3 Implement deterministic transaction ordering by fee and nonce; verify identical order for identical mempools
 - [ ] 6.4 Implement validator lifecycle (`pending`, `active`, `jailed`, `unbonding`, `unbonded`), staking, delegation, and epoch changes; verify transition vectors
 - [ ] 6.5 Implement slashing for double-sign and downtime with evidence windows and reporter rewards; verify valid, stale, and forged evidence

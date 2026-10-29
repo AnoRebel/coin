@@ -206,6 +206,12 @@ func OrderTxs(txs []protocol.Tx) []protocol.Tx {
 // Invalid transactions appear in the receipts with Success=false and leave no
 // state change.
 func (s *State) ApplyBlock(txs []protocol.Tx, now, height uint64, proposer string) (Block, []Receipt, error) {
+	return s.ApplyOrderedBlock(OrderTxs(txs), now, height, proposer)
+}
+
+// ApplyOrderedBlock is ApplyBlock for a caller that already ordered the
+// transactions (consensus decides the order). The given order is preserved.
+func (s *State) ApplyOrderedBlock(txs []protocol.Tx, now, height uint64, proposer string) (Block, []Receipt, error) {
 	if height != s.Height()+1 {
 		return Block{}, nil, fmt.Errorf("%w: height %d after %d", ErrInvariant, height, s.Height())
 	}
@@ -213,7 +219,7 @@ func (s *State) ApplyBlock(txs []protocol.Tx, now, height uint64, proposer strin
 	b := Block{Height: height, Time: now, Proposer: proposer, PrevRoot: hex.EncodeToString(prev[:])}
 	s.SetHeight(height)
 	s.SetBlockTime(now)
-	for _, tx := range OrderTxs(txs) {
+	for _, tx := range txs {
 		r := s.ApplyTx(tx, now, height)
 		enc, err := protocol.Encode(tx.ToCBOR())
 		if err != nil {

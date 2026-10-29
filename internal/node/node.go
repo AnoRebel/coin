@@ -48,6 +48,12 @@ type Node struct {
 	blocks   map[uint64]ledger.Block
 	subs     map[chan Event]struct{}
 	halted   string
+
+	// submit and mempoolSize let an external consensus engine own block
+	// production and the mempool (see internal/consensus).
+	submit      func(raw []byte) error
+	mempoolSize func() int
+	pending     *ledger.Block
 }
 
 // New opens or initializes a node.
@@ -133,15 +139,52 @@ func (n *Node) Status() Status {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	root := n.state.Root()
+	mempool := len(n.mempool)
+	if n.mempoolSize != nil {
+		mempool = n.mempoolSize()
+	}
 	return Status{
 		Network: n.cfg.Network, Chain: n.cfg.Chain, Height: n.state.Height(),
 		StateRoot: protocol.HashHex(root[:]), Time: n.state.BlockTime(),
-		Mempool: len(n.mempool), Halted: n.halted, Devnet: n.cfg.Devnet,
+		Mempool: mempool, Halted: n.halted, Devnet: n.cfg.Devnet,
 		Protocol: "arne/1",
 	}
 }
 
+// Root returns the raw state root, for consensus engines that need the app hash.
+func (n *Node) Root() []byte {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	root := n.state.Root()
+	out := make([]byte, len(root))
+	copy(out, root[:])
+	return out
+}
+
+// SetBroadcast routes submitted transactions to an external consensus engine.
+// When unset, the node keeps its own mempool and ProduceBlock builds blocks.
+func (n *Node) SetBroadcast(fn func(raw []byte) error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.submit = fn
+}
+
+// SetMempoolSize reports the external mempool size in /v1/status.
+func (n *Node) SetMempoolSize(fn func() int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.mempoolSize = fn
+}
+
+// Balance reads an account balance under the node lock.
+func (n *Node) Balance(address, asset string) uint64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Balance(address, asset)
+}
+
 // SubmitTx validates a raw canonical transaction and adds it to the mempool.
+// In consensus mode it is and forwarded to the external engine instead.
 func (n *Node) SubmitTx(raw []byte) (string, error) {
 	m, err := protocol.DecodeMap(raw)
 	if err != nil {
@@ -156,31 +199,199 @@ func (n *Node) SubmitTx(raw []byte) (string, error) {
 		return "", err
 	}
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	if n.halted != "" {
+		n.mu.Unlock()
 		return "", errors.New("node is halted: " + n.halted)
-	}
-	if _, exists := n.mempool[hash]; exists {
-		return hash, nil
 	}
 	now := uint64(time.Now().Unix())
 	if err := n.state.CheckTx(tx, now); err != nil {
+		n.mu.Unlock()
 		return "", err
+	}
+	if n.submit != nil {
+		submit := n.submit
+		n.mu.Unlock()
+		if err := submit(raw); err != nil {
+			return "", err
+		}
+		return hash, nil
+	}
+	if _, exists := n.mempool[hash]; exists {
+		n.mu.Unlock()
+		return hash, nil
 	}
 	// One live transaction per signer+nonce; the higher priority fee wins.
 	for h, other := range n.mempool {
 		if other.Signer == tx.Signer && other.Nonce == tx.Nonce {
 			if other.PriorityFee >= tx.PriorityFee {
+				n.mu.Unlock()
 				return hash, nil
 			}
 			delete(n.mempool, h)
 		}
 	}
 	if len(n.mempool) >= 10_000 {
+		n.mu.Unlock()
 		return "", errors.New("mempool full")
 	}
 	n.mempool[hash] = tx
+	n.mu.Unlock()
 	return hash, nil
+}
+
+// DecodeTx decodes and checks the network/chain binding without touching state.
+func (n *Node) DecodeTx(raw []byte) (protocol.Tx, error) {
+	m, err := protocol.DecodeMap(raw)
+	if err != nil {
+		return protocol.Tx{}, err
+	}
+	tx, err := protocol.TxFromCBOR(m)
+	if err != nil {
+		return protocol.Tx{}, err
+	}
+	if tx.Network != n.cfg.Network || tx.Chain != n.cfg.Chain {
+		return tx, fmt.Errorf("%w: expected %s/%s", protocol.ErrValidation, n.cfg.Network, n.cfg.Chain)
+	}
+	return tx, nil
+}
+
+// CheckRaw decodes and validates a transaction against current state. It is the
+// app-side CheckTx used by an external consensus engine.
+func (n *Node) CheckRaw(raw []byte) (protocol.Tx, error) {
+	tx, err := n.DecodeTx(raw)
+	if err != nil {
+		return tx, err
+	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if n.halted != "" {
+		return tx, errors.New("node is halted: " + n.halted)
+	}
+	return tx, n.state.CheckTx(tx, uint64(time.Now().Unix()))
+}
+
+// PrepareTxs decodes, filters, and canonically orders candidate transactions
+// for a proposal. It never includes more than maxTxs or maxBytes.
+func (n *Node) PrepareTxs(raws [][]byte, maxTxs, maxBytes int) [][]byte {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if n.halted != "" || len(raws) == 0 {
+		return nil
+	}
+	txs := make([]protocol.Tx, 0, len(raws))
+	byHash := make(map[string][]byte, len(raws))
+	for _, raw := range raws {
+		m, err := protocol.DecodeMap(raw)
+		if err != nil {
+			continue
+		}
+		tx, err := protocol.TxFromCBOR(m)
+		if err != nil || tx.Network != n.cfg.Network || tx.Chain != n.cfg.Chain {
+			continue
+		}
+		h, err := tx.Hash()
+		if err != nil {
+			continue
+		}
+		txs = append(txs, tx)
+		byHash[h] = raw
+	}
+	ordered := ledger.OrderTxs(txs)
+	expected := map[string]uint64{}
+	next := func(signer string) uint64 {
+		if v, ok := expected[signer]; ok {
+			return v
+		}
+		info, _ := n.state.Account(signer)
+		return info.Nonce
+	}
+	now := uint64(time.Now().Unix())
+	out := make([][]byte, 0, len(ordered))
+	size := 0
+	for _, tx := range ordered {
+		if len(out) >= maxTxs {
+			break
+		}
+		if tx.Nonce != next(tx.Signer) {
+			continue
+		}
+		if r := n.state.SimulateTx(tx, now, n.state.Height()+1); !r.Success {
+			continue
+		}
+		h, err := tx.Hash()
+		if err != nil {
+			continue
+		}
+		raw := byHash[h]
+		if maxBytes > 0 && size+len(raw) > maxBytes {
+			continue
+		}
+		out = append(out, raw)
+		size += len(raw)
+		expected[tx.Signer] = tx.Nonce + 1
+	}
+	return out
+}
+
+// FinalizeTxs applies decided transactions in the given order and stages the
+// block. CommitBlock persists it.
+func (n *Node) FinalizeTxs(raws [][]byte, height, now uint64, proposer string) (ledger.Block, []ledger.Receipt, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.halted != "" {
+		return ledger.Block{}, nil, errors.New("node is halted: " + n.halted)
+	}
+	txs := make([]protocol.Tx, 0, len(raws))
+	for _, raw := range raws {
+		m, err := protocol.DecodeMap(raw)
+		if err != nil {
+			return ledger.Block{}, nil, fmt.Errorf("decided tx: %w", err)
+		}
+		tx, err := protocol.TxFromCBOR(m)
+		if err != nil {
+			return ledger.Block{}, nil, fmt.Errorf("decided tx: %w", err)
+		}
+		txs = append(txs, tx)
+	}
+	block, receipts, err := n.state.ApplyOrderedBlock(txs, now, height, proposer)
+	if err != nil {
+		if errors.Is(err, ledger.ErrConservation) || errors.Is(err, ledger.ErrInvariant) {
+			n.halted = err.Error()
+		}
+		return ledger.Block{}, nil, err
+	}
+	n.pending = &block
+	return block, receipts, nil
+}
+
+// CommitBlock persists the block staged by FinalizeTxs and broadcasts it.
+func (n *Node) CommitBlock() error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	b := n.pending
+	if b == nil {
+		return nil
+	}
+	if err := n.store.SaveBlock(*b); err != nil {
+		n.halted = "storage failure: " + err.Error()
+		return err
+	}
+	if err := n.store.SaveState(b.Height, n.state.Snapshot()); err != nil {
+		n.halted = "storage failure: " + err.Error()
+		return err
+	}
+	n.blocks[b.Height] = *b
+	for i, h := range b.TxHashes {
+		if i < len(b.Receipts) {
+			n.receipts[h] = b.Receipts[i]
+		}
+	}
+	n.pending = nil
+	n.broadcast(Event{
+		Type: "block", Height: b.Height, Time: b.Time,
+		Hash: mustHash(*b), TxHashes: b.TxHashes,
+	})
+	return nil
 }
 
 // ProduceBlock finalizes a block. It returns the block (possibly empty).

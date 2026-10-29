@@ -6,10 +6,10 @@ protocol. Any team, business, or consortium can register and move its own
 assets on the same chain.
 
 Status: **early reference implementation**. The ledger, protocol, REST/JSON-RPC
-API, Go node, and Python parity node are implemented and tested. Consensus
-wiring, smart contracts, the shielded pool, messaging, compliance connectors,
-and the web console are specified but **not yet implemented**. Nothing here is
-audited; do not put real value on it.
+API, Go node, Python parity node, and a single-validator CometBFT consensus node
+are implemented and tested. Multi-node consensus, smart contracts, the shielded
+pool, messaging, compliance connectors, and the web console are specified but
+**not yet implemented**. Nothing here is audited; do not put real value on it.
 
 ## What works today
 
@@ -26,7 +26,7 @@ audited; do not put real value on it.
 | REST `/v1`, JSON-RPC 2.0, SSE, API keys | Implemented (Go + Python) |
 | Single-node devnet + faucet + CLI | Implemented (Go + Python) |
 | Cross-language conformance vectors | Implemented |
-| CometBFT / BFT PoS consensus | Specified, adapter not wired |
+| CometBFT / BFT PoS consensus | ABCI app wired; single-validator devnet verified, multi-node not yet |
 | WASM contracts, templates | Specified |
 | Shielded transfers | Specified |
 | Encrypted team messaging (MLS) | Specified |
@@ -56,6 +56,9 @@ go run ./cmd/arned pay --mnemonic "..." --to arce-devnet1... \
   --asset arce:devnet --amount 12.5 --memo "invoice 42"
 go run ./cmd/arned status --json
 ```
+
+`devnet` produces blocks in-process. To run the same ledger under CometBFT
+consensus, use `arned start` instead; see `docs/operator-guide.md`.
 
 The API listens on `http://127.0.0.1:8080`; interactive docs are at `/docs` on
 the Python node and the OpenAPI schema at `/openapi.json`.
@@ -111,7 +114,7 @@ against `spec/vectors/`:
 ```
 cmd/arned/        canonical Go node + CLI
 cmd/genvectors/   vector generator (Go is the source of truth)
-internal/         protocol, crypto, smt, ledger, storage, node, api
+internal/         protocol, crypto, smt, ledger, storage, node, api, consensus
 python/arne/      full Python parity node (CLI, API, ledger, node)
 spec/vectors/     cross-language conformance vectors
 spec/cbor/        schema notes            (planned)

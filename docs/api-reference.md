@@ -252,6 +252,10 @@ disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND` (404), `UNSUPPORTED` (500).
 
 ## Mempool and nonce rules
 
+These rules apply to the in-process node. Under `arned start`, the
+`mempool` count in `/v1/status` is CometBFT's, and the app-side check below runs
+on every `check_tx`; proposal building keeps the same nonce rule.
+
 - `CheckTx` accepts nonces in `[current, current + 64]` to allow pipelining.
 - Block selection only includes the exact next nonce per signer, in order.
 - A higher-priority transaction with the same signer and nonce replaces the

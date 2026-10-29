@@ -116,9 +116,16 @@ For a non-native fee asset, the whole fee moves to the treasury in that asset
 and the `fee_swap` pool pays `fee * route / 1e8` ARCE, which is split normally.
 No route or an underfunded pool → `NO_FEE_ROUTE`.
 
-## Blocks
+## Blocks and consensus
 
-Block production:
+There are two block sources:
+
+- `arned devnet` (and the Python node) call `ApplyBlock`, which orders the
+  mempool itself.
+- `arned start` runs `internal/consensus` as a CometBFT ABCI 2.0 app. CometBFT
+  owns the mempool and the order; the app validates, decides, and executes.
+
+Standalone ordering (`ApplyBlock`):
 
 1. Order mempool transactions by `(signer priority_fee desc, signer address)`,
    then by `(nonce, tx hash)` within a signer.
@@ -127,6 +134,26 @@ Block production:
 3. Apply in order, collecting receipts.
 4. Commit state and write the block + state snapshot atomically.
 5. Broadcast a block event.
+
+ABCI path:
+
+1. `CheckTx` calls `node.CheckRaw`: decode, network/chain match, signature,
+   expiration, fee, nonce window, simulation. Rejections return code 1.
+2. `PrepareProposal` decodes and filters, orders by the same fee/nonce rule,
+   keeps only the next nonce per signer, simulates against the pending height,
+   and respects both the app transaction cap and `MaxTxBytes`.
+3. `ProcessProposal` rejects only undecodable data. A well-formed transaction that
+   fails execution is allowed in the block, is charged nothing, and rolls back.
+4. `FinalizeBlock` calls `ApplyOrderedBlock` with the decided order, returns one
+   `ExecTxResult` per transaction, and reports the post-block state root as the
+   app hash. The height must be exactly `state height + 1`.
+5. `Commit` writes the staged block and state snapshot, indexes receipts, and
+   broadcasts the block event.
+
+`Query` serves `/status` and `/balance` (JSON `{address,asset}`) for
+`/abci_query`; the REST API remains the primary read surface. Note that the
+CometBFT block header `app_hash` at height H is the app hash returned by
+`FinalizeBlock` at H-1, so compare the header against the previous height's root.
 
 The block hash covers height, time, proposer, previous state root, new state
 root, transaction root, and transaction hashes. Any divergence in execution
@@ -183,7 +210,9 @@ Search the tree for `shortcut:`:
 - SMT leaf padding is O(256-depth) per leaf rather than a cached subtree hash;
 - Python persistence is file-based;
 - escrow timeouts are not enforced;
-- Python block production is time-driven, not consensus-driven.
+- Python block production is time-driven and has no ABCI adapter;
+- the consensus app has no validator set, staking, or slashing logic (CometBFT
+  holds a static validator set from genesis).
 
 Each is a documented limit, not an accident. Upgrade it deliberately with tests.
 
