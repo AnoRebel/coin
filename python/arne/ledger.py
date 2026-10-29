@@ -490,7 +490,7 @@ class State:
             types.TX_RELEASE_ESCROW: lambda t, r: self._exec_close_escrow(t, True, now, r),
             types.TX_REFUND_ESCROW: lambda t, r: self._exec_close_escrow(t, False, now, r),
             types.TX_APPROVE: self._exec_approve,
-            types.TX_TRANSFER_FROM: self._exec_transfer_from,
+            types.TX_TRANSFER_FROM: lambda t, r: self._exec_transfer_from(t, now, r),
             types.TX_REVOKE_ALLOWANCE: self._exec_revoke,
             types.TX_MINT: self._exec_mint,
             types.TX_BURN: self._exec_burn,
@@ -643,7 +643,7 @@ class State:
         self._set_uint(K_ALLOW_EXP % (tx.signer, spender, asset), 0)
         self._event(receipt, "allowance_revoked", owner=tx.signer, spender=spender, asset=asset)
 
-    def _exec_transfer_from(self, tx: Tx, receipt: Receipt) -> None:
+    def _exec_transfer_from(self, tx: Tx, now: int, receipt: Receipt) -> None:
         owner = _payload_str(tx.payload, "from")
         to = _payload_str(tx.payload, "to")
         asset = _payload_str(tx.payload, "asset")
@@ -656,7 +656,7 @@ class State:
         if remaining < amount:
             raise _err(ALLOWANCE_EXCEEDED, f"allowance {remaining} below {amount}")
         expires = self.allowance_expiry(owner, tx.signer, asset)
-        if expires != 0 and self.block_time() > expires:
+        if expires != 0 and now > expires:
             raise _err(ALLOWANCE_EXCEEDED, "allowance expired")
         self._move(owner, to, asset, amount, receipt)
         self._set_uint(K_ALLOWANCE % (owner, tx.signer, asset), remaining - amount)

@@ -170,9 +170,10 @@ Allow a spender to move up to a limit of your funds:
    `amount`.
 3. Revoke with `revoke_allowance`.
 
-`expires_at` is checked against the last block time, not wall clock. An
-allowance is reduced by each spend and can never exceed its limit; over-spending
-returns `ALLOWANCE_EXCEEDED` and changes nothing.
+`expires_at` is checked against the time of the block carrying the spend, not
+wall clock. An allowance is reduced by each spend and can never exceed its
+limit; over-spending or spending after expiry returns `ALLOWANCE_EXCEEDED` and
+changes nothing. Revocation zeroes the remaining allowance immediately.
 
 There is no CLI command for allowances yet; use the HTTP API with a signed
 transaction (see the integration guide) or the example client as a template.

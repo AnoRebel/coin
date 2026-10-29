@@ -255,6 +255,40 @@ func TestAllowance(t *testing.T) {
 	}, 1)); r.Success || r.Code != CodeAllowanceExceeded {
 		t.Fatalf("over-allowance accepted: %+v", r)
 	}
+
+	// Revocation removes the remaining allowance immediately.
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxRevokeAllowance, map[string]any{
+		"spender": f.bob.Address, "asset": native,
+	}, 1)); !r.Success {
+		t.Fatalf("revoke: %+v", r)
+	}
+	if r := f.apply(t, f.tx(t, f.bob, protocol.TxTransferFrom, map[string]any{
+		"from": f.alice.Address, "to": f.carol.Address, "asset": native, "amount": uint64(100_000),
+	}, 1)); r.Success || r.Code != CodeAllowanceExceeded {
+		t.Fatalf("post-revocation transfer accepted: %+v", r)
+	}
+}
+
+func TestAllowanceExpiry(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxApprove, map[string]any{
+		"spender": f.bob.Address, "asset": native, "amount": uint64(1_000_000),
+		"expires_at": uint64(1_700_000_200),
+	}, 0)); !r.Success {
+		t.Fatalf("approve: %+v", r)
+	}
+	spend := func(now uint64) Receipt {
+		return f.applyAt(t, f.tx(t, f.bob, protocol.TxTransferFrom, map[string]any{
+			"from": f.alice.Address, "to": f.carol.Address, "asset": native, "amount": uint64(100_000),
+		}, 0), now)
+	}
+	if r := spend(1_700_000_250); r.Success || r.Code != CodeAllowanceExceeded {
+		t.Fatalf("expired allowance accepted: %+v", r)
+	}
+	if r := spend(1_700_000_150); !r.Success {
+		t.Fatalf("unexpired allowance rejected: %+v", r)
+	}
 }
 
 func TestAssetIssueMintBurn(t *testing.T) {

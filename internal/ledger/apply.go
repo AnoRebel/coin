@@ -263,7 +263,7 @@ func (s *State) execute(tx protocol.Tx, now uint64, r *Receipt) error {
 	case protocol.TxRevokeAllowance:
 		return s.execRevoke(tx, r)
 	case protocol.TxTransferFrom:
-		return s.execTransferFrom(tx, r)
+		return s.execTransferFrom(tx, now, r)
 	case protocol.TxMint:
 		return s.execMint(tx, r)
 	case protocol.TxBurn:
@@ -567,7 +567,7 @@ func (s *State) execRevoke(tx protocol.Tx, r *Receipt) error {
 	return nil
 }
 
-func (s *State) execTransferFrom(tx protocol.Tx, r *Receipt) error {
+func (s *State) execTransferFrom(tx protocol.Tx, now uint64, r *Receipt) error {
 	owner, err := payloadString(tx.Payload, "from")
 	if err != nil {
 		return err
@@ -597,7 +597,7 @@ func (s *State) execTransferFrom(tx protocol.Tx, r *Receipt) error {
 	if remaining < amount {
 		return txErr(CodeAllowanceExceeded, "allowance %d below %d", remaining, amount)
 	}
-	if exp := s.AllowanceExpiry(owner, tx.Signer, asset); exp != 0 && s.BlockTime() > exp {
+	if exp := s.AllowanceExpiry(owner, tx.Signer, asset); exp != 0 && now > exp {
 		return txErr(CodeAllowanceExceeded, "allowance expired")
 	}
 	if err := s.move(owner, to, asset, amount, r); err != nil {

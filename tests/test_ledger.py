@@ -145,6 +145,29 @@ def test_allowance_spend(f: Fixture) -> None:
     }, 1))
     assert over.code == ledger.ALLOWANCE_EXCEEDED
 
+    assert f.apply(f.tx(f.alice, types.TX_REVOKE_ALLOWANCE, {
+        "spender": f.bob.address, "asset": NATIVE,
+    }, 1)).success
+    after = f.apply(f.tx(f.bob, types.TX_TRANSFER_FROM, {
+        "from": f.alice.address, "to": f.carol.address, "asset": NATIVE, "amount": 100_000,
+    }, 1))
+    assert after.code == ledger.ALLOWANCE_EXCEEDED
+
+
+def test_allowance_expiry(f: Fixture) -> None:
+    assert f.apply(f.tx(f.alice, types.TX_APPROVE, {
+        "spender": f.bob.address, "asset": NATIVE, "amount": 1_000_000,
+        "expires_at": 1_700_000_200,
+    }, 0)).success
+
+    def spend(now: int) -> ledger.Receipt:
+        return f.apply_at(f.tx(f.bob, types.TX_TRANSFER_FROM, {
+            "from": f.alice.address, "to": f.carol.address, "asset": NATIVE, "amount": 100_000,
+        }, 0), now)
+
+    assert spend(1_700_000_250).code == ledger.ALLOWANCE_EXCEEDED
+    assert spend(1_700_000_150).success
+
 
 def _register(f: Fixture, policy: str = "capped") -> dict:
     return {
