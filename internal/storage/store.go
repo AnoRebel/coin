@@ -23,6 +23,9 @@ type Store interface {
 	Block(height uint64) (ledger.Block, bool, error)
 	LastBlock() (ledger.Block, bool, error)
 	SaveState(height uint64, snapshot map[string][]byte) error
+	// SaveCommit writes a block and its state snapshot in one atomic batch: a
+	// crash leaves both at the previous height, never a block without state.
+	SaveCommit(b ledger.Block, snapshot map[string][]byte) error
 	LoadState() (map[string][]byte, uint64, bool, error)
 	Close() error
 }
@@ -141,10 +144,7 @@ func (p *Pebble) LastBlock() (ledger.Block, bool, error) {
 	return p.Block(h)
 }
 
-// SaveState writes a state snapshot atomically.
-func (p *Pebble) SaveState(height uint64, snapshot map[string][]byte) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func encodeState(height uint64, snapshot map[string][]byte) ([]byte, error) {
 	keys := make([]string, 0, len(snapshot))
 	for k := range snapshot {
 		keys = append(keys, k)
@@ -154,14 +154,55 @@ func (p *Pebble) SaveState(height uint64, snapshot map[string][]byte) error {
 	for _, k := range keys {
 		ordered[k] = snapshot[k]
 	}
-	rec, err := encodeRecord(struct {
+	return encodeRecord(struct {
 		Height uint64            `json:"height"`
 		State  map[string][]byte `json:"state"`
 	}{height, ordered})
+}
+
+// SaveState writes a state snapshot atomically.
+func (p *Pebble) SaveState(height uint64, snapshot map[string][]byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, err := encodeState(height, snapshot)
 	if err != nil {
 		return err
 	}
 	return p.db.Set(keyState, rec, pebble.Sync)
+}
+
+// SaveCommit writes the block, last-height marker, and state snapshot in one
+// batch, so a crash cannot expose a block without its state.
+func (p *Pebble) SaveCommit(b ledger.Block, snapshot map[string][]byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, err := encodeRecord(b)
+	if err != nil {
+		return err
+	}
+	h, err := json.Marshal(b.Height)
+	if err != nil {
+		return err
+	}
+	state, err := encodeState(b.Height, snapshot)
+	if err != nil {
+		return err
+	}
+	batch := p.db.NewBatch()
+	defer batch.Close()
+	for _, kv := range []struct {
+		key []byte
+		val []byte
+	}{
+		{blockKey(b.Height), rec},
+		{keyLast, h},
+		{keyState, state},
+	} {
+		if err := batch.Set(kv.key, kv.val, nil); err != nil {
+			return err
+		}
+	}
+	return batch.Commit(pebble.Sync)
 }
 
 // LoadState reads the latest snapshot.
@@ -236,11 +277,29 @@ func (m *Memory) LastBlock() (ledger.Block, bool, error) {
 func (m *Memory) SaveState(height uint64, snapshot map[string][]byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.setSnapshot(height, snapshot)
+	return nil
+}
+
+func (m *Memory) setSnapshot(height uint64, snapshot map[string][]byte) {
 	cp := make(map[string][]byte, len(snapshot))
 	for k, v := range snapshot {
 		cp[k] = append([]byte(nil), v...)
 	}
 	m.state = cp
+	m.height = height
+}
+
+// SaveCommit stores a block and its snapshot together.
+func (m *Memory) SaveCommit(b ledger.Block, snapshot map[string][]byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.blocks[b.Height]; !exists {
+		m.order = append(m.order, b.Height)
+		sort.Slice(m.order, func(i, j int) bool { return m.order[i] < m.order[j] })
+	}
+	m.blocks[b.Height] = b
+	m.setSnapshot(b.Height, snapshot)
 	return nil
 }
 

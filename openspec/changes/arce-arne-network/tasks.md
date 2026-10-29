@@ -47,7 +47,7 @@
 ## 5. State tree, storage, snapshots, and indexing
 
 - [x] 5.1 Implement the canonical sparse Merkle tree with namespaced keys and deterministic roots; verify Go and Python roots match every vector
-- [ ] 5.2 Implement Pebble storage with atomic block batches, checksums, and crash recovery; verify a simulated crash recovers the last committed height
+- [x] 5.2 Implement Pebble storage with atomic block batches, checksums, and crash recovery; verify a simulated crash recovers the last committed height
 - [ ] 5.3 Implement RocksDB storage for the Python node with the same key schema; verify Python state roots match Go
 - [ ] 5.4 Implement full and incremental snapshots with manifests, checksums, and restore; verify tampered snapshots are rejected
 - [ ] 5.5 Implement configurable pruning and archive mode; verify recent proofs work and pruned history returns a clear error

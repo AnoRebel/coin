@@ -71,3 +71,59 @@ func TestTamperedRecordRejected(t *testing.T) {
 		t.Fatal("tampered record accepted")
 	}
 }
+
+func TestPebbleCommitRecoversAtLastHeight(t *testing.T) {
+	dir := t.TempDir()
+	p, err := OpenPebble(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for h := uint64(1); h <= 2; h++ {
+		b := ledger.Block{Height: h, StateRoot: string(rune('a' + h))}
+		snap := map[string][]byte{"k": []byte{byte(h)}}
+		if err := p.SaveCommit(b, snap); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Reopen as a crash restart: the synced batch is the recovery point.
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p, err = OpenPebble(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	last, ok, err := p.LastBlock()
+	if err != nil || !ok || last.Height != 2 {
+		t.Fatalf("last = %+v %v %v", last, ok, err)
+	}
+	back, height, ok, err := p.LoadState()
+	if err != nil || !ok || height != last.Height || string(back["k"]) != string([]byte{2}) {
+		t.Fatalf("state = %v %d %v %v", back, height, ok, err)
+	}
+}
+
+func TestPebbleTamperedStateRejected(t *testing.T) {
+	p, err := OpenPebble(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SaveCommit(ledger.Block{Height: 1}, map[string][]byte{"k": {1}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, closer, err := p.db.Get(keyState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closer.Close()
+	rec[len(rec)-1] ^= 1
+	if err := p.db.Set(keyState, rec, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := p.LoadState(); err == nil {
+		t.Fatal("tampered state accepted")
+	}
+}

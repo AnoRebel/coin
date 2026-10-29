@@ -372,11 +372,7 @@ func (n *Node) CommitBlock() error {
 	if b == nil {
 		return nil
 	}
-	if err := n.store.SaveBlock(*b); err != nil {
-		n.halted = "storage failure: " + err.Error()
-		return err
-	}
-	if err := n.store.SaveState(b.Height, n.state.Snapshot()); err != nil {
+	if err := n.store.SaveCommit(*b, n.state.Snapshot()); err != nil {
 		n.halted = "storage failure: " + err.Error()
 		return err
 	}
