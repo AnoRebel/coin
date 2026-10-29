@@ -104,6 +104,10 @@ func (s *Server) call(method string, p map[string]json.RawMessage) (any, *rpcErr
 		}
 		b, ok := s.node.Block(args.Height)
 		if !ok {
+			if oldest := s.node.OldestBlock(); oldest > 0 && args.Height < oldest {
+				return nil, &rpcError{Code: -32005,
+					Message: fmt.Sprintf("block %d pruned; available from %d", args.Height, oldest)}
+			}
 			return nil, &rpcError{Code: -32004, Message: "block not found"}
 		}
 		return blockView(b), nil

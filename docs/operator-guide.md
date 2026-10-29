@@ -1,9 +1,9 @@
 # Operator guide
 
 Scope: running the implemented reference node, either the in-process `devnet`
-or the CometBFT-backed `start` node. Multi-node consensus, pruning, snapshots,
-and production key management are **not implemented**; see the "Missing before
-production" section.
+or the CometBFT-backed `start` node. Multi-node consensus, snapshots,
+CometBFT blockstore pruning, and production key management are **not
+implemented**; see the "Missing before production" section.
 
 ## Build
 
@@ -47,6 +47,7 @@ Flags:
 | `--api-key` | none | Repeatable `key=read,write[,admin]`; when set, writes require `Authorization: Bearer <key>` |
 | `--allow-origin` | none | Repeatable CORS allowlist entry |
 | `--rate-limit` | 200 | Requests/second per IP; 0 disables |
+| `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
 
 There is **no config file and no environment-variable config** yet. Flags are
 the whole surface. Keep a unit file or Compose file as the source of truth.
@@ -81,6 +82,7 @@ Flags beyond the `devnet` set:
 | `--block-interval` | `1s` | Consensus `timeout_commit` |
 | `--data-dir` | `<home>/app` | Pebble directory for ledger blocks/state |
 | `--ephemeral` | false | Temporary home plus in-memory ledger |
+| `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
 
 Layout under `--home`: `config/genesis.json`, `config/priv_validator_key.json`,
 `config/node_key.json`, `data/` (CometBFT blockstore/state), and `app/` (Pebble).
@@ -168,6 +170,27 @@ Test a restore on a copy. Never copy a live Pebble directory with `cp`; you can
 capture a torn write. Keep the passphrase out of shell history by exporting
 `ARNE_BACKUP_PASSPHRASE` from a secret manager.
 
+## Pruning and archive mode
+
+`--keep-blocks N` keeps the newest N ledger blocks and deletes older ones from
+the app store after each commit; the default `0` archives every block. State,
+balances, and proofs are never pruned, so a proof for a current key always
+works.
+
+Pruned history is gone, not hidden:
+
+- `GET /v1/blocks/<height>` returns `410 PRUNED` with the oldest available
+  height; the JSON-RPC method returns `-32005` with the same message.
+- `GET /v1/transactions/<hash>` returns `404 TX_NOT_FOUND` once its block falls
+  outside the window; the receipt no longer records the pruned height.
+- Recent proofs still verify against `/v1/status`; a proof is a state claim, not
+  a block-history claim.
+
+Pruning only touches the app's Pebble store. CometBFT's own blockstore under
+`<home>/data/` still retains everything; there is no CometBFT pruning command
+or snapshot sync yet. Back up before changing `--keep-blocks`, because lowering
+the window is irreversible.
+
 ## Upgrades
 
 - Code upgrades are stop, replace binary, start. Storage format is stable within
@@ -198,6 +221,6 @@ Do not describe this node as production-ready until these exist:
 - multi-node consensus networking, validator admission, staking and slashing;
 - TLS, OIDC/JWT, mTLS, and secrets management;
 - metrics, tracing, structured logs, dashboards, alerts;
-- online snapshots, pruning, archive mode, and migrations;
+- online snapshots, CometBFT blockstore pruning, and migrations;
 - validator key separation, HSM/KMS support, slashing and staking;
 - audits and a bug-bounty program.

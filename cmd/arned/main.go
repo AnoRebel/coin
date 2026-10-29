@@ -69,6 +69,7 @@ func devnetCmd() *cobra.Command {
 		apiKeySpecs    []string
 		allowedOrigins []string
 		rateLimit      int
+		keepBlocks     uint64
 	)
 	cmd := &cobra.Command{
 		Use:   "devnet",
@@ -173,6 +174,7 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&apiKeySpecs, "api-key", nil, "API key as key=read,write[,admin] (repeatable)")
 	cmd.Flags().StringArrayVar(&allowedOrigins, "allow-origin", nil, "CORS origin to allow (repeatable)")
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 200, "requests per second per IP (0 disables)")
+	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N blocks (0 archives all)")
 	return cmd
 }
 

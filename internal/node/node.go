@@ -25,6 +25,9 @@ type Config struct {
 	Faucet        *protocol.KeyPair
 	FaucetAmount  uint64
 	Devnet        bool
+	// KeepBlocks keeps the newest N blocks and prunes older ones; 0 archives
+	// all blocks.
+	KeepBlocks uint64
 }
 
 // Event is a broadcast block notification.
@@ -376,7 +379,7 @@ func (n *Node) CommitBlock() error {
 		n.halted = "storage failure: " + err.Error()
 		return err
 	}
-	n.blocks[b.Height] = *b
+	n.prune()
 	for i, h := range b.TxHashes {
 		if i < len(b.Receipts) {
 			n.receipts[h] = b.Receipts[i]
@@ -420,14 +423,11 @@ func (n *Node) ProduceBlock(now uint64) (ledger.Block, error) {
 			n.mempool[h] = tx
 		}
 	}
-	if err := n.store.SaveBlock(block); err != nil {
+	if err := n.store.SaveCommit(block, n.state.Snapshot()); err != nil {
 		n.halted = "storage failure: " + err.Error()
 		return ledger.Block{}, err
 	}
-	if err := n.store.SaveState(block.Height, n.state.Snapshot()); err != nil {
-		n.halted = "storage failure: " + err.Error()
-		return ledger.Block{}, err
-	}
+	n.prune()
 	n.blocks[block.Height] = block
 	for i, h := range block.TxHashes {
 		if i < len(receipts) {
@@ -483,12 +483,51 @@ func mustHash(b ledger.Block) string {
 	return h
 }
 
+// prune drops blocks outside the configured retention window. The caller holds
+// the node lock.
+func (n *Node) prune() {
+	if n.cfg.KeepBlocks == 0 {
+		return
+	}
+	height := n.state.Height()
+	if height <= n.cfg.KeepBlocks {
+		return
+	}
+	before := height - n.cfg.KeepBlocks + 1
+	if err := n.store.Prune(before); err != nil {
+		n.halted = "prune failure: " + err.Error()
+		return
+	}
+	for h, b := range n.blocks {
+		if h >= before {
+			continue
+		}
+		for _, hash := range b.TxHashes {
+			delete(n.receipts, hash)
+		}
+		delete(n.blocks, h)
+	}
+}
+
 // Block returns a block by height.
 func (n *Node) Block(height uint64) (ledger.Block, bool) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	b, ok := n.blocks[height]
 	return b, ok
+}
+
+// OldestBlock returns the lowest retained block height, or 0 when none is kept.
+func (n *Node) OldestBlock() uint64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	var oldest uint64
+	for h := range n.blocks {
+		if oldest == 0 || h < oldest {
+			oldest = h
+		}
+	}
+	return oldest
 }
 
 // Blocks returns blocks at or below from, newest first, up to limit.

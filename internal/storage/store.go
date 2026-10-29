@@ -26,6 +26,8 @@ type Store interface {
 	// SaveCommit writes a block and its state snapshot in one atomic batch: a
 	// crash leaves both at the previous height, never a block without state.
 	SaveCommit(b ledger.Block, snapshot map[string][]byte) error
+	// Prune deletes blocks below before. State and the latest block remain.
+	Prune(before uint64) error
 	LoadState() (map[string][]byte, uint64, bool, error)
 	Close() error
 }
@@ -228,6 +230,21 @@ func (p *Pebble) LoadState() (map[string][]byte, uint64, bool, error) {
 // Close closes the database.
 func (p *Pebble) Close() error { return p.db.Close() }
 
+// Prune deletes blocks below before in one synced batch.
+func (p *Pebble) Prune(before uint64) error {
+	if before <= 1 {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	batch := p.db.NewBatch()
+	defer batch.Close()
+	if err := batch.DeleteRange(blockKey(0), blockKey(before), nil); err != nil {
+		return err
+	}
+	return batch.Commit(pebble.Sync)
+}
+
 // Memory is an in-memory store for tests and ephemeral devnets.
 type Memory struct {
 	mu     sync.RWMutex
@@ -288,6 +305,22 @@ func (m *Memory) setSnapshot(height uint64, snapshot map[string][]byte) {
 	}
 	m.state = cp
 	m.height = height
+}
+
+// Prune drops blocks below before.
+func (m *Memory) Prune(before uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kept := m.order[:0]
+	for _, h := range m.order {
+		if h < before {
+			delete(m.blocks, h)
+			continue
+		}
+		kept = append(kept, h)
+	}
+	m.order = kept
+	return nil
 }
 
 // SaveCommit stores a block and its snapshot together.

@@ -107,7 +107,7 @@ proves absence at the returned `state_root`.
 | Method | Path | Query | Description |
 | --- | --- | --- | --- |
 | GET | `/v1/blocks` | `limit` (default 50), `before` (height) | Newest-first page |
-| GET | `/v1/blocks/{height}` | — | One block, or `404 BLOCK_NOT_FOUND` |
+| GET | `/v1/blocks/{height}` | — | One block, or `404 BLOCK_NOT_FOUND`; `410 PRUNED` outside the retention window |
 | GET | `/v1/transactions/{hash}` | — | Receipt, or `404 TX_NOT_FOUND` |
 
 Block:
@@ -221,7 +221,8 @@ return `204`. Params is always an object.
 
 RPC error codes: `-32700` parse, `-32600` invalid request, `-32601` method not
 found, `-32602` invalid params, `-32000` ledger rejection (with `data` = ledger
-code), `-32004` block/transaction not found, `-32603` internal.
+code), `-32004` block/transaction not found, `-32005` block pruned (message
+includes the oldest available height), `-32603` internal.
 
 ## Error codes
 
@@ -251,7 +252,8 @@ Branch on `code`.
 
 Non-ledger API errors: `INVALID_ARGUMENT` (400), `BODY_TOO_LARGE` (413),
 `FORBIDDEN` (403, missing scope), `RATE_LIMITED` (429), `NOT_FOUND` (404,
-disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND` (404), `UNSUPPORTED` (500).
+disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND` (404), `PRUNED` (410, block
+outside `--keep-blocks`), `UNSUPPORTED` (500).
 
 ## Mempool and nonce rules
 

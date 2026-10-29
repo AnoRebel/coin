@@ -198,6 +198,11 @@ Pebble keys: `b<height>` for blocks, `meta/last`, `state/current`. Each value is
 node refuses to load. A block write and its state snapshot are committed in one
 atomic batch, so a crash leaves the last fully committed height.
 
+`Store.Prune(before)` deletes blocks below a height in one synced batch; the
+state snapshot and last-height marker are untouched. The node calls it after
+each commit when `Config.KeepBlocks` is non-zero, and evicts the matching
+in-memory blocks and receipts. Archive mode is `KeepBlocks == 0`.
+
 The Python node uses `FileStore` (one checksummed snapshot file plus one JSON
 file per block). `shortcut:` a file store is not RocksDB; upgrade when block
 volume or concurrent writers matter.

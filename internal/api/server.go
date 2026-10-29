@@ -313,6 +313,10 @@ func (s *Server) getBlock(c *echo.Context) error {
 	}
 	b, ok := s.node.Block(height)
 	if !ok {
+		if oldest := s.node.OldestBlock(); oldest > 0 && height < oldest {
+			return apiErr(http.StatusGone, "PRUNED",
+				fmt.Sprintf("block %d pruned; available from %d", height, oldest))
+		}
 		return apiErr(http.StatusNotFound, "BLOCK_NOT_FOUND", "block not found")
 	}
 	return c.JSON(http.StatusOK, blockView(b))

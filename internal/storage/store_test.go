@@ -127,3 +127,47 @@ func TestPebbleTamperedStateRejected(t *testing.T) {
 		t.Fatal("tampered state accepted")
 	}
 }
+
+func TestPruneRetainsConfiguredWindow(t *testing.T) {
+	for name, make := range map[string]func(t *testing.T) Store{
+		"memory": func(*testing.T) Store { return NewMemory() },
+		"pebble": func(t *testing.T) Store {
+			p, err := OpenPebble(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { p.Close() })
+			return p
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := make(t)
+			for h := uint64(1); h <= 5; h++ {
+				b := ledger.Block{Height: h, StateRoot: string(rune('a' + h))}
+				if err := s.SaveCommit(b, map[string][]byte{"k": []byte{byte(h)}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.Prune(4); err != nil {
+				t.Fatal(err)
+			}
+			for h := uint64(1); h <= 3; h++ {
+				if _, ok, err := s.Block(h); err != nil || ok {
+					t.Fatalf("block %d survived prune: %v", h, err)
+				}
+			}
+			for h := uint64(4); h <= 5; h++ {
+				if _, ok, err := s.Block(h); err != nil || !ok {
+					t.Fatalf("block %d pruned early: %v", h, err)
+				}
+			}
+			last, ok, err := s.LastBlock()
+			if err != nil || !ok || last.Height != 5 {
+				t.Fatalf("last = %+v %v %v", last, ok, err)
+			}
+			if _, h, ok, err := s.LoadState(); err != nil || !ok || h != 5 {
+				t.Fatalf("state = %d %v %v", h, ok, err)
+			}
+		})
+	}
+}
