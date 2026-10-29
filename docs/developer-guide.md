@@ -180,13 +180,14 @@ uv run pytest tests/test_vectors.py -q
 go test ./tests -run TestVectors -v
 ```
 
-The conformance runner loads `spec/vectors/{cbor,keys,smt,ledger}.json` and
+The conformance runner loads `spec/vectors/{cbor,keys,smt,ledger,tx}.json` and
 requires both languages to reproduce every byte:
 
-- CBOR encode/decode
+- CBOR encode/decode and non-canonical rejection
 - mnemonic → key → per-network address
 - tree roots and inclusion/exclusion proofs
 - genesis, block state roots, tx roots, block hashes, receipts
+- transaction envelope bytes, hashes, signatures, and closed-schema rejection
 
 To prove a runner is real, temporarily corrupt one vector value; both suites
 must fail. Do not commit the corruption.

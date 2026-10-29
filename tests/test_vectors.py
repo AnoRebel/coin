@@ -125,3 +125,19 @@ def test_ledger_vectors() -> None:
             assert got.success == want["success"], (step["block"], want)
             assert got.code == want.get("code", ""), (step["block"], want)
             assert got.fee == want["fee"], (step["block"], want)
+
+
+def test_tx_vectors() -> None:
+    data = load("tx.json")
+    for case in data["valid"]:
+        raw = bytes.fromhex(case["cbor"])
+        tx = types.Tx.from_cbor(cbor.decode_map(raw))
+        assert cbor.encode(tx.to_cbor()) == raw, case["name"]
+        assert tx.hash() == case["hash"], case["name"]
+        assert bool(tx.signatures) == case["signed"], case["name"]
+        if case["signed"]:
+            tx.verify()
+    for case in data["invalid"]:
+        raw = bytes.fromhex(case["cbor"])
+        with pytest.raises(types.ValidationError):
+            types.Tx.from_cbor(cbor.decode_map(raw))

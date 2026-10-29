@@ -179,6 +179,12 @@ Signature payload:
 `{"dom":"arne-sig-v1","network","chain","suite","purpose","expires_at","body"}`,
 where `body` is the envelope without signatures and with `v` as uint.
 
+The envelope and each signature object are closed schemas in `v: 1`: any field
+not listed above is rejected with `INVALID_SCHEMA` before signature
+verification, so a relay cannot add uncommitted fields to a signed transaction.
+New envelope fields require a new version. The `payload` map is typed per
+transaction; unknown payload keys are currently ignored.
+
 ### Transaction types
 
 | Type | Payload |

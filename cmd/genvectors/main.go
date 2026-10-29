@@ -25,6 +25,7 @@ func main() {
 	write(dir, "keys.json", keyVectors())
 	write(dir, "smt.json", smtVectors())
 	write(dir, "ledger.json", ledgerVectors())
+	write(dir, "tx.json", txVectors())
 	fmt.Println("wrote vectors to", dir)
 }
 
@@ -35,6 +36,69 @@ func write(dir, name string, v any) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, name), append(b, '\n'), 0o644); err != nil {
 		panic(err)
+	}
+}
+
+// txVectors pins the transaction envelope bytes, hash, and closed-schema
+// rejection cases shared by both implementations.
+func txVectors() map[string]any {
+	const network = "arne:devnet"
+	chain, _ := protocol.ChainID(network)
+	kp, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, 0, network)
+	if err != nil {
+		panic(err)
+	}
+	tx := protocol.Tx{
+		Version: protocol.CurrentTxVersion, Network: network, Chain: chain,
+		Type: protocol.TxTransfer, Signer: kp.Address, Nonce: 0,
+		CreatedAt: 1_700_000_000, ExpiresAt: 1_700_003_600,
+		FeeAsset: protocol.NativeAsset(network), MaxFee: 1_000,
+		PriorityFee: 0,
+		Payload:     map[string]any{"to": kp.Address, "asset": protocol.NativeAsset(network), "amount": uint64(1_000_000)},
+	}
+	encode := func(m map[string]any) string {
+		b, err := protocol.Encode(m)
+		if err != nil {
+			panic(err)
+		}
+		return hex.EncodeToString(b)
+	}
+	unsigned := encode(tx.ToCBOR())
+	unsignedHash, err := tx.Hash()
+	if err != nil {
+		panic(err)
+	}
+	if err := tx.Sign(kp); err != nil {
+		panic(err)
+	}
+	signed := encode(tx.ToCBOR())
+	signedHash, err := tx.Hash()
+	if err != nil {
+		panic(err)
+	}
+
+	withField := func(m map[string]any, key string, value any) string {
+		m[key] = value
+		return encode(m)
+	}
+	badSignature := tx.ToCBOR()
+	badSignature["signatures"] = []any{map[string]any{
+		"suite": tx.Signatures[0].Suite, "pubkey": tx.Signatures[0].PubKey,
+		"sig": tx.Signatures[0].Sig, "kid": "key-1",
+	}}
+	return map[string]any{
+		"envelope": map[string]any{
+			"name": "transfer", "network": network, "chain": chain,
+			"signer": kp.Address,
+		},
+		"valid": []map[string]any{
+			{"name": "unsigned", "cbor": unsigned, "hash": unsignedHash, "signed": false},
+			{"name": "signed", "cbor": signed, "hash": signedHash, "signed": true},
+		},
+		"invalid": []map[string]any{
+			{"name": "unknown-envelope-field", "cbor": withField(tx.ToCBOR(), "crit", []any{"ext"})},
+			{"name": "unknown-signature-field", "cbor": encode(badSignature)},
+		},
 	}
 }
 

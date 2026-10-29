@@ -18,6 +18,7 @@ import (
 
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	"github.com/anorebel/anorebelcoin/internal/node"
+	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/smt"
 )
 
@@ -511,7 +512,25 @@ func mapLedgerError(err error) error {
 	if errors.As(err, &le) {
 		return &apiError{status: statusFor(le.Code), code: string(le.Code), msg: le.Message}
 	}
+	if code, ok := protocolErrorCode(err); ok {
+		return &apiError{status: http.StatusBadRequest, code: code, msg: err.Error()}
+	}
 	return err
+}
+
+// protocolErrorCode names wire-format failures that never reach the ledger.
+func protocolErrorCode(err error) (string, bool) {
+	switch {
+	case errors.Is(err, protocol.ErrSignature):
+		return "BAD_SIGNATURE", true
+	case errors.Is(err, protocol.ErrNetwork):
+		return "WRONG_NETWORK", true
+	case errors.Is(err, protocol.ErrVersion), errors.Is(err, protocol.ErrValidation),
+		errors.Is(err, protocol.ErrCBOR), errors.Is(err, protocol.ErrNonCanon),
+		errors.Is(err, protocol.ErrCBORType), errors.Is(err, protocol.ErrCBORLimits):
+		return "INVALID_SCHEMA", true
+	}
+	return "", false
 }
 
 func statusFor(code ledger.Code) int {

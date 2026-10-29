@@ -197,6 +197,9 @@ func rpcFromError(err error) *rpcError {
 	if ok := asLedgerError(err, &le); ok {
 		return &rpcError{Code: -32000, Message: le.Message, Data: string(le.Code)}
 	}
+	if code, ok := protocolErrorCode(err); ok {
+		return &rpcError{Code: -32602, Message: err.Error(), Data: code}
+	}
 	return &rpcError{Code: -32603, Message: err.Error()}
 }
 

@@ -194,6 +194,7 @@ class Signature:
 
     @classmethod
     def from_cbor(cls, m: Mapping[str, Any]) -> Signature:
+        _reject_unknown("signature", m, _SIGNATURE_FIELDS)
         return cls(suite=_text(m, "suite"), pubkey=_bytes(m, "pubkey"), sig=_bytes(m, "sig"))
 
 
@@ -229,6 +230,7 @@ class Tx:
 
     @classmethod
     def from_cbor(cls, m: Mapping[str, Any]) -> Tx:
+        _reject_unknown("envelope", m, _ENVELOPE_FIELDS)
         payload = m.get("payload") or {}
         if not isinstance(payload, dict):
             raise ValidationError("payload")
@@ -290,6 +292,21 @@ class Tx:
                 raise SignatureError("signer does not match key")
             if not verify_ed25519(sig.pubkey, self.signing_payload(sig.suite, "tx"), sig.sig):
                 raise SignatureError("bad signature")
+
+
+# Envelope and signature maps are closed in v1: a field not listed here needs a
+# version bump. The payload map stays open because each transaction type owns it.
+_ENVELOPE_FIELDS = frozenset({
+    "v", "network", "chain", "type", "signer", "nonce", "created_at",
+    "expires_at", "fee_asset", "max_fee", "priority_fee", "payload", "signatures",
+})
+_SIGNATURE_FIELDS = frozenset({"suite", "pubkey", "sig"})
+
+
+def _reject_unknown(kind: str, m: Mapping[str, Any], allowed: frozenset[str]) -> None:
+    unknown = sorted(set(m) - allowed)
+    if unknown:
+        raise ValidationError(f"unknown {kind} field {unknown[0]!r}")
 
 
 def _text(m: Mapping[str, Any], key: str) -> str:

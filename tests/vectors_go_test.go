@@ -280,3 +280,61 @@ func TestLedgerVectors(t *testing.T) {
 		}
 	}
 }
+
+func TestTxVectors(t *testing.T) {
+	var f struct {
+		Valid []struct {
+			Name   string `json:"name"`
+			CBOR   string `json:"cbor"`
+			Hash   string `json:"hash"`
+			Signed bool   `json:"signed"`
+		} `json:"valid"`
+		Invalid []struct {
+			Name string `json:"name"`
+			CBOR string `json:"cbor"`
+		} `json:"invalid"`
+	}
+	load(t, "tx.json", &f)
+	for _, c := range f.Valid {
+		raw, err := hex.DecodeString(c.CBOR)
+		if err != nil {
+			t.Fatalf("%s: %v", c.Name, err)
+		}
+		m, err := protocol.DecodeMap(raw)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", c.Name, err)
+		}
+		tx, err := protocol.TxFromCBOR(m)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", c.Name, err)
+		}
+		enc, err := protocol.Encode(tx.ToCBOR())
+		if err != nil || hex.EncodeToString(enc) != c.CBOR {
+			t.Fatalf("%s: re-encode differs", c.Name)
+		}
+		if h, err := tx.Hash(); err != nil || h != c.Hash {
+			t.Fatalf("%s: hash = %s want %s", c.Name, h, c.Hash)
+		}
+		if got := len(tx.Signatures) > 0; got != c.Signed {
+			t.Fatalf("%s: signed = %v", c.Name, got)
+		}
+		if c.Signed {
+			if err := tx.Verify(); err != nil {
+				t.Fatalf("%s: signature: %v", c.Name, err)
+			}
+		}
+	}
+	for _, c := range f.Invalid {
+		raw, err := hex.DecodeString(c.CBOR)
+		if err != nil {
+			t.Fatalf("%s: %v", c.Name, err)
+		}
+		m, err := protocol.DecodeMap(raw)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", c.Name, err)
+		}
+		if _, err := protocol.TxFromCBOR(m); err == nil {
+			t.Fatalf("%s: accepted", c.Name)
+		}
+	}
+}

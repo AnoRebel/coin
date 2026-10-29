@@ -340,9 +340,45 @@ func (t Tx) ToCBOR() map[string]any {
 	return m
 }
 
+// Envelope and signature maps are closed in v1: a field not listed here needs a
+// version bump. The payload map stays open because each transaction type owns it.
+var (
+	txEnvelopeFields = stringSet("v", "network", "chain", "type", "signer", "nonce",
+		"created_at", "expires_at", "fee_asset", "max_fee", "priority_fee",
+		"payload", "signatures")
+	signatureFields = stringSet("suite", "pubkey", "sig")
+)
+
+func stringSet(fields ...string) map[string]bool {
+	m := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		m[f] = true
+	}
+	return m
+}
+
+// rejectUnknownSorted reports the first unknown field in sorted order so the
+// error is deterministic across map iteration orders.
+func rejectUnknownSorted(kind string, m map[string]any, allowed map[string]bool) error {
+	unknown := make([]string, 0)
+	for k := range m {
+		if !allowed[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("%w: unknown %s field %q", ErrValidation, kind, unknown[0])
+}
+
 // TxFromCBOR parses a transaction envelope.
 func TxFromCBOR(m map[string]any) (Tx, error) {
 	t := Tx{Payload: map[string]any{}}
+	if err := rejectUnknownSorted("envelope", m, txEnvelopeFields); err != nil {
+		return t, err
+	}
 	var err error
 	var v uint64
 	if v, err = num(m, "v"); err != nil {
@@ -397,6 +433,9 @@ func TxFromCBOR(m map[string]any) (Tx, error) {
 			sm, ok := item.(map[string]any)
 			if !ok {
 				return t, fmt.Errorf("%w: signature", ErrValidation)
+			}
+			if err := rejectUnknownSorted("signature", sm, signatureFields); err != nil {
+				return t, err
 			}
 			var s Signature
 			if s.Suite, err = str(sm, "suite"); err != nil {
