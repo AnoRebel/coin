@@ -310,3 +310,20 @@ def test_smt_root_matches_go_shape() -> None:
     root = tree.state_root()
     assert len(root) == 32
     assert root != smt.EMPTY
+
+
+def test_encrypted_memo(f: Fixture) -> None:
+    from arne import memo
+
+    sealed = memo.seal(memo.public_key(f.bob.private), b"invoice 42")
+    payload = {"asset": NATIVE, "to": f.bob.address, "amount": 1_000, "memo_enc": sealed}
+    assert f.apply(f.tx(f.alice, types.TX_TRANSFER, payload, 0)).success
+
+    both = {"asset": NATIVE, "to": f.bob.address, "amount": 1_000, "memo": "public", "memo_enc": sealed}
+    assert f.apply(f.tx(f.alice, types.TX_TRANSFER, both, 1)).code == ledger.INVALID_PAYLOAD
+
+    text = {"asset": NATIVE, "to": f.bob.address, "amount": 1_000, "memo_enc": "text"}
+    assert f.apply(f.tx(f.alice, types.TX_TRANSFER, text, 1)).code == ledger.INVALID_PAYLOAD
+
+    garbage = {"asset": NATIVE, "to": f.bob.address, "amount": 1_000, "memo_enc": b"garbage"}
+    assert f.apply(f.tx(f.alice, types.TX_TRANSFER, garbage, 1)).code == ledger.INVALID_PAYLOAD

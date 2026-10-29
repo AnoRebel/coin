@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import cbor, smt, types
+from . import memo as memo_codec
 from .address import validate_address
 from .types import Tx
 
@@ -519,9 +520,19 @@ class State:
         to = _payload_str(tx.payload, "to")
         amount = _payload_uint(tx.payload, "amount")
         if "memo" in tx.payload:
-            memo = tx.payload["memo"]
-            if not isinstance(memo, str) or len(memo.encode()) > self.params.max_memo_bytes:
+            text = tx.payload["memo"]
+            if not isinstance(text, str) or len(text.encode()) > self.params.max_memo_bytes:
                 raise _err(INVALID_PAYLOAD, "memo too long")
+            if "memo_enc" in tx.payload:
+                raise _err(INVALID_PAYLOAD, "use memo or memo_enc, not both")
+        if "memo_enc" in tx.payload:
+            sealed = tx.payload["memo_enc"]
+            if not isinstance(sealed, (bytes, bytearray)):
+                raise _err(INVALID_PAYLOAD, "memo_enc must be bytes")
+            try:
+                memo_codec.validate(bytes(sealed))
+            except memo_codec.MemoError as exc:
+                raise _err(INVALID_PAYLOAD, f"memo_enc: {exc}") from exc
         if amount == 0:
             raise _err(INVALID_PAYLOAD, "amount must be positive")
         self._require_asset(asset)

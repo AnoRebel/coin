@@ -179,6 +179,11 @@ Signature payload:
 `{"dom":"arne-sig-v1","network","chain","suite","purpose","expires_at","body"}`,
 where `body` is the envelope without signatures and with `v` as uint.
 
+`memo_enc` is the canonical CBOR map
+`{"v":1,"epk":bytes32,"nonce":bytes12,"ct":bytes}` sealed to the recipient's
+memo public key (X25519 + HKDF-SHA-256 + ChaCha20-Poly1305). The ledger cannot
+decrypt it and rejects malformed envelopes or plaintexts above 256 bytes.
+
 The envelope and each signature object are closed schemas in `v: 1`: any field
 not listed above is rejected with `INVALID_SCHEMA` before signature
 verification, so a relay cannot add uncommitted fields to a signed transaction.
@@ -189,7 +194,7 @@ transaction; unknown payload keys are currently ignored.
 
 | Type | Payload |
 | --- | --- |
-| `transfer` | `asset`, `to`, `amount`, optional `memo` (≤256 bytes) |
+| `transfer` | `asset`, `to`, `amount`, optional `memo` (text ≤256 bytes) or `memo_enc` (sealed bytes; mutually exclusive) |
 | `batch` | `items`: 1–100 × `{asset, to, amount}`, optional `mode`: `atomic` (default) or `best_effort` |
 | `register_asset` | `asset`: full asset map without supply |
 | `create_escrow` | `asset`, `beneficiary`, `arbiter`, `amount`, `timeout` |

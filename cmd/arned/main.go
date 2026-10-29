@@ -4,6 +4,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/api"
 	"github.com/anorebel/anorebelcoin/internal/backup"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
+	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/node"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
@@ -44,7 +47,7 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
-		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), backupCmd(), restoreCmd())
+		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
@@ -413,7 +416,7 @@ func balanceCmd() *cobra.Command {
 // --- pay ---
 
 func payCmd() *cobra.Command {
-	var network, mnemonic, to, asset, amount string
+	var network, mnemonic, to, asset, amount, memoTo string
 	var memo string
 	var wait bool
 	cmd := &cobra.Command{
@@ -438,7 +441,19 @@ func payCmd() *cobra.Command {
 			}
 			chain, _ := protocol.ChainID(network)
 			payload := map[string]any{"asset": asset, "to": to, "amount": units}
-			if memo != "" {
+			switch {
+			case memo != "" && memoTo != "":
+				recipient, err := hex.DecodeString(memoTo)
+				if err != nil {
+					return fmt.Errorf("--memo-to must be hex: %w", err)
+				}
+				sealed, err := arnememo.RandomSeal(recipient, []byte(memo))
+				if err != nil {
+					return err
+				}
+				payload["memo_enc"] = sealed
+			case memo != "":
+				fmt.Fprintln(os.Stderr, "warning: --memo is public on chain; use --memo-to to encrypt it")
 				payload["memo"] = memo
 			}
 			tx := protocol.Tx{
@@ -481,12 +496,110 @@ func payCmd() *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "recipient address")
 	cmd.Flags().StringVar(&asset, "asset", "", "asset id (for example arce:devnet)")
 	cmd.Flags().StringVar(&amount, "amount", "", "human amount, for example 12.5")
-	cmd.Flags().StringVar(&memo, "memo", "", "plaintext memo (public on chain)")
+	cmd.Flags().StringVar(&memo, "memo", "", "memo text")
+	cmd.Flags().StringVar(&memoTo, "memo-to", "", "recipient memo public key (hex); encrypts --memo")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the receipt")
 	for _, f := range []string{"mnemonic", "to", "asset", "amount"} {
 		_ = cmd.MarkFlagRequired(f)
 	}
 	return cmd
+}
+
+// --- memo ---
+
+func memoCmd() *cobra.Command {
+	var network, mnemonic, recipient, text, sealed string
+	var index uint32
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "memo",
+		Short: "Create and open opt-in encrypted memos",
+	}
+	pub := &cobra.Command{
+		Use:   "pub",
+		Short: "Print your memo public key to share with senders",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kp, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, index, network)
+			if err != nil {
+				return err
+			}
+			pk, err := arnememo.PublicKey(kp.Private.Seed())
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return printJSON(map[string]any{"memo_public_key": hex.EncodeToString(pk), "address": kp.Address})
+			}
+			fmt.Println(hex.EncodeToString(pk))
+			return nil
+		},
+	}
+	pub.Flags().StringVar(&network, "network", "arne:devnet", "network id")
+	pub.Flags().StringVar(&mnemonic, "mnemonic", "", "wallet mnemonic")
+	pub.Flags().Uint32Var(&index, "index", 0, "account index")
+	pub.Flags().BoolVar(&jsonOut, "json", false, "JSON output")
+	_ = pub.MarkFlagRequired("mnemonic")
+
+	seal := &cobra.Command{
+		Use:   "seal",
+		Short: "Encrypt memo text to a recipient memo public key",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pk, err := hex.DecodeString(recipient)
+			if err != nil {
+				return fmt.Errorf("--recipient must be hex: %w", err)
+			}
+			out, err := arnememo.RandomSeal(pk, []byte(text))
+			if err != nil {
+				return err
+			}
+			fmt.Println(hex.EncodeToString(out))
+			return nil
+		},
+	}
+	seal.Flags().StringVar(&recipient, "recipient", "", "recipient memo public key (hex)")
+	seal.Flags().StringVar(&text, "text", "", "memo text (256 bytes max)")
+	_ = seal.MarkFlagRequired("recipient")
+	_ = seal.MarkFlagRequired("text")
+
+	open := &cobra.Command{
+		Use:   "open",
+		Short: "Decrypt a sealed memo",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			raw, err := decodeHexOrBase64(sealed)
+			if err != nil {
+				return err
+			}
+			kp, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, index, network)
+			if err != nil {
+				return err
+			}
+			plain, err := arnememo.Open(kp.Private.Seed(), raw)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(plain))
+			return nil
+		},
+	}
+	open.Flags().StringVar(&network, "network", "arne:devnet", "network id")
+	open.Flags().StringVar(&mnemonic, "mnemonic", "", "wallet mnemonic")
+	open.Flags().Uint32Var(&index, "index", 0, "account index")
+	open.Flags().StringVar(&sealed, "sealed", "", "sealed memo hex or base64")
+	_ = open.MarkFlagRequired("mnemonic")
+	_ = open.MarkFlagRequired("sealed")
+
+	cmd.AddCommand(pub, seal, open)
+	return cmd
+}
+
+func decodeHexOrBase64(s string) ([]byte, error) {
+	if b, err := hex.DecodeString(s); err == nil {
+		return b, nil
+	}
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	return nil, errors.New("value must be hex or base64")
 }
 
 func waitForReceipt(hash string) error {

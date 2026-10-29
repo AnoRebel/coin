@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/anorebel/anorebelcoin/internal/ledger"
+	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/smt"
 )
@@ -336,5 +337,38 @@ func TestTxVectors(t *testing.T) {
 		if _, err := protocol.TxFromCBOR(m); err == nil {
 			t.Fatalf("%s: accepted", c.Name)
 		}
+	}
+}
+
+func TestMemoVector(t *testing.T) {
+	var f struct {
+		Mnemonic        string `json:"mnemonic"`
+		Network         string `json:"network"`
+		RecipientIndex  uint32 `json:"recipient_index"`
+		RecipientPublic string `json:"recipient_public"`
+		Plaintext       string `json:"plaintext"`
+		EphemeralSeed   string `json:"ephemeral_seed"`
+		Nonce           string `json:"nonce"`
+		Sealed          string `json:"sealed"`
+	}
+	load(t, "memo.json", &f)
+	kp, err := protocol.KeyPairFromMnemonic(f.Mnemonic, "", 0, 0, f.RecipientIndex, f.Network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := arnememo.PublicKey(kp.Private.Seed())
+	if err != nil || hex.EncodeToString(pub) != f.RecipientPublic {
+		t.Fatalf("public = %x want %s: %v", pub, f.RecipientPublic, err)
+	}
+	sealed, _ := hex.DecodeString(f.Sealed)
+	plain, err := arnememo.Open(kp.Private.Seed(), sealed)
+	if err != nil || string(plain) != f.Plaintext {
+		t.Fatalf("open = %q %v", plain, err)
+	}
+	seed, _ := hex.DecodeString(f.EphemeralSeed)
+	nonce, _ := hex.DecodeString(f.Nonce)
+	again, err := arnememo.Seal(pub, []byte(f.Plaintext), bytes.NewReader(append(seed, nonce...)))
+	if err != nil || hex.EncodeToString(again) != f.Sealed {
+		t.Fatalf("reseal = %x", again)
 	}
 }

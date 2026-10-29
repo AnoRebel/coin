@@ -107,7 +107,7 @@
 - [x] 10.2 Implement batch and payroll runs with atomic and best-effort policies and per-item results; verify reconciliation
 - [ ] 10.3 Implement subscriptions/recurring authorizations with limits, expiry, and cancellation; verify over-limit and cancellation
 - [ ] 10.4 Implement refunds as linked new transfers with immutable history; verify reversal rejection
-- [ ] 10.5 Implement encrypted memos with size limits and public-memo warnings; verify decryption and oversize rejection
+- [x] 10.5 Implement encrypted memos with size limits and public-memo warnings; verify decryption and oversize rejection
 - [ ] 10.6 Integrate MLS (RFC 9420) group channels with add/remove/update/commit and epoch rotation; verify removed-member decryption failure
 - [ ] 10.7 Implement channel messages, payment references, notices, file pointers, at-least-once delivery, deduplication, and offline catch-up; verify retry and retention
 - [ ] 10.8 Implement workspace roles, permissions, and audit logging; verify member/admin/auditor enforcement

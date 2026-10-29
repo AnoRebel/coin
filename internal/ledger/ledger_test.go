@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 )
 
@@ -561,5 +562,39 @@ func TestOrderTxsGroupsNonces(t *testing.T) {
 		if ordered[i].Signer == ordered[i-1].Signer && ordered[i].Nonce <= ordered[i-1].Nonce {
 			t.Fatalf("nonce order violated at %d", i)
 		}
+	}
+}
+
+func TestEncryptedMemo(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	pub, err := arnememo.PublicKey(f.bob.Private.Seed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := arnememo.RandomSeal(pub, []byte("invoice 42"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000), "memo_enc": sealed,
+	}, 0)); !r.Success {
+		t.Fatalf("sealed memo transfer: %+v", r)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000),
+		"memo": "public", "memo_enc": sealed,
+	}, 1)); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("both memos accepted: %+v", r)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000), "memo_enc": "text",
+	}, 1)); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("non-bytes memo_enc accepted: %+v", r)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000), "memo_enc": []byte("garbage"),
+	}, 1)); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("garbage memo_enc accepted: %+v", r)
 	}
 }

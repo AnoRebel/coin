@@ -1,0 +1,10 @@
+{
+  "ephemeral_seed": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "network": "arne:devnet",
+  "nonce": "0102030405060708090a0b0c",
+  "plaintext": "invoice 42",
+  "recipient_index": 1,
+  "recipient_public": "c44c8237a0d3ce51aeb1c5704b29d2d5e8f8eb9ed9d31fce1e4d7aa4cbcccf31",
+  "sealed": "a4617601626374581a7500803b71f55b29b0872f1a52d7edc4487d10b6281904ac5c316365706b58200bb69c9587b81c4de450e08e0bf5edfe0695950cc2278964486b298733be881f656e6f6e63654c0102030405060708090a0b0c"
+}

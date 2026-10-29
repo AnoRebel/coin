@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -14,6 +15,7 @@ from typing import Any
 import httpx
 
 from . import cbor, ledger, types
+from . import memo as memo_codec
 from .address import validate_address
 from .keys import keypair_from_mnemonic, new_keypair
 from .node import Config, FileStore, MemoryStore, Node, devnet_genesis
@@ -236,9 +238,33 @@ def cmd_pay(args: argparse.Namespace) -> int:
     asset = _get(args.url, f"/v1/assets/{args.asset}")
     units = parse_amount(args.amount, asset["decimals"])
     payload: dict[str, Any] = {"asset": args.asset, "to": args.to, "amount": units}
-    if args.memo:
+    if args.memo and args.memo_to:
+        payload["memo_enc"] = memo_codec.seal(bytes.fromhex(args.memo_to), args.memo.encode())
+    elif args.memo:
+        print("warning: --memo is public on chain; use --memo-to to encrypt it", file=sys.stderr)
         payload["memo"] = args.memo
     return _submit(args.url, _signed_tx(args, types.TX_TRANSFER, payload), args.wait)
+
+
+def cmd_memo_pub(args: argparse.Namespace) -> int:
+    kp = keypair_from_mnemonic(args.mnemonic, "", 0, 0, args.index, args.network)
+    print(memo_codec.public_key(kp.private).hex())
+    return 0
+
+
+def cmd_memo_seal(args: argparse.Namespace) -> int:
+    print(memo_codec.seal(bytes.fromhex(args.recipient), args.text.encode()).hex())
+    return 0
+
+
+def cmd_memo_open(args: argparse.Namespace) -> int:
+    try:
+        raw = bytes.fromhex(args.sealed)
+    except ValueError:
+        raw = base64.b64decode(args.sealed, validate=True)
+    kp = keypair_from_mnemonic(args.mnemonic, "", 0, 0, args.index, args.network)
+    print(memo_codec.open_memo(kp.private, raw).decode())
+    return 0
 
 
 def cmd_faucet(args: argparse.Namespace) -> int:
@@ -342,8 +368,27 @@ def build_parser() -> argparse.ArgumentParser:
     pay.add_argument("--asset", required=True)
     pay.add_argument("--amount", required=True)
     pay.add_argument("--memo", default="")
+    pay.add_argument("--memo-to", default="", help="recipient memo public key (hex)")
     write_flags(pay)
     pay.set_defaults(func=cmd_pay)
+
+    memo = sub.add_parser("memo", help="opt-in encrypted memos")
+    memo_sub = memo.add_subparsers(dest="memo_command", required=True)
+    memo_pub = memo_sub.add_parser("pub", help="print your memo public key")
+    memo_pub.add_argument("--mnemonic", required=True)
+    memo_pub.add_argument("--index", type=int, default=0)
+    memo_pub.add_argument("--network", default="arne:devnet")
+    memo_pub.set_defaults(func=cmd_memo_pub)
+    memo_seal = memo_sub.add_parser("seal", help="encrypt memo text to a recipient key")
+    memo_seal.add_argument("--recipient", required=True, help="memo public key (hex)")
+    memo_seal.add_argument("--text", required=True)
+    memo_seal.set_defaults(func=cmd_memo_seal)
+    memo_open = memo_sub.add_parser("open", help="decrypt a sealed memo")
+    memo_open.add_argument("--mnemonic", required=True)
+    memo_open.add_argument("--index", type=int, default=0)
+    memo_open.add_argument("--network", default="arne:devnet")
+    memo_open.add_argument("--sealed", required=True, help="hex or base64")
+    memo_open.set_defaults(func=cmd_memo_open)
 
     faucet = sub.add_parser("faucet", help="request devnet funds")
     faucet.add_argument("--address", required=True)

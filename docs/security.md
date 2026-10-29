@@ -56,16 +56,20 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
 - DoS: rate limits and a 2 MiB body cap exist; there is no peer scoring, proof of
   work, or fee-on-failure. Failed transactions are free.
 - Key compromise: no social recovery, passkeys, or hardware signer integration.
-- Metadata privacy: transfers, memos, and amounts are public. Shielded transfers
-  are specified, not implemented.
+- Metadata privacy: transfers and amounts are public. Plaintext memos are
+  public; opt-in `memo_enc` hides memo text only. Shielded transfers are
+  specified, not implemented.
 - Side channels in the Python implementation: not audited for constant time.
 
 ## Privacy
 
 - On-chain data is public and permanent: addresses, amounts, asset IDs, memos,
   escrow parties, and timestamps.
-- Memos are plaintext. Do not put names, invoice details, or personal data in
-  them. There is no encrypted memo or MLS messaging runtime yet.
+- Plaintext memos are public and permanent. Opt-in `memo_enc` encrypts memo
+  text to a recipient memo key, but sender, recipient, asset, amount, and time
+  stay visible. Sealed memos use X25519 + HKDF-SHA-256 + ChaCha20-Poly1305 and
+  are validated for shape and size by the ledger, which cannot decrypt them.
+  There is no MLS messaging runtime yet.
 - The node does not require KYC and stores no PII. If you build a compliance
   layer, keep PII off-chain and store only commitments or verifiable credentials.
 - Telemetry: none is collected by the node. Reverse proxies and hosting providers

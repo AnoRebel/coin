@@ -117,7 +117,8 @@ do not "fix" it by deleting a checksum. Restore from backup.
 - Bind to `127.0.0.1` unless you need remote access. There is no TLS in the node;
   terminate TLS at a reverse proxy.
 - Always set `--api-key` and `--allow-origin` for anything reachable.
-- Reads are open by design. Do not put personal data in memos; they are public.
+- Reads are open by design. Plaintext memos are public; opt-in sealed memos hide
+  text only, not sender, recipient, amount, or time.
 - The faucet exists only on devnet and is disabled by `Devnet: false`.
 - Request bodies are capped at 2 MiB; keep proxy limits aligned.
 

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/anorebel/anorebelcoin/internal/ledger"
+	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/smt"
 )
@@ -26,6 +28,7 @@ func main() {
 	write(dir, "smt.json", smtVectors())
 	write(dir, "ledger.json", ledgerVectors())
 	write(dir, "tx.json", txVectors())
+	write(dir, "memo.json", memoVectors())
 	fmt.Println("wrote vectors to", dir)
 }
 
@@ -99,6 +102,41 @@ func txVectors() map[string]any {
 			{"name": "unknown-envelope-field", "cbor": withField(tx.ToCBOR(), "crit", []any{"ext"})},
 			{"name": "unknown-signature-field", "cbor": encode(badSignature)},
 		},
+	}
+}
+
+// memoVectors pins key derivation and ciphertext bytes with fixed entropy so
+// both implementations can decrypt and reproduce the same sealed memo.
+func memoVectors() map[string]any {
+	const network = "arne:devnet"
+	recipient, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, 1, network)
+	if err != nil {
+		panic(err)
+	}
+	seed := recipient.Private.Seed()
+	pub, err := arnememo.PublicKey(seed)
+	if err != nil {
+		panic(err)
+	}
+	seq := func(n int) []byte {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = byte(i + 1)
+		}
+		return b
+	}
+	ephemeral, nonce := seq(32), seq(12)
+	sealed, err := arnememo.Seal(pub, []byte("invoice 42"), bytes.NewReader(append(ephemeral, nonce...)))
+	if err != nil {
+		panic(err)
+	}
+	return map[string]any{
+		"mnemonic": mnemonic, "network": network, "recipient_index": 1,
+		"recipient_public": hex.EncodeToString(pub),
+		"plaintext":        "invoice 42",
+		"ephemeral_seed":   hex.EncodeToString(ephemeral),
+		"nonce":            hex.EncodeToString(nonce),
+		"sealed":           hex.EncodeToString(sealed),
 	}
 }
 

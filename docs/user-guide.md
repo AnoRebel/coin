@@ -72,12 +72,45 @@ go run ./cmd/arned pay \
 ```
 
 - `--amount` accepts decimals up to the asset's precision.
-- `--memo` is **public and permanent**. It is capped at 256 bytes. Never put
-  secrets or personal data in a memo. Encrypted memos are planned, not shipped.
+- `--memo` alone is **public and permanent**. It is capped at 256 bytes. Use
+  `--memo-to` to encrypt it (see below) before putting anything sensitive in it.
 - The fee defaults to ARCE and is capped at `max_fee` (the CLI uses 10,000 base
   units = 0.0001 ARCE).
 - Failed transactions are free and leave no trace in state. Rejected nonce,
   insufficient funds, or a bad signature means nothing was charged.
+
+### Encrypted memos (opt-in)
+
+A memo can be encrypted to a recipient's memo key. The recipient publishes that
+key once; senders do not need it on chain:
+
+```sh
+arned memo pub --mnemonic "<recipient mnemonic>"        # share this hex key
+arned pay --mnemonic "<sender>" --to arce-devnet1... \
+  --asset arce:devnet --amount 12.5 \
+  --memo "invoice 42" --memo-to <recipient memo key>
+```
+
+Seal and open without sending a payment:
+
+```sh
+arned memo seal --recipient <recipient memo key> --text "invoice 42"
+arned memo open --mnemonic "<recipient mnemonic>" --sealed <hex or base64>
+```
+
+The memo is sealed with an ephemeral X25519 key and ChaCha20-Poly1305; only the
+recipient's wallet seed derives the matching key. The chain stores the
+ciphertext in `memo_enc` (bytes) and never sees the plaintext. Limits and
+caveats:
+
+- Plaintext is capped at 256 bytes; the sealed envelope is validated for shape
+  and size before it is accepted. A transaction may carry `memo` or `memo_enc`,
+  never both.
+- Amount, asset, sender, recipient, and time remain public. Encryption hides
+  the memo text only.
+- Losing the wallet seed loses the memo; there is no recovery.
+- `--memo` without `--memo-to` prints a public-memo warning and stores the text
+  in clear.
 
 Track the receipt:
 

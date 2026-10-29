@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 )
 
@@ -299,10 +300,22 @@ func (s *State) execTransfer(tx protocol.Tx, r *Receipt) error {
 	if err != nil {
 		return err
 	}
-	if memo, ok := tx.Payload["memo"]; ok {
-		text, ok := memo.(string)
+	if plain, ok := tx.Payload["memo"]; ok {
+		text, ok := plain.(string)
 		if !ok || len(text) > s.Params.MaxMemoBytes {
 			return txErr(CodeInvalidPayload, "memo too long")
+		}
+		if _, both := tx.Payload["memo_enc"]; both {
+			return txErr(CodeInvalidPayload, "use memo or memo_enc, not both")
+		}
+	}
+	if raw, ok := tx.Payload["memo_enc"]; ok {
+		sealed, ok := raw.([]byte)
+		if !ok {
+			return txErr(CodeInvalidPayload, "memo_enc must be bytes")
+		}
+		if err := arnememo.Validate(sealed); err != nil {
+			return txErr(CodeInvalidPayload, "memo_enc: %v", err)
 		}
 	}
 	if amount == 0 {
