@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anorebel/anorebelcoin/internal/api"
+	"github.com/anorebel/anorebelcoin/internal/backup"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	"github.com/anorebel/anorebelcoin/internal/node"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
@@ -43,7 +44,7 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
-		faucetCmd(), statusCmd(), assetCmd(), proofCmd())
+		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
@@ -529,6 +530,78 @@ func faucetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&network, "network", "arne:devnet", "network id")
 	cmd.Flags().StringVar(&mnemonic, "mnemonic", "", "mnemonic")
 	cmd.Flags().StringVar(&address, "address", "", "address")
+	return cmd
+}
+
+// --- backup / restore ---
+
+func backupPassphrase(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	return os.Getenv("ARNE_BACKUP_PASSPHRASE")
+}
+
+func backupCmd() *cobra.Command {
+	var home, out, pass string
+	cmd := &cobra.Command{
+		Use:   "backup",
+		Short: "Write an encrypted backup of a stopped node home",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pass = backupPassphrase(pass)
+			if pass == "" {
+				return errors.New("set --passphrase or ARNE_BACKUP_PASSPHRASE")
+			}
+			f, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			if err := backup.Create(home, f, pass); err != nil {
+				f.Close()
+				os.Remove(out)
+				return err
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
+			fmt.Println(out)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&home, "home", ".arne", "node home to back up (stop the node first)")
+	cmd.Flags().StringVar(&out, "out", "", "backup file to write")
+	cmd.Flags().StringVar(&pass, "passphrase", "", "encryption passphrase (or ARNE_BACKUP_PASSPHRASE)")
+	_ = cmd.MarkFlagRequired("out")
+	return cmd
+}
+
+func restoreCmd() *cobra.Command {
+	var home, in, pass string
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Restore an encrypted backup into a new node home",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pass = backupPassphrase(pass)
+			if pass == "" {
+				return errors.New("set --passphrase or ARNE_BACKUP_PASSPHRASE")
+			}
+			f, err := os.Open(in)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if err := backup.Restore(home, f, pass); err != nil {
+				return err
+			}
+			fmt.Println(home)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&home, "home", "", "new node home to create")
+	cmd.Flags().StringVar(&in, "in", "", "backup file to restore")
+	cmd.Flags().StringVar(&pass, "passphrase", "", "encryption passphrase (or ARNE_BACKUP_PASSPHRASE)")
+	_ = cmd.MarkFlagRequired("home")
+	_ = cmd.MarkFlagRequired("in")
 	return cmd
 }
 

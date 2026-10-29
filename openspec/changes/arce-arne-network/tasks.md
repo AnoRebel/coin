@@ -53,7 +53,7 @@
 - [ ] 5.5 Implement configurable pruning and archive mode; verify recent proofs work and pruned history returns a clear error
 - [ ] 5.6 Implement the optional Postgres indexer with idempotent, reorg-safe writes; verify catch-up, orphan removal, and node operation with the indexer down
 - [ ] 5.7 Implement versioned, idempotent schema migrations with rollback documentation; verify forward, failed, and rollback paths
-- [ ] 5.8 Implement encrypted backup and restore with integrity verification; verify wrong-key and corrupted-backup failures
+- [x] 5.8 Implement encrypted backup and restore with integrity verification; verify wrong-key and corrupted-backup failures
 
 ## 6. Transactions, blocks, consensus, and ABCI
 

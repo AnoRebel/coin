@@ -145,16 +145,28 @@ volume while the node is stopped.
 
 ## Backup and restore
 
-The node has no online snapshot command. Correct procedure:
+The node has no online snapshot command. Stop it first (SIGTERM; it shuts down
+cleanly), then archive the whole home:
 
-1. Stop the node (SIGTERM; it shuts down cleanly).
-2. Copy the whole data directory.
-3. Start the node and verify `/v1/status` height/state root.
-4. Restore by stopping, replacing the directory, and starting; the checksummed
-   state record is the recovery point.
+```sh
+export ARNE_BACKUP_PASSPHRASE='...'
+arned backup --home /var/lib/arne --out /backup/arne-$(date +%F).arn
+arned restore --in /backup/arne-$(date +%F).arn --home /var/lib/arne-restored
+```
+
+For `arned start`, `--home` also contains the CometBFT keys and blockstore, so
+one archive covers the app and consensus data.
+
+The archive is a tar of the home encrypted and authenticated with AES-256-GCM
+under a scrypt-derived key. A wrong passphrase, a flipped byte, or a truncated
+file fails before anything is written. Restore extracts into a sibling directory
+and renames it into place only after the whole stream authenticates; it refuses
+to overwrite an existing home. Start the restored node and verify
+`/v1/status` height and state root.
 
 Test a restore on a copy. Never copy a live Pebble directory with `cp`; you can
-capture a torn write.
+capture a torn write. Keep the passphrase out of shell history by exporting
+`ARNE_BACKUP_PASSPHRASE` from a secret manager.
 
 ## Upgrades
 
