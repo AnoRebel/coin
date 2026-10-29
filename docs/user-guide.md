@@ -214,9 +214,18 @@ siblings with `arne.smt` (Python) or `internal/smt` (Go). A proof with
 
 ## 10. Batch payments
 
-A single transaction can contain up to 100 transfers. All items succeed or the
-whole batch rolls back. Payroll and scheduled runs are planned; today a batch
-is submitted as one signed `batch` transaction through the API.
+A single transaction can contain up to 100 transfers, submitted as one signed
+`batch` through the API.
+
+- `mode: "atomic"` (default): any failing item rolls back the whole batch, so
+  nothing moves.
+- `mode: "best_effort"`: each item is validated and applied on its own. Failed
+  items do not block the rest, and the receipt carries one `batch_item` event per
+  item with `index`, `success`, and, on failure, `code`.
+
+Best-effort batches are the payroll primitive: build the recipient list, submit
+once, then reconcile the `batch_item` events against the run. The fee is charged
+once for the transaction. Scheduled/recurring runs are still planned.
 
 ## 11. Recovery and key safety
 

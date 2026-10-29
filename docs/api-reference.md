@@ -184,7 +184,7 @@ where `body` is the envelope without signatures and with `v` as uint.
 | Type | Payload |
 | --- | --- |
 | `transfer` | `asset`, `to`, `amount`, optional `memo` (≤256 bytes) |
-| `batch` | `items`: 1–100 × `{asset, to, amount}` |
+| `batch` | `items`: 1–100 × `{asset, to, amount}`, optional `mode`: `atomic` (default) or `best_effort` |
 | `register_asset` | `asset`: full asset map without supply |
 | `create_escrow` | `asset`, `beneficiary`, `arbiter`, `amount`, `timeout` |
 | `release_escrow` | `id` — payer or arbiter anytime, beneficiary after `timeout` |
@@ -196,7 +196,10 @@ where `body` is the envelope without signatures and with `v` as uint.
 | `burn` | `asset`, `amount` (burnable policy only) |
 
 `amount` is always integer base units and must be > 0 where an amount is
-required. A batch is atomic: any failing item rolls back the whole transaction.
+required. An `atomic` batch rolls back entirely if any item fails. In a
+`best_effort` batch each item is validated and applied independently; failures
+are skipped and reported as `batch_item` events with `success: "false"` and a
+`code`, while successful items commit.
 
 ## JSON-RPC
 

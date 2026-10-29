@@ -534,17 +534,37 @@ class State:
             raise _err(INVALID_PAYLOAD, "items must be a non-empty array")
         if len(items) > self.params.max_batch_items:
             raise _err(LIMIT_EXCEEDED, f"batch above {self.params.max_batch_items} items")
+        mode = tx.payload.get("mode", "atomic")
+        if mode not in ("atomic", "best_effort"):
+            raise _err(INVALID_PAYLOAD, "mode must be atomic or best_effort")
         for index, item in enumerate(items):
             if not isinstance(item, dict):
-                raise _err(INVALID_PAYLOAD, f"item {index}")
-            asset = _payload_str(item, "asset")
-            to = _payload_str(item, "to")
-            amount = _payload_uint(item, "amount")
-            if amount == 0:
-                raise _err(INVALID_PAYLOAD, f"item {index} amount")
-            self._require_asset(asset)
-            self._require_address(to)
-            self._move(tx.signer, to, asset, amount, receipt)
+                if mode == "atomic":
+                    raise _err(INVALID_PAYLOAD, f"item {index}")
+                self._batch_result(receipt, index, INVALID_PAYLOAD)
+                continue
+            try:
+                self._exec_batch_item(tx.signer, item, receipt)
+            except (LedgerError, types.ValidationError, ValueError) as exc:
+                if mode == "atomic":
+                    raise
+                self._batch_result(receipt, index, _code_of(exc))
+                continue
+            self._event(receipt, "batch_item", index=index, success="true")
+
+    def _exec_batch_item(self, signer: str, item: dict, receipt: Receipt) -> None:
+        asset = _payload_str(item, "asset")
+        to = _payload_str(item, "to")
+        amount = _payload_uint(item, "amount")
+        if amount == 0:
+            raise _err(INVALID_PAYLOAD, "amount must be positive")
+        self._require_asset(asset)
+        self._require_address(to)
+        # Validate before moving so a failed item leaves no partial state.
+        self._move(signer, to, asset, amount, receipt)
+
+    def _batch_result(self, receipt: Receipt, index: int, code: str) -> None:
+        self._event(receipt, "batch_item", index=index, success="false", code=code)
 
     def _exec_register_asset(self, tx: Tx, now: int, receipt: Receipt) -> None:
         raw = tx.payload.get("asset")

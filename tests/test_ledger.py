@@ -230,6 +230,34 @@ def test_batch_is_atomic(f: Fixture) -> None:
     assert f.state.root() == root
 
 
+def test_best_effort_batch(f: Fixture) -> None:
+    receipt = f.apply(f.tx(f.alice, types.TX_BATCH, {
+        "mode": "best_effort",
+        "items": [
+            {"asset": NATIVE, "to": f.bob.address, "amount": 100_000_000},
+            {"asset": NATIVE, "to": f.carol.address, "amount": 2_000_000_000},
+            {"asset": NATIVE, "to": f.carol.address, "amount": 200_000_000},
+        ],
+    }, 0))
+    assert receipt.success
+    assert f.state.balance(f.bob.address, NATIVE) == 200_000_000
+    assert f.state.balance(f.carol.address, NATIVE) == 300_000_000
+    results = [e for e in receipt.events if e["type"] == "batch_item"]
+    assert len(results) == 3
+    failed = [e for e in results if e["attrs"]["success"] == "false"]
+    assert len(failed) == 1
+    assert failed[0]["attrs"]["code"] == ledger.INSUFFICIENT_FUNDS
+    f.state.check_all()
+
+
+def test_batch_unknown_mode(f: Fixture) -> None:
+    receipt = f.apply(f.tx(f.alice, types.TX_BATCH, {
+        "mode": "sometimes",
+        "items": [{"asset": NATIVE, "to": f.bob.address, "amount": 1}],
+    }, 0))
+    assert receipt.code == ledger.INVALID_PAYLOAD
+
+
 def test_foreign_fee_needs_route(f: Fixture) -> None:
     f.apply(f.tx(f.alice, types.TX_REGISTER_ASSET, {"asset": _register(f)}, 0))
     f.apply(f.tx(f.alice, types.TX_MINT, {"asset": "usd:devnet", "to": f.bob.address, "amount": 10_000}, 1))

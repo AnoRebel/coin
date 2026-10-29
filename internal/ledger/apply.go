@@ -341,37 +341,70 @@ func (s *State) execBatch(tx protocol.Tx, r *Receipt) error {
 	if len(items) > s.Params.MaxBatchItems {
 		return txErr(CodeLimitExceeded, "batch above %d items", s.Params.MaxBatchItems)
 	}
+	mode := "atomic"
+	if raw, ok := tx.Payload["mode"]; ok {
+		m, ok := raw.(string)
+		if !ok || (m != "atomic" && m != "best_effort") {
+			return txErr(CodeInvalidPayload, "mode must be atomic or best_effort")
+		}
+		mode = m
+	}
 	for i, rawItem := range items {
 		item, ok := rawItem.(map[string]any)
 		if !ok {
-			return txErr(CodeInvalidPayload, "item %d", i)
+			err := txErr(CodeInvalidPayload, "item %d", i)
+			if mode == "atomic" {
+				return err
+			}
+			s.batchResult(r, i, err)
+			continue
 		}
-		asset, err := payloadString(item, "asset")
+		err := s.execBatchItem(tx.Signer, item, r)
 		if err != nil {
-			return err
+			if mode == "atomic" {
+				return err
+			}
+			s.batchResult(r, i, err)
+			continue
 		}
-		to, err := payloadString(item, "to")
-		if err != nil {
-			return err
-		}
-		amount, err := payloadUint(item, "amount")
-		if err != nil {
-			return err
-		}
-		if amount == 0 {
-			return txErr(CodeInvalidPayload, "item %d amount", i)
-		}
-		if err := s.requireAsset(asset); err != nil {
-			return err
-		}
-		if err := s.requireAddress(to); err != nil {
-			return err
-		}
-		if err := s.move(tx.Signer, to, asset, amount, r); err != nil {
-			return err
-		}
+		r.Events = append(r.Events, Event{Type: "batch_item", Attrs: map[string]string{
+			"index": fmt.Sprint(i), "success": "true",
+		}})
 	}
 	return nil
+}
+
+// execBatchItem validates one item before moving value, so a failed item leaves
+// no partial state for a best-effort batch to continue from.
+func (s *State) execBatchItem(signer string, item map[string]any, r *Receipt) error {
+	asset, err := payloadString(item, "asset")
+	if err != nil {
+		return err
+	}
+	to, err := payloadString(item, "to")
+	if err != nil {
+		return err
+	}
+	amount, err := payloadUint(item, "amount")
+	if err != nil {
+		return err
+	}
+	if amount == 0 {
+		return txErr(CodeInvalidPayload, "amount must be positive")
+	}
+	if err := s.requireAsset(asset); err != nil {
+		return err
+	}
+	if err := s.requireAddress(to); err != nil {
+		return err
+	}
+	return s.move(signer, to, asset, amount, r)
+}
+
+func (s *State) batchResult(r *Receipt, index int, err error) {
+	r.Events = append(r.Events, Event{Type: "batch_item", Attrs: map[string]string{
+		"index": fmt.Sprint(index), "success": "false", "code": string(CodeOf(err)),
+	}})
 }
 
 func (s *State) execRegisterAsset(tx protocol.Tx, now uint64, r *Receipt) error {

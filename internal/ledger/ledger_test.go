@@ -403,6 +403,57 @@ func TestBatchAtomicity(t *testing.T) {
 	}
 }
 
+func TestBestEffortBatch(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	r := f.apply(t, f.tx(t, f.alice, protocol.TxBatch, map[string]any{
+		"mode": "best_effort",
+		"items": []any{
+			map[string]any{"asset": native, "to": f.bob.Address, "amount": uint64(100_000_000)},
+			map[string]any{"asset": native, "to": f.carol.Address, "amount": uint64(2_000_000_000)},
+			map[string]any{"asset": native, "to": f.carol.Address, "amount": uint64(200_000_000)},
+		},
+	}, 0))
+	if !r.Success {
+		t.Fatalf("best-effort batch failed: %+v", r)
+	}
+	if got := f.state.Balance(f.bob.Address, native); got != 200_000_000 {
+		t.Fatalf("bob balance = %d", got)
+	}
+	if got := f.state.Balance(f.carol.Address, native); got != 300_000_000 {
+		t.Fatalf("carol balance = %d", got)
+	}
+	results, failed := 0, 0
+	for _, e := range r.Events {
+		if e.Type == "batch_item" {
+			results++
+			if e.Attrs["success"] == "false" {
+				failed++
+				if e.Attrs["code"] != string(CodeInsufficientFunds) {
+					t.Fatalf("failure code = %q", e.Attrs["code"])
+				}
+			}
+		}
+	}
+	if results != 3 || failed != 1 {
+		t.Fatalf("results = %d, failed = %d", results, failed)
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBatchRejectsUnknownMode(t *testing.T) {
+	f := newFixture(t)
+	r := f.apply(t, f.tx(t, f.alice, protocol.TxBatch, map[string]any{
+		"mode":  "sometimes",
+		"items": []any{map[string]any{"asset": protocol.NativeAsset(testNet), "to": f.bob.Address, "amount": uint64(1)}},
+	}, 0))
+	if r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("unknown mode accepted: %+v", r)
+	}
+}
+
 func TestFeeInForeignAsset(t *testing.T) {
 	f := newFixture(t)
 	assetMap := map[string]any{

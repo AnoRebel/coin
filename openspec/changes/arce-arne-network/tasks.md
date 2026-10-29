@@ -104,7 +104,7 @@
 ## 10. Payments and messaging
 
 - [ ] 10.1 Implement payment intents with idempotency, expiry, receipt, and canonical links/QRs; verify duplicate and cross-network cases
-- [ ] 10.2 Implement batch and payroll runs with atomic and best-effort policies and per-item results; verify reconciliation
+- [x] 10.2 Implement batch and payroll runs with atomic and best-effort policies and per-item results; verify reconciliation
 - [ ] 10.3 Implement subscriptions/recurring authorizations with limits, expiry, and cancellation; verify over-limit and cancellation
 - [ ] 10.4 Implement refunds as linked new transfers with immutable history; verify reversal rejection
 - [ ] 10.5 Implement encrypted memos with size limits and public-memo warnings; verify decryption and oversize rejection
