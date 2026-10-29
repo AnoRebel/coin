@@ -187,8 +187,8 @@ where `body` is the envelope without signatures and with `v` as uint.
 | `batch` | `items`: 1–100 × `{asset, to, amount}` |
 | `register_asset` | `asset`: full asset map without supply |
 | `create_escrow` | `asset`, `beneficiary`, `arbiter`, `amount`, `timeout` |
-| `release_escrow` | `id` |
-| `refund_escrow` | `id` |
+| `release_escrow` | `id` — payer or arbiter anytime, beneficiary after `timeout` |
+| `refund_escrow` | `id` — payer after `timeout`, arbiter anytime |
 | `approve_allowance` | `spender`, `asset`, `amount`, optional `expires_at` |
 | `transfer_from` | `from`, `to`, `asset`, `amount` |
 | `revoke_allowance` | `spender`, `asset` |

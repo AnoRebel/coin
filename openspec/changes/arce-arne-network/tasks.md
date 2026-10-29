@@ -39,7 +39,7 @@
 - [x] 4.4 Implement atomic transfers with fee charging and rollback; verify success and every failure path leaves state unchanged
 - [ ] 4.5 Implement fee payment in ARCE and in registered assets with auto-conversion and slippage limits; verify fee-cap, no-route, and slippage vectors
 - [x] 4.6 Implement nonce ordering, expiration, replay rejection, and mempool replacement; verify duplicate and expired transactions fail
-- [ ] 4.7 Implement escrow with release, refund, arbiter, and timeout; verify double-release and unauthorized release fail
+- [x] 4.7 Implement escrow with release, refund, arbiter, and timeout; verify double-release and unauthorized release fail
 - [ ] 4.8 Implement bounded, revocable allowances; verify over-allowance and post-revocation transfers fail
 - [x] 4.9 Implement atomic batch transfers; verify one failing item rolls back the whole batch
 - [x] 4.10 Implement balance, supply, escrow, and burned queries with state proofs; verify inclusion and exclusion proofs

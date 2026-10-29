@@ -66,6 +66,11 @@ func (f *fixture) apply(t *testing.T, tx protocol.Tx) Receipt {
 	return f.state.ApplyTx(tx, 1_700_000_100, 1)
 }
 
+func (f *fixture) applyAt(t *testing.T, tx protocol.Tx, now uint64) Receipt {
+	t.Helper()
+	return f.state.ApplyTx(tx, now, 1)
+}
+
 func TestTransferAndFees(t *testing.T) {
 	f := newFixture(t)
 	native := protocol.NativeAsset(testNet)
@@ -181,6 +186,48 @@ func TestEscrowLifecycle(t *testing.T) {
 	}
 	if rr := f.apply(t, f.tx(t, f.carol, protocol.TxReleaseEscrow, map[string]any{"id": id}, 1)); rr.Success || rr.Code != CodeEscrowClosed {
 		t.Fatalf("double release: %+v", rr)
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEscrowTimeout(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	const timeout = uint64(1_700_000_200)
+	r := f.apply(t, f.tx(t, f.alice, protocol.TxCreateEscrow, map[string]any{
+		"asset": native, "amount": uint64(2_000_000), "beneficiary": f.bob.Address,
+		"arbiter": f.carol.Address, "timeout": timeout,
+	}, 0))
+	if !r.Success {
+		t.Fatalf("create escrow: %+v", r)
+	}
+	var id string
+	for _, e := range r.Events {
+		if e.Type == "escrow_created" {
+			id = e.Attrs["id"]
+		}
+	}
+
+	// Before expiry the payer cannot pull the funds back and the beneficiary
+	// cannot claim them.
+	if rr := f.applyAt(t, f.tx(t, f.alice, protocol.TxRefundEscrow, map[string]any{"id": id}, 1), timeout-50); rr.Success || rr.Code != CodeUnauthorized {
+		t.Fatalf("early payer refund: %+v", rr)
+	}
+	if rr := f.applyAt(t, f.tx(t, f.bob, protocol.TxReleaseEscrow, map[string]any{"id": id}, 0), timeout-50); rr.Success || rr.Code != CodeUnauthorized {
+		t.Fatalf("early beneficiary release: %+v", rr)
+	}
+
+	// After expiry the beneficiary may claim.
+	if rr := f.applyAt(t, f.tx(t, f.bob, protocol.TxReleaseEscrow, map[string]any{"id": id}, 0), timeout); !rr.Success {
+		t.Fatalf("beneficiary release after timeout: %+v", rr)
+	}
+	if got := f.state.Balance(f.bob.Address, native); got != 101_999_000 {
+		t.Fatalf("beneficiary balance = %d", got)
+	}
+	if rr := f.applyAt(t, f.tx(t, f.alice, protocol.TxRefundEscrow, map[string]any{"id": id}, 1), timeout); rr.Success || rr.Code != CodeEscrowClosed {
+		t.Fatalf("refund after release: %+v", rr)
 	}
 	if err := f.state.CheckAll(); err != nil {
 		t.Fatal(err)

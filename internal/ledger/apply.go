@@ -255,9 +255,9 @@ func (s *State) execute(tx protocol.Tx, now uint64, r *Receipt) error {
 	case protocol.TxCreateEscrow:
 		return s.execCreateEscrow(tx, now, r)
 	case protocol.TxReleaseEscrow:
-		return s.execCloseEscrow(tx, true, r)
+		return s.execCloseEscrow(tx, true, now, r)
 	case protocol.TxRefundEscrow:
-		return s.execCloseEscrow(tx, false, r)
+		return s.execCloseEscrow(tx, false, now, r)
 	case protocol.TxApprove:
 		return s.execApprove(tx, r)
 	case protocol.TxRevokeAllowance:
@@ -474,7 +474,7 @@ func (s *State) execCreateEscrow(tx protocol.Tx, now uint64, r *Receipt) error {
 	return nil
 }
 
-func (s *State) execCloseEscrow(tx protocol.Tx, release bool, r *Receipt) error {
+func (s *State) execCloseEscrow(tx protocol.Tx, release bool, now uint64, r *Receipt) error {
 	id, err := payloadString(tx.Payload, "id")
 	if err != nil {
 		return err
@@ -489,8 +489,15 @@ func (s *State) execCloseEscrow(tx protocol.Tx, release bool, r *Receipt) error 
 	if e.Status != protocol.EscrowOpen {
 		return txErr(CodeEscrowClosed, "escrow %q is %s", id, e.Status)
 	}
-	if tx.Signer != e.Arbiter && tx.Signer != e.Payer {
-		return txErr(CodeUnauthorized, "only payer or arbiter may close")
+	// The payer may release at any time, but may only reclaim after the
+	// timeout. The beneficiary may claim after it. The arbiter may always act.
+	switch {
+	case tx.Signer == e.Arbiter:
+	case release && tx.Signer == e.Payer:
+	case tx.Signer == e.Beneficiary && now >= e.Timeout:
+	case !release && tx.Signer == e.Payer && now >= e.Timeout:
+	default:
+		return txErr(CodeUnauthorized, "not allowed to close this escrow yet")
 	}
 	k := fmt.Sprintf(kEscrowAmt, e.Asset)
 	s.setUint(k, s.getUint(k)-e.Amount)

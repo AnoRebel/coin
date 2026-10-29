@@ -46,6 +46,9 @@ class Fixture:
     def apply(self, tx: types.Tx) -> ledger.Receipt:
         return self.state.apply_tx(tx, NOW, 1)
 
+    def apply_at(self, tx: types.Tx, now: int) -> ledger.Receipt:
+        return self.state.apply_tx(tx, now, 1)
+
 
 @pytest.fixture()
 def f() -> Fixture:
@@ -109,6 +112,23 @@ def test_escrow_lifecycle(f: Fixture) -> None:
     assert f.apply(f.tx(f.bob, types.TX_RELEASE_ESCROW, {"id": escrow_id}, 0)).code == ledger.UNAUTHORIZED
     assert f.apply(f.tx(f.carol, types.TX_RELEASE_ESCROW, {"id": escrow_id}, 0)).success
     assert f.apply(f.tx(f.carol, types.TX_RELEASE_ESCROW, {"id": escrow_id}, 1)).code == ledger.ESCROW_CLOSED
+    f.state.check_all()
+
+
+def test_escrow_timeout(f: Fixture) -> None:
+    timeout = 1_700_000_200
+    receipt = f.apply(f.tx(f.alice, types.TX_CREATE_ESCROW, {
+        "asset": NATIVE, "amount": 2_000_000, "beneficiary": f.bob.address,
+        "arbiter": f.carol.address, "timeout": timeout,
+    }, 0))
+    assert receipt.success, receipt.error
+    escrow_id = receipt.events[0]["attrs"]["id"]
+
+    assert f.apply_at(f.tx(f.alice, types.TX_REFUND_ESCROW, {"id": escrow_id}, 1), timeout - 50).code == ledger.UNAUTHORIZED
+    assert f.apply_at(f.tx(f.bob, types.TX_RELEASE_ESCROW, {"id": escrow_id}, 0), timeout - 50).code == ledger.UNAUTHORIZED
+    assert f.apply_at(f.tx(f.bob, types.TX_RELEASE_ESCROW, {"id": escrow_id}, 0), timeout).success
+    assert f.state.balance(f.bob.address, NATIVE) == 101_999_000
+    assert f.apply_at(f.tx(f.alice, types.TX_REFUND_ESCROW, {"id": escrow_id}, 1), timeout).code == ledger.ESCROW_CLOSED
     f.state.check_all()
 
 

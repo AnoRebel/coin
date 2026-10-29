@@ -126,8 +126,8 @@ The Python CLI derives the asset ID from `--symbol` and the network:
 
 ## 7. Escrow
 
-An escrow locks funds until the payer or arbiter releases them to the
-beneficiary, or refunds the payer. The ID is deterministic:
+An escrow locks funds until released to the beneficiary, refunded, or expired.
+The ID is deterministic:
 `esc_` plus the first 16 bytes of the SHA-256 of the canonical escrow fields.
 
 Create one with the example client (works against either node):
@@ -149,12 +149,17 @@ uv run python examples/python/client.py release --id esc_...
 Rules:
 
 - The amount leaves the payer's spendable balance immediately.
-- Only the payer or arbiter may close it.
+- The payer may release to the beneficiary at any time, but may only refund
+  after `timeout`.
+- The beneficiary may release after `timeout`.
+- The arbiter may release or refund at any time.
+- Anyone else, or any of these actions before its allowed time, gets
+  `UNAUTHORIZED` and no state change.
 - The closer must hold ARCE for the transaction fee. With no ARCE, the attempt
   fails with `INSUFFICIENT_FUNDS` before the escrow itself is examined.
 - Closing twice fails with `ESCROW_CLOSED`.
-- `timeout` is stored but not enforced by consensus yet; treat it as metadata
-  and close escrows explicitly. Automatic timeout refunds are planned.
+- Expiry does not move funds by itself; after `timeout` the beneficiary or payer
+  submits the release or refund. Automatic sweeping is planned.
 
 ## 8. Allowances (delegated spending)
 

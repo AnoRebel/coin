@@ -209,7 +209,6 @@ Search the tree for `shortcut:`:
 - failed transactions are free;
 - SMT leaf padding is O(256-depth) per leaf rather than a cached subtree hash;
 - Python persistence is file-based;
-- escrow timeouts are not enforced;
 - Python block production is time-driven and has no ABCI adapter;
 - the consensus app has no validator set, staking, or slashing logic (CometBFT
   holds a static validator set from genesis).

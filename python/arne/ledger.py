@@ -487,8 +487,8 @@ class State:
             types.TX_BATCH: self._exec_batch,
             types.TX_REGISTER_ASSET: lambda t, r: self._exec_register_asset(t, now, r),
             types.TX_CREATE_ESCROW: lambda t, r: self._exec_create_escrow(t, now, r),
-            types.TX_RELEASE_ESCROW: lambda t, r: self._exec_close_escrow(t, True, r),
-            types.TX_REFUND_ESCROW: lambda t, r: self._exec_close_escrow(t, False, r),
+            types.TX_RELEASE_ESCROW: lambda t, r: self._exec_close_escrow(t, True, now, r),
+            types.TX_REFUND_ESCROW: lambda t, r: self._exec_close_escrow(t, False, now, r),
             types.TX_APPROVE: self._exec_approve,
             types.TX_TRANSFER_FROM: self._exec_transfer_from,
             types.TX_REVOKE_ALLOWANCE: self._exec_revoke,
@@ -592,15 +592,22 @@ class State:
         ))
         self._event(receipt, "escrow_created", id=escrow_id, asset=asset, amount=amount)
 
-    def _exec_close_escrow(self, tx: Tx, release: bool, receipt: Receipt) -> None:
+    def _exec_close_escrow(self, tx: Tx, release: bool, now: int, receipt: Receipt) -> None:
         escrow_id = _payload_str(tx.payload, "id")
         escrow = self.escrow(escrow_id)
         if escrow is None:
             raise _err(ESCROW_NOT_FOUND, f"escrow {escrow_id!r}")
         if escrow.status != types.ESCROW_OPEN:
             raise _err(ESCROW_CLOSED, f"escrow {escrow_id!r} is {escrow.status}")
-        if tx.signer not in (escrow.arbiter, escrow.payer):
-            raise _err(UNAUTHORIZED, "only payer or arbiter may close")
+        # The payer may release at any time, but may only reclaim after the
+        # timeout. The beneficiary may claim after it. The arbiter may always act.
+        if not (
+            tx.signer == escrow.arbiter
+            or (release and tx.signer == escrow.payer)
+            or (tx.signer == escrow.beneficiary and now >= escrow.timeout)
+            or (not release and tx.signer == escrow.payer and now >= escrow.timeout)
+        ):
+            raise _err(UNAUTHORIZED, "not allowed to close this escrow yet")
         key = K_ESCROW_AMT % escrow.asset
         self._set_uint(key, self._get_uint(key) - escrow.amount)
         if release:
