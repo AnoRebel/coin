@@ -186,6 +186,29 @@ def test_asset_mint_permissions(f: Fixture) -> None:
     f.state.check_all()
 
 
+def test_asset_registration_validation(f: Fixture) -> None:
+    def asset(asset_class: str, decimals: int, meta: dict) -> dict:
+        return {
+            "id": "tzs:devnet", "class": asset_class, "symbol": "TZS",
+            "name": "Tanzanian Shilling", "decimals": decimals, "policy": "capped",
+            "max_supply": 1_000_000_000, "issuer": f.alice.address, "registered": 0,
+            "meta": meta,
+        }
+
+    def register(a: dict, nonce: int) -> ledger.Receipt:
+        return f.apply(f.tx(f.alice, types.TX_REGISTER_ASSET, {"asset": a}, nonce))
+
+    assert register(asset("currency", 2, {}), 0).code == ledger.INVALID_PAYLOAD
+    assert register(asset("fiat", 2, {"iso4217": "usd"}), 0).code == ledger.INVALID_PAYLOAD
+    assert register(asset("fiat", 2, {"iso17442": "short"}), 0).code == ledger.INVALID_PAYLOAD
+    assert register(asset("stablecoin", 2, {"iso4217": "TZS"}), 0).success
+    assert register(asset("fiat", 6, {"iso4217": "TZS"}), 1).code == ledger.ASSET_EXISTS
+
+    stored = f.state.asset("tzs:devnet")
+    assert stored is not None
+    assert stored.decimals == 2 and stored.asset_class == "stablecoin"
+
+
 def test_supply_cap_enforced(f: Fixture) -> None:
     asset = _register(f) | {
         "id": "cap:devnet", "symbol": "CAP", "decimals": 0, "max_supply": 1000,

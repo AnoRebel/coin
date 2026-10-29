@@ -86,9 +86,18 @@ type Asset struct {
 }
 
 var assetClasses = map[string]bool{
-	"native": true, "fiat": true, "crypto": true,
-	"commodity": true, "security": true, "point": true,
+	"native": true, "fiat": true, "crypto": true, "stablecoin": true,
+	"commodity": true, "security": true, "point": true, "other": true,
 }
+
+// Standards metadata keys and their shapes. Unknown keys are ignored so that
+// issuers can attach their own references without a protocol change.
+var (
+	reISO4217  = regexp.MustCompile(`^[A-Z]{3}$`)
+	reISO24165 = regexp.MustCompile(`^[A-Z0-9]{9,32}$`)
+	reISO17442 = regexp.MustCompile(`^[A-Z0-9]{20}$`)
+	reUCUM     = regexp.MustCompile(`^[A-Za-z0-9\[\]{}._/%-]+$`)
+)
 
 var supplyPolicies = map[string]bool{
 	"fixed": true, "capped": true, "mintable": true, "burnable": true,
@@ -121,6 +130,13 @@ func (a Asset) Validate(network string) error {
 	}
 	if a.Class == "native" && a.ID != NativeAsset(network) {
 		return fmt.Errorf("%w: native asset id must be %s", ErrValidation, NativeAsset(network))
+	}
+	for key, re := range map[string]*regexp.Regexp{
+		"iso4217": reISO4217, "iso24165": reISO24165, "iso17442": reISO17442, "ucum": reUCUM,
+	} {
+		if v, ok := a.Metadata[key]; ok && !re.MatchString(v) {
+			return fmt.Errorf("%w: malformed %s metadata %q", ErrValidation, key, v)
+		}
 	}
 	return nil
 }

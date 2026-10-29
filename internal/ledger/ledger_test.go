@@ -325,6 +325,41 @@ func TestAssetIssueMintBurn(t *testing.T) {
 	}
 }
 
+func TestAssetRegistrationValidation(t *testing.T) {
+	f := newFixture(t)
+	asset := func(id, class string, decimals uint64, meta map[string]any) map[string]any {
+		return map[string]any{
+			"id": id, "class": class, "symbol": "TZS", "name": "Tanzanian Shilling",
+			"decimals": decimals, "policy": "capped", "max_supply": uint64(1_000_000_000),
+			"issuer": f.alice.Address, "registered": uint64(0), "meta": meta,
+		}
+	}
+	register := func(a map[string]any, nonce uint64) Receipt {
+		return f.apply(t, f.tx(t, f.alice, protocol.TxRegisterAsset, map[string]any{"asset": a}, nonce))
+	}
+
+	if r := register(asset("tzs:devnet", "currency", 2, map[string]any{}), 0); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("unknown class accepted: %+v", r)
+	}
+	if r := register(asset("tzs:devnet", "fiat", 2, map[string]any{"iso4217": "usd"}), 0); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("malformed ISO 4217 accepted: %+v", r)
+	}
+	if r := register(asset("tzs:devnet", "fiat", 2, map[string]any{"iso17442": "short"}), 0); r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("malformed LEI accepted: %+v", r)
+	}
+	if r := register(asset("tzs:devnet", "stablecoin", 2, map[string]any{"iso4217": "TZS"}), 0); !r.Success {
+		t.Fatalf("valid registration: %+v", r)
+	}
+	// Re-registering the same ID cannot change precision or class.
+	if r := register(asset("tzs:devnet", "fiat", 6, map[string]any{"iso4217": "TZS"}), 1); r.Success || r.Code != CodeAssetExists {
+		t.Fatalf("duplicate accepted: %+v", r)
+	}
+	got, ok, err := f.state.Asset("tzs:devnet")
+	if err != nil || !ok || got.Decimals != 2 || got.Class != "stablecoin" {
+		t.Fatalf("asset mutated: %+v %v %v", got, ok, err)
+	}
+}
+
 func TestSupplyCapEnforced(t *testing.T) {
 	f := newFixture(t)
 	assetMap := map[string]any{

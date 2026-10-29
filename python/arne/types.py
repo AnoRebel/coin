@@ -41,7 +41,18 @@ _ASSET_ID_RE = re.compile(r"^[a-z][a-z0-9]{1,15}:[a-z0-9][a-z0-9/-]{0,63}$")
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9]{1,15}$")
 _ADDR_RE = re.compile(r"^arce(-testnet|-devnet|-consortium)?1[02-9ac-hj-np-z]{38,60}$")
 
-ASSET_CLASSES = {"native", "fiat", "crypto", "commodity", "security", "point"}
+ASSET_CLASSES = {
+    "native", "fiat", "crypto", "stablecoin", "commodity", "security", "point", "other",
+}
+
+# Standards metadata keys and their shapes. Unknown keys are ignored so issuers
+# can attach their own references without a protocol change.
+_META_PATTERNS = {
+    "iso4217": re.compile(r"^[A-Z]{3}$"),
+    "iso24165": re.compile(r"^[A-Z0-9]{9,32}$"),
+    "iso17442": re.compile(r"^[A-Z0-9]{20}$"),
+    "ucum": re.compile(r"^[A-Za-z0-9\[\]{}._/%-]+$"),
+}
 SUPPLY_POLICIES = {"fixed", "capped", "mintable", "burnable"}
 
 
@@ -117,6 +128,10 @@ class Asset:
             raise ValidationError("policy requires max_supply")
         if self.asset_class == "native" and self.id != native_asset(network):
             raise ValidationError("native asset id")
+        for key, pattern in _META_PATTERNS.items():
+            value = self.metadata.get(key)
+            if value is not None and not pattern.match(value):
+                raise ValidationError(f"malformed {key} metadata {value!r}")
 
     def to_cbor(self) -> dict[str, Any]:
         return {

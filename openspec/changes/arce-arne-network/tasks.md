@@ -33,7 +33,7 @@
 
 ## 4. Asset ledger and account state
 
-- [ ] 4.1 Implement asset registration with canonical IDs, classes, decimals, ISO 4217/24165/LEI metadata, and immutable identity; verify valid and invalid registration vectors
+- [x] 4.1 Implement asset registration with canonical IDs, classes, decimals, ISO 4217/24165/LEI metadata, and immutable identity; verify valid and invalid registration vectors
 - [x] 4.2 Implement supply policies (`fixed`, `capped`, `mintable`, `burnable`) and conservation checks; verify cap, fixed-supply, and burn vectors
 - [x] 4.3 Implement account state with per-asset balances, nonce, authorization policy, and account creation; verify independent balances and overspend rejection
 - [x] 4.4 Implement atomic transfers with fee charging and rollback; verify success and every failure path leaves state unchanged

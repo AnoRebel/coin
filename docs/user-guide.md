@@ -114,6 +114,21 @@ Policies:
 | `mintable` | Issuer may mint without a cap |
 | `burnable` | Holders may burn their own balance |
 
+Classes: `fiat`, `crypto`, `stablecoin`, `commodity`, `security`, `point`, or
+`other`. Optional standards metadata is carried in the asset map:
+
+| Key | Standard | Shape |
+| --- | --- | --- |
+| `iso4217` | Currency code | three uppercase letters, e.g. `TZS` |
+| `iso24165` | Digital token identifier | 9–32 uppercase alphanumerics |
+| `iso17442` | Legal entity identifier | 20 uppercase alphanumerics |
+| `ucum` | Unit code | UCUM characters, e.g. `kg` |
+
+Malformed known keys and unknown classes are rejected with `INVALID_PAYLOAD`.
+The identifier, class, decimals, and issuer are fixed at registration; a second
+registration of the same ID fails with `ASSET_EXISTS`, so precision can never
+silently change. Unknown metadata keys are stored as opaque strings.
+
 Only the issuer recorded at registration may mint. `burn` requires the asset
 policy to allow it. Listing:
 
