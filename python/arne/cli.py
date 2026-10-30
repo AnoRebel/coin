@@ -98,10 +98,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
     funder = keypair_from_mnemonic(mnemonic, "", 0, 0, 0, network)
     faucet = keypair_from_mnemonic(mnemonic, "", 0, 0, 1, network)
     store = MemoryStore() if args.ephemeral else FileStore(args.data_dir)
+    seed = None
+    if args.webhook:
+        try:
+            seed = bytes.fromhex(args.webhook_key)
+        except ValueError:
+            seed = b""
+        if len(seed) != 32:
+            raise SystemExit("--webhook-key must be 32 bytes of hex when --webhook is set")
     config = Config(
         network=network, chain=chain, params=ledger.default_params(),
         proposer=funder.address, faucet=faucet,
         faucet_amount=100 * 100_000_000, devnet=True,
+        webhooks=args.webhook, webhook_seed=seed,
     )
     node = Node.open(config, devnet_genesis(network, int(time.time()), funder, faucet), store)
     if generated:
@@ -111,6 +120,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         f"network:  {network}\nchain:    {chain}\nfunder:   {funder.address}\n"
         f"faucet:   {faucet.address}\napi:      http://{args.listen.replace('0.0.0.0', '127.0.0.1')}"
     )
+    if args.webhook:
+        print(f"webhooks: {len(args.webhook)} endpoint(s), signing key {node.webhook_public_key}")
 
     from .api import ApiConfig, create_app
 
@@ -140,7 +151,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     host, _, port = args.listen.rpartition(":")
-    uvicorn.run(app, host=host or "127.0.0.1", port=int(port), log_level=args.log_level)
+    try:
+        uvicorn.run(app, host=host or "127.0.0.1", port=int(port), log_level=args.log_level)
+    finally:
+        node.close_webhooks()
     return 0
 
 
@@ -388,6 +402,17 @@ def cmd_uri_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_webhook_keygen(args: argparse.Namespace) -> int:
+    import secrets
+
+    from . import webhook as webhook_codec
+
+    seed = secrets.token_bytes(32)
+    signer = webhook_codec.Signer(seed)
+    print(f"seed:       {seed.hex()}\npublic_key: {signer.public_key}")
+    return 0
+
+
 def cmd_faucet(args: argparse.Namespace) -> int:
     result = _post(args.url, "/v1/faucet", {"address": args.address})
     print(result["hash"])
@@ -434,6 +459,8 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--api-key", action="append", default=[], help="key=read,write[,admin]")
     serve.add_argument("--allow-origin", action="append", default=[], help="CORS origin")
     serve.add_argument("--rate-limit", type=int, default=200, help="requests per second per IP")
+    serve.add_argument("--webhook", action="append", default=[], help="webhook endpoint URL")
+    serve.add_argument("--webhook-key", default="", help="hex Ed25519 seed for webhooks")
     serve.set_defaults(func=cmd_serve)
 
     devnet = sub.add_parser("devnet", help="alias for serve with devnet settings")
@@ -447,6 +474,8 @@ def build_parser() -> argparse.ArgumentParser:
     devnet.add_argument("--api-key", action="append", default=[], help="key=read,write[,admin]")
     devnet.add_argument("--allow-origin", action="append", default=[], help="CORS origin")
     devnet.add_argument("--rate-limit", type=int, default=200, help="requests per second per IP")
+    devnet.add_argument("--webhook", action="append", default=[], help="webhook endpoint URL")
+    devnet.add_argument("--webhook-key", default="", help="hex Ed25519 seed for webhooks")
     devnet.set_defaults(func=cmd_serve)
 
     wallet = sub.add_parser("wallet", help="offline key management")
@@ -540,6 +569,11 @@ def build_parser() -> argparse.ArgumentParser:
     uri_build.add_argument("--memo", default="")
     uri_build.add_argument("--expires", type=int, default=0)
     uri_build.set_defaults(func=cmd_uri_build)
+
+    webhook = sub.add_parser("webhook", help="webhook signing keys")
+    webhook_sub = webhook.add_subparsers(dest="webhook_command", required=True)
+    webhook_keygen = webhook_sub.add_parser("keygen", help="generate a signing seed")
+    webhook_keygen.set_defaults(func=cmd_webhook_keygen)
 
     faucet = sub.add_parser("faucet", help="request devnet funds")
     faucet.add_argument("--address", required=True)

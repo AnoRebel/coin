@@ -17,6 +17,7 @@ Protocol `arne/1`, API `v1`, transaction version `1`.
 | GET | `/v1/health` | `200 {"status":"ok","height":N}`; `503` with `"status":"halted"` |
 | GET | `/v1/version` | `{"protocol":"arne/1","tx_version":1,"api":"v1","cbor":"deterministic","state":"smt-sha256"}` |
 | GET | `/v1/status` | Node status |
+| GET | `/v1/webhooks/key` | `{"algorithm":"ed25519","public_key":"…"}`, or `404 NOT_FOUND` when webhooks are disabled |
 
 `/v1/status` response:
 
@@ -143,6 +144,28 @@ data: {"type":"block","height":7,"time":…,"hash":"…","tx_hashes":["…"]}
 ```
 
 Replay covers the last 1,000 blocks. Python also accepts `from_height`.
+
+### Webhook deliveries
+
+With `--webhook` configured, the node POSTs one signed event per finalized
+transaction. Delivery is at-least-once; retries reuse `delivery_id`.
+
+```
+POST /your-endpoint
+Content-Type: application/json
+X-Arne-Delivery: 9f0c…            (stable across retries)
+X-Arne-Timestamp: 1793151119
+X-Arne-Signature: <hex Ed25519>
+
+{"delivery_id":"9f0c…","type":"transaction","created_at":1793151119,
+ "data":{"block_height":42,"block_hash":"…","time":1793151118,
+         "receipt":{"hash":"…","success":true,"fee":1000,"events":[…]}}}
+```
+
+The signature covers `<timestamp>\n<body>`. Reject timestamps outside 5 minutes
+and deduplicate `X-Arne-Delivery`. 2xx acknowledges; 429/5xx retry with
+exponential backoff (5 attempts); other 4xx are final. The queue holds 256
+events; overload drops new events, so reconcile from the chain after downtime.
 
 ### Writes
 
@@ -280,6 +303,6 @@ on every `check_tx`; proposal building keeps the same nonce rule.
 
 ## Not implemented
 
-Idempotency keys, WebSocket, signed webhooks, pagination cursors beyond
-`before`/`cursor`, OIDC/JWT, mTLS, message/channel APIs, contract APIs, and
-shielded APIs. They appear in the OpenSpec change, not in this server.
+Idempotency keys, WebSocket, pagination cursors beyond `before`/`cursor`,
+OIDC/JWT, mTLS, message/channel APIs, contract APIs, and shielded APIs. They
+appear in the OpenSpec change, not in this server.

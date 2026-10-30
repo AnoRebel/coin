@@ -279,6 +279,13 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
     def key_proof(key: str) -> dict[str, Any]:
         return proof_view(node.proof(key))
 
+    @app.get("/v1/webhooks/key")
+    def webhook_key() -> dict[str, str]:
+        key = node.webhook_public_key
+        if not key:
+            raise ApiError(404, "NOT_FOUND", "webhooks disabled")
+        return {"algorithm": "ed25519", "public_key": key}
+
     @app.get("/v1/events")
     def events(
         request: Request, from_height: int = 0, from_: int = Query(0, alias="from")

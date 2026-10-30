@@ -71,6 +71,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/blocks/:height", s.getBlock)
 	e.GET("/v1/transactions/:hash", s.getTx)
 	e.GET("/v1/events", s.events)
+	e.GET("/v1/webhooks/key", s.webhookKey)
 	e.GET("/v1/proofs/*", s.keyProof)
 
 	e.POST("/v1/transactions", s.submitTx, s.require("write"))
@@ -429,6 +430,14 @@ func (s *Server) faucet(c *echo.Context) error {
 		return mapLedgerError(err)
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{"hash": hash})
+}
+
+func (s *Server) webhookKey(c *echo.Context) error {
+	key := s.node.WebhookPublicKey()
+	if key == "" {
+		return apiErr(http.StatusNotFound, "NOT_FOUND", "webhooks disabled")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"algorithm": "ed25519", "public_key": key})
 }
 
 // --- SSE ---

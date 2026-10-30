@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -30,6 +31,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/preview"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
+	"github.com/anorebel/anorebelcoin/internal/webhook"
 )
 
 const version = "0.1.0"
@@ -50,7 +52,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
 		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
-		backupCmd(), restoreCmd())
+		webhookCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
@@ -62,6 +64,42 @@ func versionCmd() *cobra.Command {
 			fmt.Printf("arned %s (protocol arne/1)\n", version)
 		},
 	}
+}
+
+// webhookSeed validates --webhook-key when endpoints are configured.
+func webhookSeed(urls []string, keyHex string) ([]byte, error) {
+	if len(urls) == 0 {
+		return nil, nil
+	}
+	seed, err := hex.DecodeString(keyHex)
+	if err != nil || len(seed) != 32 {
+		return nil, errors.New("--webhook-key must be 32 bytes of hex when --webhook is set")
+	}
+	return seed, nil
+}
+
+func webhookCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "webhook",
+		Short: "Webhook signing keys",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "keygen",
+		Short: "Generate a webhook signing seed and public key",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			seed := make([]byte, 32)
+			if _, err := rand.Read(seed); err != nil {
+				return err
+			}
+			signer, err := webhook.NewSigner(seed)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("seed:       %s\npublic_key: %s\n", hex.EncodeToString(seed), signer.PublicKey())
+			return nil
+		},
+	})
+	return cmd
 }
 
 func devnetCmd() *cobra.Command {
@@ -76,6 +114,8 @@ func devnetCmd() *cobra.Command {
 		allowedOrigins []string
 		rateLimit      int
 		keepBlocks     uint64
+		webhookURLs    []string
+		webhookKey     string
 	)
 	cmd := &cobra.Command{
 		Use:   "devnet",
@@ -113,13 +153,22 @@ func devnetCmd() *cobra.Command {
 				}
 			}
 			defer store.Close()
+			seed, err := webhookSeed(webhookURLs, webhookKey)
+			if err != nil {
+				return err
+			}
 			n, err := node.New(node.Config{
 				Network: network, Chain: chain, Params: ledger.DefaultParams(),
 				Proposer: funder.Address, Faucet: faucetKP, FaucetAmount: 100_000_000_00,
 				Devnet: true, BlockInterval: interval,
+				Webhooks: webhookURLs, WebhookSeed: seed,
 			}, node.DevnetGenesis(network, uint64(time.Now().Unix()), funder, faucetKP), store)
 			if err != nil {
 				return err
+			}
+			defer n.CloseWebhooks()
+			if len(webhookURLs) > 0 {
+				fmt.Printf("webhooks: %d endpoint(s), signing key %s\n", len(webhookURLs), n.WebhookPublicKey())
 			}
 			if generated {
 				fmt.Println("Generated devnet mnemonic (write it down):")
@@ -181,6 +230,8 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&allowedOrigins, "allow-origin", nil, "CORS origin to allow (repeatable)")
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 200, "requests per second per IP (0 disables)")
 	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N blocks (0 archives all)")
+	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
+	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
 	return cmd
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/smt"
 	"github.com/anorebel/anorebelcoin/internal/storage"
+	"github.com/anorebel/anorebelcoin/internal/webhook"
 )
 
 // Config configures a node.
@@ -28,6 +29,10 @@ type Config struct {
 	// KeepBlocks keeps the newest N blocks and prunes older ones; 0 archives
 	// all blocks.
 	KeepBlocks uint64
+	// Webhooks delivers signed transaction notifications to these URLs.
+	Webhooks []string
+	// WebhookSeed is the 32-byte Ed25519 seed used to sign webhook bodies.
+	WebhookSeed []byte
 }
 
 // Event is a broadcast block notification.
@@ -50,6 +55,7 @@ type Node struct {
 	receipts map[string]ledger.Receipt
 	blocks   map[uint64]ledger.Block
 	subs     map[chan Event]struct{}
+	webhooks *webhook.Dispatcher
 	halted   string
 
 	// submit and mempoolSize let an external consensus engine own block
@@ -84,6 +90,9 @@ func New(cfg Config, genesis ledger.Genesis, store storage.Store) (*Node, error)
 		if err := n.loadBlocks(); err != nil {
 			return nil, err
 		}
+		if err := n.startWebhooks(); err != nil {
+			return nil, err
+		}
 		return n, nil
 	}
 	s, err := ledger.NewGenesis(genesis)
@@ -94,7 +103,42 @@ func New(cfg Config, genesis ledger.Genesis, store storage.Store) (*Node, error)
 	if err := store.SaveState(0, s.Snapshot()); err != nil {
 		return nil, err
 	}
+	if err := n.startWebhooks(); err != nil {
+		return nil, err
+	}
 	return n, nil
+}
+
+func (n *Node) startWebhooks() error {
+	if len(n.cfg.Webhooks) == 0 {
+		return nil
+	}
+	signer, err := webhook.NewSigner(n.cfg.WebhookSeed)
+	if err != nil {
+		return err
+	}
+	d, err := webhook.New(webhook.Config{Endpoints: n.cfg.Webhooks, Signer: signer})
+	if err != nil {
+		return err
+	}
+	d.Start()
+	n.webhooks = d
+	return nil
+}
+
+// WebhookPublicKey returns the key receivers pin, or empty when disabled.
+func (n *Node) WebhookPublicKey() string {
+	if n.webhooks == nil {
+		return ""
+	}
+	return n.webhooks.PublicKey()
+}
+
+// CloseWebhooks drains queued deliveries. Call after the API server stops.
+func (n *Node) CloseWebhooks() {
+	if n.webhooks != nil {
+		n.webhooks.Close()
+	}
 }
 
 func (n *Node) loadBlocks() error {
@@ -390,6 +434,7 @@ func (n *Node) CommitBlock() error {
 		Type: "block", Height: b.Height, Time: b.Time,
 		Hash: mustHash(*b), TxHashes: b.TxHashes,
 	})
+	n.dispatchReceipts(*b, b.Receipts)
 	return nil
 }
 
@@ -438,7 +483,22 @@ func (n *Node) ProduceBlock(now uint64) (ledger.Block, error) {
 		Type: "block", Height: block.Height, Time: block.Time,
 		Hash: mustHash(block), TxHashes: block.TxHashes,
 	})
+	n.dispatchReceipts(block, receipts)
 	return block, nil
+}
+
+// dispatchReceipts queues one signed webhook per transaction. Enqueue never
+// blocks; a full queue drops events and receivers reconcile from the chain.
+func (n *Node) dispatchReceipts(b ledger.Block, receipts []ledger.Receipt) {
+	if n.webhooks == nil {
+		return
+	}
+	hash := mustHash(b)
+	for _, receipt := range receipts {
+		n.webhooks.Enqueue("transaction", map[string]any{
+			"block_height": b.Height, "block_hash": hash, "time": b.Time, "receipt": receipt,
+		})
+	}
 }
 
 // selectTxs picks executable transactions in canonical order.

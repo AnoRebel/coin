@@ -45,6 +45,8 @@ func startCmd() *cobra.Command {
 		allowedOrigins []string
 		rateLimit      int
 		keepBlocks     uint64
+		webhookURLs    []string
+		webhookKey     string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -98,6 +100,10 @@ func startCmd() *cobra.Command {
 			}
 
 			var faucet *protocol.KeyPair
+			seed, err := webhookSeed(webhookURLs, webhookKey)
+			if err != nil {
+				return err
+			}
 			class, err := protocol.NetworkClass(appGenesis.Network)
 			if err != nil {
 				return err
@@ -112,10 +118,14 @@ func startCmd() *cobra.Command {
 			n, err := node.New(node.Config{
 				Network: appGenesis.Network, Chain: appGenesis.Chain, Params: appGenesis.Params,
 				Faucet: faucet, FaucetAmount: 10_000_000_000, Devnet: devnet,
-				KeepBlocks: keepBlocks,
+				KeepBlocks: keepBlocks, Webhooks: webhookURLs, WebhookSeed: seed,
 			}, appGenesis, store)
 			if err != nil {
 				return err
+			}
+			defer n.CloseWebhooks()
+			if len(webhookURLs) > 0 {
+				fmt.Printf("webhooks: %d endpoint(s), signing key %s\n", len(webhookURLs), n.WebhookPublicKey())
 			}
 
 			pv, err := cmtprivval.LoadOrGenFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile(), nil)
@@ -195,6 +205,8 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&allowedOrigins, "allow-origin", nil, "CORS origin to allow (repeatable)")
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 200, "requests per second per IP (0 disables)")
 	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N ledger blocks (0 archives all)")
+	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
+	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
 	return cmd
 }
 

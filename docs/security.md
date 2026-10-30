@@ -74,6 +74,10 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
   signing, and memos are rendered as inert text with a warning on markup. A URI
   never overrides an explicit amount, recipient, or network; conflicts are
   refused.
+- Webhook deliveries are signed with Ed25519 over the timestamp and body.
+  Receivers must verify `X-Arne-Signature`, reject timestamps outside five
+  minutes, and deduplicate `X-Arne-Delivery`; otherwise a captured delivery can
+  be replayed. The signing seed is a secret: anyone holding it can forge events.
 - The node does not require KYC and stores no PII. If you build a compliance
   layer, keep PII off-chain and store only commitments or verifiable credentials.
 - Telemetry: none is collected by the node. Reverse proxies and hosting providers

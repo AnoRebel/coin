@@ -158,14 +158,51 @@ requirements are the operator's responsibility today.
 
 ## 9. Webhooks and connectors
 
-Signed webhooks, ISO 20022 (`pacs.008`, `camt.053`, `pain.001`), ILPv4/Open
-Payments, and EVM bridging are **specified but not implemented**. Do not build
-against them yet. The connector interface is defined in the OpenSpec change so
-the shape is stable, but there is no runtime.
+Signed webhooks are implemented. Enable them on the node with `--webhook <url>`
+and `--webhook-key <64-hex-seed>`; generate a key with `arned webhook keygen`.
+Each finalized transaction produces one signed JSON event, retried up to five
+times with backoff on 429/5xx. Delivery is at-least-once, so deduplicate
+`delivery_id`.
 
-For now, integrate by polling/SSE and a reconciliation job keyed by transaction
-hash. A transaction hash is unique per signed transaction and is the safest
-external reference.
+The receiver fetches the public key from `GET /v1/webhooks/key` (or pins the key
+printed at startup), then verifies the Ed25519 signature over
+`<X-Arne-Timestamp>\n<body>` and rejects timestamps outside five minutes:
+
+Go:
+
+```go
+id, err := arne.VerifyWebhookRequest(r.Header, body, publicKey, time.Now(), 5*time.Minute)
+if err != nil {
+    http.Error(w, "bad signature", http.StatusUnauthorized)
+    return
+}
+if seen(id) {
+    w.WriteHeader(http.StatusOK) // deduplicate retries
+    return
+}
+```
+
+Python:
+
+```python
+from arne import webhook
+
+delivery = webhook.verify_request(request.headers, body, public_key)
+if delivery in seen:
+    return Response(status_code=200)
+```
+
+The `transaction` event body contains the block height/hash and the full receipt,
+including `transfer` events. Filter on receipt events instead of assuming every
+transaction is a payment.
+
+ISO 20022 (`pacs.008`, `camt.053`, `pain.001`), ILPv4/Open Payments, and EVM
+bridging remain **specified but not implemented**. The connector interface is
+defined in the OpenSpec change so the shape is stable, but there is no runtime.
+
+For text notifications without webhooks, poll or use SSE and reconcile by
+transaction hash. A transaction hash is unique per signed transaction and is the
+safest external reference.
 
 ## 10. Error handling
 

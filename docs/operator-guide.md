@@ -48,6 +48,8 @@ Flags:
 | `--allow-origin` | none | Repeatable CORS allowlist entry |
 | `--rate-limit` | 200 | Requests/second per IP; 0 disables |
 | `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
+| `--webhook` | none | Repeatable webhook endpoint URL |
+| `--webhook-key` | none | Hex Ed25519 seed used to sign webhook bodies; required with `--webhook` |
 
 There is **no config file and no environment-variable config** yet. Flags are
 the whole surface. Keep a unit file or Compose file as the source of truth.
@@ -83,6 +85,8 @@ Flags beyond the `devnet` set:
 | `--data-dir` | `<home>/app` | Pebble directory for ledger blocks/state |
 | `--ephemeral` | false | Temporary home plus in-memory ledger |
 | `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
+| `--webhook` | none | Repeatable webhook endpoint URL |
+| `--webhook-key` | none | Hex Ed25519 seed used to sign webhook bodies |
 
 Layout under `--home`: `config/genesis.json`, `config/priv_validator_key.json`,
 `config/node_key.json`, `data/` (CometBFT blockstore/state), and `app/` (Pebble).
@@ -191,6 +195,37 @@ Pruning only touches the app's Pebble store. CometBFT's own blockstore under
 `<home>/data/` still retains everything; there is no CometBFT pruning command
 or snapshot sync yet. Back up before changing `--keep-blocks`, because lowering
 the window is irreversible.
+
+## Signed webhooks
+
+Enable delivery per endpoint with a stable signing key:
+
+```sh
+arned webhook keygen                 # prints seed and public key; store the seed
+arned devnet --webhook https://ops.example/arne \
+  --webhook-key <64-hex-seed>
+```
+
+Every finalized transaction is delivered as a JSON `transaction` event. The
+event body carries `delivery_id`, `type`, `created_at`, and `data` with the
+block height/hash and full receipt. Retries reuse the same `delivery_id`, so a
+receiver can deduplicate; each attempt is signed with a fresh timestamp.
+
+Delivery is at-least-once. A 2xx response acknowledges; 429 and 5xx are retried
+with exponential backoff up to 5 attempts. Other 4xx responses are not retried.
+The in-memory queue holds 256 events and drops new events when full; receivers
+should reconcile from the chain after downtime.
+
+Verify deliveries with the published key:
+
+- `GET /v1/webhooks/key` returns `{"algorithm":"ed25519","public_key":"<hex>"}`.
+- Headers: `X-Arne-Delivery`, `X-Arne-Timestamp`, `X-Arne-Signature`.
+- The signature is Ed25519 over `<timestamp>\n<body>`; reject timestamps more
+  than 5 minutes from local time and deduplicate `X-Arne-Delivery`.
+
+The key is printed at startup and served by the API, so receivers do not need
+out-of-band distribution. Keep the seed secret: anyone holding it can forge
+deliveries.
 
 ## Upgrades
 

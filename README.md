@@ -25,6 +25,7 @@ pool, messaging, compliance connectors, and the web console are specified but
 | Encrypted memos (opt-in) | Implemented (Go + Python) |
 | `arce:`/`arne:` payment URIs | Implemented (Go + Python) |
 | Pre-signing preview + lookalike/unknown-asset warnings | Implemented (Go + Python) |
+| Signed webhooks with retries + replay protection | Implemented (Go + Python) |
 | Blocks, deterministic ordering, receipts | Implemented (Go + Python) |
 | REST `/v1`, JSON-RPC 2.0, SSE, API keys | Implemented (Go + Python) |
 | Single-node devnet + faucet + CLI | Implemented (Go + Python) |

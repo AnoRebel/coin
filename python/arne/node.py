@@ -18,6 +18,7 @@ from queue import Full, Queue
 from typing import Protocol
 
 from . import cbor, ledger, types
+from . import webhook as webhook_codec
 from .keys import KeyPair
 
 PROTOCOL_VERSION = "arne/1"
@@ -34,6 +35,8 @@ class Config:
     faucet: KeyPair | None = None
     faucet_amount: int = 100 * 100_000_000  # 100 ARCE
     devnet: bool = False
+    webhooks: list[str] = field(default_factory=list)
+    webhook_seed: bytes | None = None
 
 
 @dataclass
@@ -178,6 +181,14 @@ class Node:
         self.blocks: dict[int, ledger.Block] = {}
         self._subscribers: list[Queue[Event]] = []
         self.halted = ""
+        self.webhook_dispatcher: webhook_codec.Dispatcher | None = None
+        if cfg.webhooks:
+            if cfg.webhook_seed is None:
+                raise ValueError("webhooks require a 32-byte signing seed")
+            self.webhook_dispatcher = webhook_codec.Dispatcher(webhook_codec.Config(
+                endpoints=cfg.webhooks, signer=webhook_codec.Signer(cfg.webhook_seed),
+            ))
+            self.webhook_dispatcher.start()
         self._load_blocks()
 
     @classmethod
@@ -299,7 +310,28 @@ class Node:
                 type="block", height=block.height, time=block.time,
                 hash=block.hash(), tx_hashes=list(block.tx_hashes),
             ))
+            self._dispatch_receipts(block, receipts)
             return block
+
+    def _dispatch_receipts(self, block: ledger.Block, receipts: list[ledger.Receipt]) -> None:
+        if self.webhook_dispatcher is None:
+            return
+        block_hash = block.hash()
+        for receipt in receipts:
+            self.webhook_dispatcher.enqueue("transaction", {
+                "block_height": block.height, "block_hash": block_hash,
+                "time": block.time, "receipt": receipt.to_dict(),
+            })
+
+    @property
+    def webhook_public_key(self) -> str:
+        if self.webhook_dispatcher is None:
+            return ""
+        return self.webhook_dispatcher.public_key
+
+    def close_webhooks(self) -> None:
+        if self.webhook_dispatcher is not None:
+            self.webhook_dispatcher.close()
 
     def _select_txs(self, now: int) -> list[types.Tx]:
         ordered = ledger.order_txs(list(self.mempool.values()))
