@@ -141,3 +141,24 @@ def test_tx_vectors() -> None:
         raw = bytes.fromhex(case["cbor"])
         with pytest.raises(types.ValidationError):
             types.Tx.from_cbor(cbor.decode_map(raw))
+
+
+def test_uri_vectors() -> None:
+    from arne import paymenturi
+
+    data = load("uri.json")
+    for case in data["valid"]:
+        payment = paymenturi.parse(case["uri"], now=data["now"])
+        assert payment.network == case["network"], case["name"]
+        assert payment.to == case["to"], case["name"]
+        assert payment.asset == case["asset"], case["name"]
+        assert payment.amount == case["amount"], case["name"]
+        assert payment.memo == case["memo"], case["name"]
+        assert payment.expires == case["expires"], case["name"]
+        assert payment.warnings == case["warnings"], case["name"]
+        assert str(payment) == case["canonical"], case["name"]
+        again = paymenturi.parse(str(payment), now=data["now"])
+        assert again.summary() == payment.summary(), case["name"]
+    for case in data["invalid"]:
+        with pytest.raises(paymenturi.URIError):
+            paymenturi.parse(case["uri"], now=data["now"])

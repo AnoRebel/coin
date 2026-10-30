@@ -71,6 +71,9 @@ func AssetID(symbol, network string) string {
 // NativeAsset returns the canonical ID of ARCE on a network.
 func NativeAsset(network string) string { return "arce:" + ShortNetwork(network) }
 
+// ValidAssetID reports whether id is a canonical asset identifier.
+func ValidAssetID(id string) bool { return reAssetID.MatchString(id) }
+
 // Asset is an immutable registered asset.
 type Asset struct {
 	ID         string            `json:"id"`

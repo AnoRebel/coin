@@ -23,6 +23,7 @@ make test
 | `internal/smt` | 256-bit sparse Merkle tree and proofs |
 | `internal/ledger` | Params, state, execution, fees, blocks, genesis |
 | `internal/memo` | Opt-in sealed memos (X25519 + ChaCha20-Poly1305) |
+| `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
@@ -181,7 +182,7 @@ uv run pytest tests/test_vectors.py -q
 go test ./tests -run TestVectors -v
 ```
 
-The conformance runner loads `spec/vectors/{cbor,keys,smt,ledger,tx,memo}.json` and
+The conformance runner loads `spec/vectors/{cbor,keys,smt,ledger,tx,memo,uri}.json` and
 requires both languages to reproduce every byte:
 
 - CBOR encode/decode and non-canonical rejection
@@ -190,6 +191,7 @@ requires both languages to reproduce every byte:
 - genesis, block state roots, tx roots, block hashes, receipts
 - transaction envelope bytes, hashes, signatures, and closed-schema rejection
 - memo key derivation and sealed ciphertext bytes
+- payment URI parsing, warnings, canonical form, and rejection cases
 
 To prove a runner is real, temporarily corrupt one vector value; both suites
 must fail. Do not commit the corruption.

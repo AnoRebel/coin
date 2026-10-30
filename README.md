@@ -23,6 +23,7 @@ pool, messaging, compliance connectors, and the web console are specified but
 | Fees, split, foreign-asset fee conversion | Implemented (Go + Python) |
 | Escrow, allowances, mint/burn, supply caps | Implemented (Go + Python) |
 | Encrypted memos (opt-in) | Implemented (Go + Python) |
+| `arce:`/`arne:` payment URIs | Implemented (Go + Python) |
 | Blocks, deterministic ordering, receipts | Implemented (Go + Python) |
 | REST `/v1`, JSON-RPC 2.0, SSE, API keys | Implemented (Go + Python) |
 | Single-node devnet + faucet + CLI | Implemented (Go + Python) |

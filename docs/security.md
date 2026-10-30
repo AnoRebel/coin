@@ -70,6 +70,10 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
   stay visible. Sealed memos use X25519 + HKDF-SHA-256 + ChaCha20-Poly1305 and
   are validated for shape and size by the ledger, which cannot decrypt them.
   There is no MLS messaging runtime yet.
+- Payment URIs are untrusted input. They are parsed strictly, displayed before
+  signing, and memos are rendered as inert text with a warning on markup. A URI
+  never overrides an explicit amount, recipient, or network; conflicts are
+  refused.
 - The node does not require KYC and stores no PII. If you build a compliance
   layer, keep PII off-chain and store only commitments or verifiable credentials.
 - Telemetry: none is collected by the node. Reverse proxies and hosting providers

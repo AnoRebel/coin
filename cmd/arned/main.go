@@ -26,6 +26,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/node"
+	"github.com/anorebel/anorebelcoin/internal/paymenturi"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
 )
@@ -47,7 +48,8 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
-		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), backupCmd(), restoreCmd())
+		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
+		backupCmd(), restoreCmd())
 	return c
 }
 
@@ -416,13 +418,46 @@ func balanceCmd() *cobra.Command {
 // --- pay ---
 
 func payCmd() *cobra.Command {
-	var network, mnemonic, to, asset, amount, memoTo string
+	var network, mnemonic, to, asset, amount, memoTo, rawURI string
 	var memo string
-	var wait bool
+	var wait, yes bool
 	cmd := &cobra.Command{
 		Use:   "pay",
 		Short: "Sign and submit a transfer",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var uri *paymenturi.Payment
+			if rawURI != "" {
+				parsed, err := paymenturi.Parse(rawURI)
+				if err != nil {
+					return err
+				}
+				if cmd.Flags().Changed("network") {
+					if err := parsed.CheckNetwork(network); err != nil {
+						return err
+					}
+				}
+				if err := parsed.CheckRecipient(to); err != nil {
+					return err
+				}
+				if err := parsed.CheckAmount(amount); err != nil {
+					return err
+				}
+				if memo != "" && parsed.Memo != "" && memo != parsed.Memo {
+					return errors.New("uri memo conflicts with --memo")
+				}
+				network, to, asset, amount = parsed.Network, parsed.To, parsed.Asset, parsed.Amount
+				if memo == "" {
+					memo = parsed.Memo
+				}
+				uri = &parsed
+				fmt.Println(parsed.Summary())
+				if !yes {
+					return errors.New("payment not sent: review the summary above and re-run with --yes")
+				}
+			}
+			if to == "" || asset == "" || amount == "" {
+				return errors.New("--to, --asset, and --amount are required without --uri")
+			}
 			kp, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, 0, network)
 			if err != nil {
 				return err
@@ -456,10 +491,14 @@ func payCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "warning: --memo is public on chain; use --memo-to to encrypt it")
 				payload["memo"] = memo
 			}
+			expiresAt := uint64(time.Now().Unix()) + 3600
+			if uri != nil && uri.Expires != 0 {
+				expiresAt = uri.Expires
+			}
 			tx := protocol.Tx{
 				Version: protocol.CurrentTxVersion, Network: network, Chain: chain,
 				Type: protocol.TxTransfer, Signer: kp.Address, Nonce: acc.Nonce,
-				CreatedAt: uint64(time.Now().Unix()), ExpiresAt: uint64(time.Now().Unix()) + 3600,
+				CreatedAt: uint64(time.Now().Unix()), ExpiresAt: expiresAt,
 				FeeAsset: protocol.NativeAsset(network), MaxFee: 10_000, Payload: payload,
 			}
 			if err := tx.Sign(kp); err != nil {
@@ -498,10 +537,82 @@ func payCmd() *cobra.Command {
 	cmd.Flags().StringVar(&amount, "amount", "", "human amount, for example 12.5")
 	cmd.Flags().StringVar(&memo, "memo", "", "memo text")
 	cmd.Flags().StringVar(&memoTo, "memo-to", "", "recipient memo public key (hex); encrypts --memo")
+	cmd.Flags().StringVar(&rawURI, "uri", "", "arce:/arne: payment URI; shows a preview first")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the URI preview without prompting")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the receipt")
-	for _, f := range []string{"mnemonic", "to", "asset", "amount"} {
-		_ = cmd.MarkFlagRequired(f)
+	_ = cmd.MarkFlagRequired("mnemonic")
+	return cmd
+}
+
+// --- payment URIs ---
+
+func uriCmd() *cobra.Command {
+	var network, to, asset, amount, memo, scheme, raw string
+	var expires uint64
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "uri",
+		Short: "Parse and build arce:/arne: payment URIs",
 	}
+	parse := &cobra.Command{
+		Use:   "parse",
+		Short: "Validate a payment URI and print its summary",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := paymenturi.Parse(raw)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return printJSON(map[string]any{
+					"scheme": p.Scheme, "network": p.Network, "to": p.To, "asset": p.Asset,
+					"amount": p.Amount, "memo": p.Memo, "expires": p.Expires,
+					"warnings": p.Warnings, "canonical": p.String(),
+				})
+			}
+			fmt.Println(p.Summary())
+			return nil
+		},
+	}
+	parse.Flags().StringVar(&raw, "uri", "", "payment URI")
+	parse.Flags().BoolVar(&jsonOut, "json", false, "JSON output")
+	_ = parse.MarkFlagRequired("uri")
+
+	build := &cobra.Command{
+		Use:   "build",
+		Short: "Build a canonical payment URI",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if scheme != "arce" && scheme != "arne" {
+				return errors.New("--scheme must be arce or arne")
+			}
+			p, err := paymenturi.ParseAt(
+				fmt.Sprintf("%s:%s?network=%s&asset=%s&amount=%s", scheme, to,
+					url.QueryEscape(network), url.QueryEscape(asset), url.QueryEscape(amount)),
+				uint64(time.Now().Unix()),
+			)
+			if err != nil {
+				return err
+			}
+			p.Memo, p.Expires = memo, expires
+			if memo != "" || expires != 0 {
+				if _, err := paymenturi.ParseAt(p.String(), uint64(time.Now().Unix())); err != nil {
+					return err
+				}
+			}
+			fmt.Println(p.String())
+			return nil
+		},
+	}
+	build.Flags().StringVar(&scheme, "scheme", "arce", "arce or arne")
+	build.Flags().StringVar(&network, "network", "arne:devnet", "network id")
+	build.Flags().StringVar(&to, "to", "", "recipient address")
+	build.Flags().StringVar(&asset, "asset", "", "asset id")
+	build.Flags().StringVar(&amount, "amount", "", "decimal amount")
+	build.Flags().StringVar(&memo, "memo", "", "optional memo")
+	build.Flags().Uint64Var(&expires, "expires", 0, "unix expiry")
+	for _, f := range []string{"to", "asset", "amount"} {
+		_ = build.MarkFlagRequired(f)
+	}
+	cmd.AddCommand(parse, build)
 	return cmd
 }
 

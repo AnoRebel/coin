@@ -1,0 +1,117 @@
+{
+  "now": 1700000000,
+  "valid": [
+    {
+      "name": "full",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=12.5&memo=invoice+42&expires=1700003600",
+      "network": "arne:devnet",
+      "to": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+      "asset": "arce:devnet",
+      "amount": "12.5",
+      "memo": "invoice 42",
+      "expires": 1700003600,
+      "warnings": [],
+      "canonical": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?amount=12.5&asset=arce%3Adevnet&expires=1700003600&memo=invoice+42&network=arne%3Adevnet"
+    },
+    {
+      "name": "markup-memo",
+      "uri": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&memo=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+      "network": "arne:devnet",
+      "to": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+      "asset": "arce:devnet",
+      "amount": "1",
+      "memo": "<script>alert(1)</script>",
+      "expires": 0,
+      "warnings": [
+        "memo contains markup (<script); it is shown as inert text"
+      ],
+      "canonical": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?amount=1&asset=arce%3Adevnet&memo=%3Cscript%3Ealert%281%29%3C%2Fscript%3E&network=arne%3Adevnet"
+    },
+    {
+      "name": "unicode-memo",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=0.00000001&memo=caf%C3%A9+%E2%98%95",
+      "network": "arne:devnet",
+      "to": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+      "asset": "arce:devnet",
+      "amount": "0.00000001",
+      "memo": "caf\u00e9 \u2615",
+      "expires": 0,
+      "warnings": [],
+      "canonical": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?amount=0.00000001&asset=arce%3Adevnet&memo=caf%C3%A9+%E2%98%95&network=arne%3Adevnet"
+    },
+    {
+      "name": "minimal",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1",
+      "network": "arne:devnet",
+      "to": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+      "asset": "arce:devnet",
+      "amount": "1",
+      "memo": "",
+      "expires": 0,
+      "warnings": [],
+      "canonical": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?amount=1&asset=arce%3Adevnet&network=arne%3Adevnet"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "uppercase-scheme",
+      "uri": "ARCE:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1"
+    },
+    {
+      "name": "unsupported-scheme",
+      "uri": "http://example.com/?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1"
+    },
+    {
+      "name": "authority",
+      "uri": "arce://evil.example/?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1"
+    },
+    {
+      "name": "unknown-field",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&theme=dark"
+    },
+    {
+      "name": "duplicate-field",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&memo=a&memo=b"
+    },
+    {
+      "name": "missing-network",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?asset=arce%3Adevnet&amount=1"
+    },
+    {
+      "name": "wrong-network-address",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Amainnet&asset=arce%3Amainnet&amount=1"
+    },
+    {
+      "name": "bad-asset",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=ARCE&amount=1"
+    },
+    {
+      "name": "leading-zero-amount",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=01"
+    },
+    {
+      "name": "zero-amount",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=0"
+    },
+    {
+      "name": "exponent-amount",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1e3"
+    },
+    {
+      "name": "expired",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&expires=1700000000"
+    },
+    {
+      "name": "memo-newline",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&memo=line%0Abreak"
+    },
+    {
+      "name": "oversize-memo",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&memo=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "fragment",
+      "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1#frag"
+    }
+  ]
+}

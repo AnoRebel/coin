@@ -112,6 +112,30 @@ caveats:
 - `--memo` without `--memo-to` prints a public-memo warning and stores the text
   in clear.
 
+### Payment URIs
+
+Wallets can exchange a single `arce:` or `arne:` URI instead of separate fields:
+
+```sh
+arned uri build --to arce-devnet1... --asset arce:devnet --amount 12.5 \
+  --memo "invoice 42" --expires 1700003600
+arned uri parse --uri 'arce:arce-devnet1...?amount=12.5&asset=arce%3Adevnet&network=arne%3Adevnet'
+arned pay --uri '<uri>' --yes
+```
+
+Parsing is strict: only `network`, `asset`, `amount`, `memo`, and `expires` are
+accepted, each at most once. The scheme must be lowercase `arce` or `arne`, the
+recipient must be valid for the URI's network, the asset must be a canonical
+asset ID, and the amount must be a plain positive decimal with no exponent or
+leading zeros. Expired URIs and fragments are rejected.
+
+`pay --uri` prints the network, recipient, asset, amount, memo, and expiry, then
+stops unless `--yes` is also passed. If you also pass `--amount`, `--to`, or a
+different `--network`, the payment is refused rather than guessing which value
+you meant. Memos from URIs are shown as inert text; markup such as `<script>` is
+warning-tagged and never executed. `--memo-to` still applies if you want to seal
+the memo.
+
 Track the receipt:
 
 ```sh

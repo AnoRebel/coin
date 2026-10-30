@@ -64,6 +64,10 @@ class SignatureError(ValueError):
     pass
 
 
+def valid_asset_id(asset_id: str) -> bool:
+    return bool(_ASSET_ID_RE.match(asset_id))
+
+
 def network_class(network: str) -> str:
     match = _NETWORK_RE.match(network)
     if not match:

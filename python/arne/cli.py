@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from . import cbor, ledger, types
+from . import cbor, ledger, paymenturi, types
 from . import memo as memo_codec
 from .address import validate_address
 from .keys import keypair_from_mnemonic, new_keypair
@@ -218,14 +218,16 @@ def _submit(url: str, tx: types.Tx, wait: bool) -> int:
     return _wait_for_receipt(url, tx_hash) if wait else 0
 
 
-def _signed_tx(args: argparse.Namespace, tx_type: str, payload: dict) -> types.Tx:
+def _signed_tx(
+    args: argparse.Namespace, tx_type: str, payload: dict, expires_at: int | None = None
+) -> types.Tx:
     kp = keypair_from_mnemonic(args.mnemonic, "", 0, 0, args.index, args.network)
     account = _get(args.url, f"/v1/accounts/{kp.address}")
     now = int(time.time())
     tx = types.Tx(
         version=1, network=args.network, chain=types.chain_id(args.network),
         tx_type=tx_type, signer=kp.address, nonce=account.get("nonce", 0),
-        created_at=now, expires_at=now + 3600,
+        created_at=now, expires_at=expires_at or now + 3600,
         fee_asset=args.fee_asset or types.native_asset(args.network),
         max_fee=args.max_fee, payload=payload,
     )
@@ -234,6 +236,24 @@ def _signed_tx(args: argparse.Namespace, tx_type: str, payload: dict) -> types.T
 
 
 def cmd_pay(args: argparse.Namespace) -> int:
+    uri = None
+    if args.uri:
+        uri = paymenturi.parse(args.uri)
+        if args.network != "arne:devnet":
+            uri.check_network(args.network)
+        uri.check_recipient(args.to)
+        uri.check_amount(args.amount)
+        if args.memo and uri.memo and args.memo != uri.memo:
+            raise SystemExit("uri memo conflicts with --memo")
+        args.network, args.to, args.asset = uri.network, uri.to, uri.asset
+        args.amount = uri.amount
+        args.memo = args.memo or uri.memo
+        print(uri.summary())
+        if not args.yes:
+            print("payment not sent: review the summary above and re-run with --yes", file=sys.stderr)
+            return 1
+    if not (args.to and args.asset and args.amount):
+        raise SystemExit("--to, --asset, and --amount are required without --uri")
     validate_address(args.to, args.network)
     asset = _get(args.url, f"/v1/assets/{args.asset}")
     units = parse_amount(args.amount, asset["decimals"])
@@ -243,7 +263,8 @@ def cmd_pay(args: argparse.Namespace) -> int:
     elif args.memo:
         print("warning: --memo is public on chain; use --memo-to to encrypt it", file=sys.stderr)
         payload["memo"] = args.memo
-    return _submit(args.url, _signed_tx(args, types.TX_TRANSFER, payload), args.wait)
+    expires = uri.expires if uri and uri.expires else None
+    return _submit(args.url, _signed_tx(args, types.TX_TRANSFER, payload, expires), args.wait)
 
 
 def cmd_memo_pub(args: argparse.Namespace) -> int:
@@ -264,6 +285,35 @@ def cmd_memo_open(args: argparse.Namespace) -> int:
         raw = base64.b64decode(args.sealed, validate=True)
     kp = keypair_from_mnemonic(args.mnemonic, "", 0, 0, args.index, args.network)
     print(memo_codec.open_memo(kp.private, raw).decode())
+    return 0
+
+
+def cmd_uri_parse(args: argparse.Namespace) -> int:
+    payment = paymenturi.parse(args.uri)
+    if args.json:
+        print(json.dumps({
+            "scheme": payment.scheme, "network": payment.network, "to": payment.to,
+            "asset": payment.asset, "amount": payment.amount, "memo": payment.memo,
+            "expires": payment.expires, "warnings": payment.warnings,
+            "canonical": str(payment),
+        }, indent=2))
+    else:
+        print(payment.summary())
+    return 0
+
+
+def cmd_uri_build(args: argparse.Namespace) -> int:
+    from urllib.parse import quote_plus
+
+    raw = (
+        f"{args.scheme}:{args.to}?network={quote_plus(args.network)}"
+        f"&asset={quote_plus(args.asset)}&amount={quote_plus(args.amount)}"
+    )
+    payment = paymenturi.parse(raw)
+    payment.memo, payment.expires = args.memo, args.expires
+    if args.memo or args.expires:
+        paymenturi.parse(str(payment))
+    print(str(payment))
     return 0
 
 
@@ -364,11 +414,13 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--wait", action="store_true")
 
     pay = sub.add_parser("pay", help="sign and submit a transfer")
-    pay.add_argument("--to", required=True)
-    pay.add_argument("--asset", required=True)
-    pay.add_argument("--amount", required=True)
+    pay.add_argument("--to", default="")
+    pay.add_argument("--asset", default="")
+    pay.add_argument("--amount", default="")
     pay.add_argument("--memo", default="")
     pay.add_argument("--memo-to", default="", help="recipient memo public key (hex)")
+    pay.add_argument("--uri", default="", help="arce:/arne: payment URI")
+    pay.add_argument("--yes", action="store_true", help="confirm the URI preview")
     write_flags(pay)
     pay.set_defaults(func=cmd_pay)
 
@@ -389,6 +441,22 @@ def build_parser() -> argparse.ArgumentParser:
     memo_open.add_argument("--network", default="arne:devnet")
     memo_open.add_argument("--sealed", required=True, help="hex or base64")
     memo_open.set_defaults(func=cmd_memo_open)
+
+    uri = sub.add_parser("uri", help="parse and build payment URIs")
+    uri_sub = uri.add_subparsers(dest="uri_command", required=True)
+    uri_parse = uri_sub.add_parser("parse", help="validate a payment URI")
+    uri_parse.add_argument("--uri", required=True)
+    uri_parse.add_argument("--json", action="store_true")
+    uri_parse.set_defaults(func=cmd_uri_parse)
+    uri_build = uri_sub.add_parser("build", help="build a canonical payment URI")
+    uri_build.add_argument("--scheme", default="arce")
+    uri_build.add_argument("--network", default="arne:devnet")
+    uri_build.add_argument("--to", required=True)
+    uri_build.add_argument("--asset", required=True)
+    uri_build.add_argument("--amount", required=True)
+    uri_build.add_argument("--memo", default="")
+    uri_build.add_argument("--expires", type=int, default=0)
+    uri_build.set_defaults(func=cmd_uri_build)
 
     faucet = sub.add_parser("faucet", help="request devnet funds")
     faucet.add_argument("--address", required=True)

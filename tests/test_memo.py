@@ -53,3 +53,4 @@ def test_memo_vector() -> None:
         ephemeral_seed=bytes.fromhex(data["ephemeral_seed"]),
         nonce=bytes.fromhex(data["nonce"]),
     ) == sealed
+
