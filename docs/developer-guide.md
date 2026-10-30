@@ -24,6 +24,7 @@ make test
 | `internal/ledger` | Params, state, execution, fees, blocks, genesis |
 | `internal/memo` | Opt-in sealed memos (X25519 + ChaCha20-Poly1305) |
 | `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
+| `internal/preview` | Pre-signing preview and safety warnings |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |

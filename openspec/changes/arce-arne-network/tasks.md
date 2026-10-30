@@ -170,7 +170,7 @@
 - [ ] 15.5 Implement hardware/external signer interface and human-readable confirmation; verify supported and unsupported signers
 - [ ] 15.6 Implement scoped, expiring session keys and watch-only accounts; verify scope escalation and signing rejection
 - [x] 15.7 Implement `arce:`/`arne:` payment URIs with strict validation and inert memo handling; verify valid, mismatch, and malicious memo
-- [ ] 15.8 Implement transaction previews and address-poisoning/unknown-asset warnings; verify preview and warning cases
+- [x] 15.8 Implement transaction previews and address-poisoning/unknown-asset warnings; verify preview and warning cases
 - [ ] 15.9 Build the FastAPI console with explorer views for blocks, transactions, accounts, assets, validators, and governance; verify each view
 - [ ] 15.10 Build the wallet UI with local signing, balances, send/receive, history, and staking; verify no secret leaves the client
 - [ ] 15.11 Build the team workspace with channels, invoices, payroll, and roles; verify role enforcement and channel decryption

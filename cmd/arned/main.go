@@ -27,6 +27,7 @@ import (
 	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/node"
 	"github.com/anorebel/anorebelcoin/internal/paymenturi"
+	"github.com/anorebel/anorebelcoin/internal/preview"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
 )
@@ -48,7 +49,7 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
-		faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
+		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
 		backupCmd(), restoreCmd())
 	return c
 }
@@ -354,6 +355,27 @@ func fetchAsset(id string) (assetInfo, error) {
 	return a, nil
 }
 
+// fetchAssetOptional treats a missing asset as unknown instead of an error.
+func fetchAssetOptional(id string) (assetInfo, bool, error) {
+	resp, err := http.Get(apiURL("/v1/assets/" + url.PathEscape(id)))
+	if err != nil {
+		return assetInfo{}, false, fmt.Errorf("API unreachable (is `arned devnet` running?): %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		return assetInfo{}, false, nil
+	}
+	if resp.StatusCode >= 300 {
+		return assetInfo{}, false, fmt.Errorf("api %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var a assetInfo
+	if err := json.Unmarshal(body, &a); err != nil {
+		return a, false, err
+	}
+	return a, true, nil
+}
+
 type accountInfo struct {
 	Address  string            `json:"address"`
 	Nonce    uint64            `json:"nonce"`
@@ -417,6 +439,66 @@ func balanceCmd() *cobra.Command {
 
 // --- pay ---
 
+// paymentRequest is the transfer-shaped input shared by pay and preview.
+type paymentRequest struct {
+	network, to, asset, amount, memo string
+	expires                          uint64
+	uri                              *paymenturi.Payment
+}
+
+// applyURI folds --uri into the request and refuses conflicting explicit values.
+func (r *paymentRequest) applyURI(raw string, networkSet bool) error {
+	if raw == "" {
+		return nil
+	}
+	p, err := paymenturi.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if networkSet {
+		if err := p.CheckNetwork(r.network); err != nil {
+			return err
+		}
+	}
+	if err := p.CheckRecipient(r.to); err != nil {
+		return err
+	}
+	if err := p.CheckAmount(r.amount); err != nil {
+		return err
+	}
+	if r.memo != "" && p.Memo != "" && r.memo != p.Memo {
+		return errors.New("uri memo conflicts with --memo")
+	}
+	r.network, r.to, r.asset, r.amount = p.Network, p.To, p.Asset, p.Amount
+	if r.memo == "" {
+		r.memo = p.Memo
+	}
+	r.expires = p.Expires
+	r.uri = &p
+	return nil
+}
+
+// transferPayload builds the transfer payload, sealing the memo when a key is given.
+func transferPayload(asset, to string, units uint64, memo, memoTo string) (map[string]any, error) {
+	payload := map[string]any{"asset": asset, "to": to, "amount": units}
+	switch {
+	case memo != "" && memoTo != "":
+		recipient, err := hex.DecodeString(memoTo)
+		if err != nil {
+			return nil, fmt.Errorf("--memo-to must be hex: %w", err)
+		}
+		sealed, err := arnememo.RandomSeal(recipient, []byte(memo))
+		if err != nil {
+			return nil, err
+		}
+		payload["memo_enc"] = sealed
+	case memo != "":
+		fmt.Fprintln(os.Stderr, "warning: --memo is public on chain; use --memo-to to encrypt it")
+		payload["memo"] = memo
+	}
+	return payload, nil
+}
+
 func payCmd() *cobra.Command {
 	var network, mnemonic, to, asset, amount, memoTo, rawURI string
 	var memo string
@@ -425,32 +507,13 @@ func payCmd() *cobra.Command {
 		Use:   "pay",
 		Short: "Sign and submit a transfer",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var uri *paymenturi.Payment
-			if rawURI != "" {
-				parsed, err := paymenturi.Parse(rawURI)
-				if err != nil {
-					return err
-				}
-				if cmd.Flags().Changed("network") {
-					if err := parsed.CheckNetwork(network); err != nil {
-						return err
-					}
-				}
-				if err := parsed.CheckRecipient(to); err != nil {
-					return err
-				}
-				if err := parsed.CheckAmount(amount); err != nil {
-					return err
-				}
-				if memo != "" && parsed.Memo != "" && memo != parsed.Memo {
-					return errors.New("uri memo conflicts with --memo")
-				}
-				network, to, asset, amount = parsed.Network, parsed.To, parsed.Asset, parsed.Amount
-				if memo == "" {
-					memo = parsed.Memo
-				}
-				uri = &parsed
-				fmt.Println(parsed.Summary())
+			req := paymentRequest{network: network, to: to, asset: asset, amount: amount, memo: memo}
+			if err := req.applyURI(rawURI, cmd.Flags().Changed("network")); err != nil {
+				return err
+			}
+			network, to, asset, amount, memo = req.network, req.to, req.asset, req.amount, req.memo
+			if req.uri != nil {
+				fmt.Println(req.uri.Summary())
 				if !yes {
 					return errors.New("payment not sent: review the summary above and re-run with --yes")
 				}
@@ -475,25 +538,13 @@ func payCmd() *cobra.Command {
 				return err
 			}
 			chain, _ := protocol.ChainID(network)
-			payload := map[string]any{"asset": asset, "to": to, "amount": units}
-			switch {
-			case memo != "" && memoTo != "":
-				recipient, err := hex.DecodeString(memoTo)
-				if err != nil {
-					return fmt.Errorf("--memo-to must be hex: %w", err)
-				}
-				sealed, err := arnememo.RandomSeal(recipient, []byte(memo))
-				if err != nil {
-					return err
-				}
-				payload["memo_enc"] = sealed
-			case memo != "":
-				fmt.Fprintln(os.Stderr, "warning: --memo is public on chain; use --memo-to to encrypt it")
-				payload["memo"] = memo
+			payload, err := transferPayload(asset, to, units, memo, memoTo)
+			if err != nil {
+				return err
 			}
 			expiresAt := uint64(time.Now().Unix()) + 3600
-			if uri != nil && uri.Expires != 0 {
-				expiresAt = uri.Expires
+			if req.expires != 0 {
+				expiresAt = req.expires
 			}
 			tx := protocol.Tx{
 				Version: protocol.CurrentTxVersion, Network: network, Chain: chain,
@@ -542,6 +593,123 @@ func payCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the receipt")
 	_ = cmd.MarkFlagRequired("mnemonic")
 	return cmd
+}
+
+// previewCmd signs a transfer without submitting it and prints the confirmation.
+func previewCmd() *cobra.Command {
+	var req paymentRequest
+	var mnemonic, memoTo, rawURI string
+	var known []string
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "preview",
+		Short: "Show a transfer before signing, with safety warnings",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := req.applyURI(rawURI, cmd.Flags().Changed("network")); err != nil {
+				return err
+			}
+			if req.to == "" || req.asset == "" || req.amount == "" {
+				return errors.New("--to, --asset, and --amount are required without --uri")
+			}
+			kp, err := protocol.KeyPairFromMnemonic(mnemonic, "", 0, 0, 0, req.network)
+			if err != nil {
+				return err
+			}
+			var acc accountInfo
+			if err := getJSON("/v1/accounts/"+url.PathEscape(kp.Address), &acc); err != nil {
+				return err
+			}
+			info, assetKnown, err := fetchAssetOptional(req.asset)
+			if err != nil {
+				return err
+			}
+			decimals := info.Decimals
+			if !assetKnown {
+				decimals = 8 // unknown asset: assume native precision for display only
+			}
+			units, err := parseAmount(req.amount, decimals)
+			if err != nil {
+				return err
+			}
+			payload, err := transferPayload(req.asset, req.to, units, req.memo, memoTo)
+			if err != nil {
+				return err
+			}
+			expiresAt := uint64(time.Now().Unix()) + 3600
+			if req.expires != 0 {
+				expiresAt = req.expires
+			}
+			chain, _ := protocol.ChainID(req.network)
+			tx := protocol.Tx{
+				Version: protocol.CurrentTxVersion, Network: req.network, Chain: chain,
+				Type: protocol.TxTransfer, Signer: kp.Address, Nonce: acc.Nonce,
+				CreatedAt: uint64(time.Now().Unix()), ExpiresAt: expiresAt,
+				FeeAsset: protocol.NativeAsset(req.network), MaxFee: 10_000, Payload: payload,
+			}
+			if err := tx.Sign(kp); err != nil {
+				return err
+			}
+			raw, err := protocol.Encode(tx.ToCBOR())
+			if err != nil {
+				return err
+			}
+			receipt, err := simulateTransfer(raw)
+			if err != nil {
+				return err
+			}
+			fee := receipt.Fee // failed transactions are free in v1
+			p := preview.Build(preview.Input{
+				Network: req.network, Signer: kp.Address, To: req.to, Asset: req.asset,
+				Symbol: info.Symbol, Decimals: decimals, Amount: units, Fee: fee,
+				Memo: req.memo, PublicMemo: req.memo != "" && memoTo == "",
+				AssetKnown: assetKnown, Known: known,
+				Simulated: true, Code: string(receipt.Code),
+			})
+			if jsonOut {
+				return printJSON(p)
+			}
+			fmt.Println(p.Summary())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&req.network, "network", "arne:devnet", "network id")
+	cmd.Flags().StringVar(&mnemonic, "mnemonic", "", "sender mnemonic")
+	cmd.Flags().StringVar(&req.to, "to", "", "recipient address")
+	cmd.Flags().StringVar(&req.asset, "asset", "", "asset id (for example arce:devnet)")
+	cmd.Flags().StringVar(&req.amount, "amount", "", "human amount, for example 12.5")
+	cmd.Flags().StringVar(&req.memo, "memo", "", "memo text")
+	cmd.Flags().StringVar(&memoTo, "memo-to", "", "recipient memo public key (hex); encrypts --memo")
+	cmd.Flags().StringVar(&rawURI, "uri", "", "arce:/arne: payment URI")
+	cmd.Flags().StringArrayVar(&known, "known", nil, "trusted contact address for lookalike checks (repeatable)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "JSON output")
+	_ = cmd.MarkFlagRequired("mnemonic")
+	return cmd
+}
+
+// simulateTransfer dry-runs a signed transaction and reports its ledger code.
+func simulateTransfer(raw []byte) (ledger.Receipt, error) {
+	resp, err := http.Post(apiURL("/v1/transactions/simulate"), "application/cbor", bytes.NewReader(raw))
+	if err != nil {
+		return ledger.Receipt{}, fmt.Errorf("API unreachable (is `arned devnet` running?): %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		var out struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &out) == nil && out.Error.Code != "" {
+			return ledger.Receipt{Code: ledger.Code(out.Error.Code)}, nil
+		}
+		return ledger.Receipt{}, fmt.Errorf("simulate failed: %s", strings.TrimSpace(string(body)))
+	}
+	var receipt ledger.Receipt
+	if err := json.Unmarshal(body, &receipt); err != nil {
+		return ledger.Receipt{}, err
+	}
+	return receipt, nil
 }
 
 // --- payment URIs ---

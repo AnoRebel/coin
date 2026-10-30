@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from . import cbor, ledger, paymenturi, types
+from . import cbor, ledger, paymenturi, preview, types
 from . import memo as memo_codec
 from .address import validate_address
 from .keys import keypair_from_mnemonic, new_keypair
@@ -235,19 +235,35 @@ def _signed_tx(
     return tx
 
 
+def _apply_uri(args: argparse.Namespace) -> paymenturi.Payment | None:
+    if not args.uri:
+        return None
+    payment = paymenturi.parse(args.uri)
+    if args.network != "arne:devnet":
+        payment.check_network(args.network)
+    payment.check_recipient(args.to)
+    payment.check_amount(args.amount)
+    if args.memo and payment.memo and args.memo != payment.memo:
+        raise SystemExit("uri memo conflicts with --memo")
+    args.network, args.to, args.asset = payment.network, payment.to, payment.asset
+    args.amount = payment.amount
+    args.memo = args.memo or payment.memo
+    return payment
+
+
+def _transfer_payload(args: argparse.Namespace, units: int) -> dict[str, Any]:
+    payload: dict[str, Any] = {"asset": args.asset, "to": args.to, "amount": units}
+    if args.memo and args.memo_to:
+        payload["memo_enc"] = memo_codec.seal(bytes.fromhex(args.memo_to), args.memo.encode())
+    elif args.memo:
+        print("warning: --memo is public on chain; use --memo-to to encrypt it", file=sys.stderr)
+        payload["memo"] = args.memo
+    return payload
+
+
 def cmd_pay(args: argparse.Namespace) -> int:
-    uri = None
-    if args.uri:
-        uri = paymenturi.parse(args.uri)
-        if args.network != "arne:devnet":
-            uri.check_network(args.network)
-        uri.check_recipient(args.to)
-        uri.check_amount(args.amount)
-        if args.memo and uri.memo and args.memo != uri.memo:
-            raise SystemExit("uri memo conflicts with --memo")
-        args.network, args.to, args.asset = uri.network, uri.to, uri.asset
-        args.amount = uri.amount
-        args.memo = args.memo or uri.memo
+    uri = _apply_uri(args)
+    if uri:
         print(uri.summary())
         if not args.yes:
             print("payment not sent: review the summary above and re-run with --yes", file=sys.stderr)
@@ -257,14 +273,69 @@ def cmd_pay(args: argparse.Namespace) -> int:
     validate_address(args.to, args.network)
     asset = _get(args.url, f"/v1/assets/{args.asset}")
     units = parse_amount(args.amount, asset["decimals"])
-    payload: dict[str, Any] = {"asset": args.asset, "to": args.to, "amount": units}
-    if args.memo and args.memo_to:
-        payload["memo_enc"] = memo_codec.seal(bytes.fromhex(args.memo_to), args.memo.encode())
-    elif args.memo:
-        print("warning: --memo is public on chain; use --memo-to to encrypt it", file=sys.stderr)
-        payload["memo"] = args.memo
+    payload = _transfer_payload(args, units)
     expires = uri.expires if uri and uri.expires else None
     return _submit(args.url, _signed_tx(args, types.TX_TRANSFER, payload, expires), args.wait)
+
+
+def _asset_optional(url: str, asset_id: str) -> dict | None:
+    with _client(url) as client:
+        response = client.get(f"/v1/assets/{asset_id}")
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 300:
+            raise SystemExit(_fail(response))
+        return response.json()
+
+
+def _simulate(url: str, tx: types.Tx) -> dict:
+    with _client(url) as client:
+        response = client.post(
+            "/v1/transactions/simulate", content=cbor.encode(tx.to_cbor()),
+            headers={"Content-Type": "application/cbor"},
+        )
+        if response.status_code >= 300:
+            try:
+                return {"code": response.json()["error"]["code"]}
+            except (ValueError, KeyError, TypeError):
+                raise SystemExit(_fail(response)) from None
+        return response.json()
+
+
+def cmd_preview(args: argparse.Namespace) -> int:
+    uri = _apply_uri(args)
+    if not (args.to and args.asset and args.amount):
+        raise SystemExit("--to, --asset, and --amount are required without --uri")
+    validate_address(args.to, args.network)
+    asset = _asset_optional(args.url, args.asset)
+    decimals = asset["decimals"] if asset else 8
+    units = parse_amount(args.amount, decimals)
+    payload = _transfer_payload(args, units)
+    expires = uri.expires if uri and uri.expires else None
+    tx = _signed_tx(args, types.TX_TRANSFER, payload, expires)
+    receipt = _simulate(args.url, tx)
+    kp = keypair_from_mnemonic(args.mnemonic, "", 0, 0, args.index, args.network)
+    fee = receipt.get("fee", 0)  # failed transactions are free in v1
+    result = preview.build(preview.Input(
+        network=args.network, signer=kp.address, to=args.to, asset=args.asset,
+        symbol=asset["symbol"] if asset else "", decimals=decimals,
+        amount=units, fee=fee, memo=args.memo,
+        public_memo=bool(args.memo and not args.memo_to),
+        asset_known=asset is not None, known=args.known,
+        simulated=True, code=receipt.get("code", ""),
+    ))
+    if args.json:
+        payload = {
+            "network": result.network, "signer": result.signer, "to": result.to,
+            "asset": result.asset, "amount": result.amount, "fee": result.fee,
+            "warnings": result.warnings, "ok": result.ok,
+        }
+        if result.memo:
+            payload["memo"] = result.memo
+        print(json.dumps(payload, indent=2))
+    else:
+        print(result.summary())
+    return 0
 
 
 def cmd_memo_pub(args: argparse.Namespace) -> int:
@@ -423,6 +494,18 @@ def build_parser() -> argparse.ArgumentParser:
     pay.add_argument("--yes", action="store_true", help="confirm the URI preview")
     write_flags(pay)
     pay.set_defaults(func=cmd_pay)
+
+    preview_cmd = sub.add_parser("preview", help="show a transfer before signing")
+    preview_cmd.add_argument("--to", default="")
+    preview_cmd.add_argument("--asset", default="")
+    preview_cmd.add_argument("--amount", default="")
+    preview_cmd.add_argument("--memo", default="")
+    preview_cmd.add_argument("--memo-to", default="", help="recipient memo public key (hex)")
+    preview_cmd.add_argument("--uri", default="", help="arce:/arne: payment URI")
+    preview_cmd.add_argument("--known", action="append", default=[], help="trusted contact")
+    preview_cmd.add_argument("--json", action="store_true")
+    write_flags(preview_cmd)
+    preview_cmd.set_defaults(func=cmd_preview)
 
     memo = sub.add_parser("memo", help="opt-in encrypted memos")
     memo_sub = memo.add_subparsers(dest="memo_command", required=True)

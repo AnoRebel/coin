@@ -136,6 +136,32 @@ you meant. Memos from URIs are shown as inert text; markup such as `<script>` is
 warning-tagged and never executed. `--memo-to` still applies if you want to seal
 the memo.
 
+### Preview before signing
+
+`preview` signs a transfer, dry-runs it against current state, and prints what
+would happen. It never submits the transaction:
+
+```sh
+arned preview --mnemonic "..." --to arce-devnet1... \
+  --asset arce:devnet --amount 12.5 --json
+arned preview --mnemonic "..." --uri '<uri>' \
+  --known arce-devnet1trustedaddress --json
+```
+
+The preview reports the resolved network, signer, recipient, asset, amount, fee,
+and memo, plus warnings:
+
+- the recipient is your own address;
+- the recipient resembles a `--known` contact (shared prefix and suffix) without
+  being exactly that contact — verify the full address;
+- the asset is not registered on the network;
+- the memo is public, so use `--memo-to` for sensitive text;
+- the simulated transaction would fail (for example `INSUFFICIENT_FUNDS`).
+
+`ok` is false when the transfer could not execute, but the preview itself still
+succeeds. Scripts should check `ok` and `warnings` in `--json` output. Fee is the
+simulated fee; failed transactions are free in v1.
+
 Track the receipt:
 
 ```sh
