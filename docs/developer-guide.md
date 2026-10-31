@@ -26,6 +26,7 @@ make test
 | `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
 | `internal/preview` | Pre-signing preview and safety warnings |
 | `internal/webhook` | Signed webhook delivery, retries, replay checks |
+| `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
@@ -261,6 +262,50 @@ file per block). Its schema version lives in `schema.json`, with
 `SCHEMA_VERSION` and `_MIGRATIONS` mirroring the Go registry; opening a store
 auto-migrates. `shortcut:` a file store is not RocksDB; upgrade when block
 volume or concurrent writers matter.
+
+## Jurisdiction policy engine
+
+`internal/compliance/policy` implements the deterministic engine behind
+compliance hooks. A policy set is a network-wide document with one or more
+versions; each version activates at a block height and remains effective until
+the next one:
+
+```json
+{
+  "network": "arne:devnet",
+  "versions": [{
+    "version": 1,
+    "activation_height": 0,
+    "default": {"decision": "allow", "reason": "no restrictions"},
+    "rules": [{
+      "id": "high-value-hold",
+      "priority": 100,
+      "decision": "hold",
+      "reason": "travel rule review",
+      "requirements": ["travel_rule"],
+      "match": {"assets": ["arce:devnet"], "min_amount": 1000000000, "max_amount": 0}
+    }]
+  }]
+}
+```
+
+- Decisions are `allow`, `deny`, or `hold`; the result also carries the rule ID,
+  policy version, activation height, reasons, and requirements.
+- A rule matches on asset, originator/beneficiary jurisdiction, transfer type,
+  and an inclusive base-unit amount range (`max_amount: 0` is unbounded). Empty
+  lists match anything.
+- The highest-priority matching rule wins; ties break by ascending rule ID. If no
+  rule matches, the version's explicit `default` applies. Before the first
+  activation the engine returns `deny` with rule `no-active-policy`.
+- `Parse` rejects unknown fields, duplicate versions or activation heights,
+  duplicate rule IDs, invalid decisions, and inverted amount ranges.
+- `Evaluate(height, ctx)` selects the version active at that height, so a
+  historical decision can be reproduced with its original policy version.
+  `History()` returns every retained version.
+
+The Python parity implementation is `python/arne/policy.py`. Both suites read
+`spec/vectors/policy.json`; keep Go and Python behavior aligned when changing
+the matcher.
 
 ## Known shortcuts
 

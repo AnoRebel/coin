@@ -1,0 +1,114 @@
+{
+  "sets": [
+    {
+      "policy": {
+        "network": "arne:devnet",
+        "versions": [
+          {
+            "version": 1,
+            "activation_height": 0,
+            "default": {"decision": "allow", "reason": "no restrictions", "requirements": []},
+            "rules": [
+              {
+                "id": "high-value-hold",
+                "priority": 100,
+                "decision": "hold",
+                "reason": "travel rule review",
+                "requirements": ["travel_rule"],
+                "match": {"assets": [], "originator_jurisdictions": [], "beneficiary_jurisdictions": [], "transfer_types": [], "min_amount": 1000000000, "max_amount": 0}
+              },
+              {
+                "id": "sanctioned-jurisdiction",
+                "priority": 200,
+                "decision": "deny",
+                "reason": "sanctioned originator jurisdiction",
+                "requirements": [],
+                "match": {"assets": [], "originator_jurisdictions": ["KP", "IR"], "beneficiary_jurisdictions": [], "transfer_types": [], "min_amount": 0, "max_amount": 0}
+              },
+              {
+                "id": "stablecoin-transfer",
+                "priority": 150,
+                "decision": "deny",
+                "reason": "stablecoin transfers disabled",
+                "requirements": [],
+                "match": {"assets": ["usd:devnet"], "originator_jurisdictions": [], "beneficiary_jurisdictions": [], "transfer_types": ["transfer"], "min_amount": 0, "max_amount": 0}
+              }
+            ]
+          },
+          {
+            "version": 2,
+            "activation_height": 100,
+            "default": {"decision": "deny", "reason": "review required outside known corridors", "requirements": []},
+            "rules": [
+              {
+                "id": "known-corridor",
+                "priority": 50,
+                "decision": "allow",
+                "reason": "known corridor",
+                "requirements": [],
+                "match": {"assets": [], "originator_jurisdictions": ["SE"], "beneficiary_jurisdictions": ["SE"], "transfer_types": ["transfer"], "min_amount": 0, "max_amount": 0}
+              }
+            ]
+          }
+        ]
+      },
+      "cases": [
+        {
+          "height": 0,
+          "context": {"asset": "arce:devnet", "amount": 500, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "allow", "rule_id": "default", "policy_version": 1, "activation_height": 0, "reasons": ["no restrictions"], "requirements": []}
+        },
+        {
+          "height": 0,
+          "context": {"asset": "arce:devnet", "amount": 1000000000, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "hold", "rule_id": "high-value-hold", "policy_version": 1, "activation_height": 0, "reasons": ["travel rule review"], "requirements": ["travel_rule"]}
+        },
+        {
+          "height": 0,
+          "context": {"asset": "arce:devnet", "amount": 1, "originator_jurisdiction": "KP", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "deny", "rule_id": "sanctioned-jurisdiction", "policy_version": 1, "activation_height": 0, "reasons": ["sanctioned originator jurisdiction"], "requirements": []}
+        },
+        {
+          "height": 0,
+          "context": {"asset": "usd:devnet", "amount": 1, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "deny", "rule_id": "stablecoin-transfer", "policy_version": 1, "activation_height": 0, "reasons": ["stablecoin transfers disabled"], "requirements": []}
+        },
+        {
+          "height": 99,
+          "context": {"asset": "arce:devnet", "amount": 500, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "allow", "rule_id": "default", "policy_version": 1, "activation_height": 0, "reasons": ["no restrictions"], "requirements": []}
+        },
+        {
+          "height": 100,
+          "context": {"asset": "arce:devnet", "amount": 1, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "allow", "rule_id": "known-corridor", "policy_version": 2, "activation_height": 100, "reasons": ["known corridor"], "requirements": []}
+        },
+        {
+          "height": 100,
+          "context": {"asset": "arce:devnet", "amount": 999999999, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "NO", "transfer_type": "transfer"},
+          "expected": {"decision": "deny", "rule_id": "default", "policy_version": 2, "activation_height": 100, "reasons": ["review required outside known corridors"], "requirements": []}
+        }
+      ]
+    },
+    {
+      "policy": {
+        "network": "arne:devnet",
+        "versions": [
+          {
+            "version": 1,
+            "activation_height": 10,
+            "default": {"decision": "allow", "reason": "later"},
+            "rules": []
+          }
+        ]
+      },
+      "cases": [
+        {
+          "height": 9,
+          "context": {"asset": "arce:devnet", "amount": 1, "originator_jurisdiction": "SE", "beneficiary_jurisdiction": "SE", "transfer_type": "transfer"},
+          "expected": {"decision": "deny", "rule_id": "no-active-policy", "policy_version": 0, "activation_height": 0, "reasons": ["no policy version is active at this height"], "requirements": []}
+        }
+      ]
+    }
+  ]
+}

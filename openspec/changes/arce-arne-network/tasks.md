@@ -115,7 +115,7 @@
 
 ## 11. Compliance
 
-- [ ] 11.1 Implement the deterministic, versioned jurisdiction policy engine with allow/deny/hold decisions and rule IDs; verify policy-version history
+- [x] 11.1 Implement the deterministic, versioned jurisdiction policy engine with allow/deny/hold decisions and rule IDs; verify policy-version history
 - [ ] 11.2 Implement Travel Rule/IVMS101 collection and authenticated exchange above threshold; verify qualifying, below-threshold, and unavailable-counterparty cases
 - [ ] 11.3 Implement provider-agnostic sanctions screening with list versions, potential-match holds, and fail-closed behavior; verify clear, match, and outage
 - [ ] 11.4 Implement W3C VC 2.0 KYC/accreditation verification with selective disclosure and no raw PII on-chain; verify jurisdiction, expiry, and revocation
