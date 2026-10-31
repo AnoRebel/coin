@@ -2,6 +2,7 @@
 package node
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -90,6 +91,7 @@ func New(cfg Config, genesis ledger.Genesis, store storage.Store) (*Node, error)
 		if err := n.loadBlocks(); err != nil {
 			return nil, err
 		}
+		n.checkStoredRoot(height)
 		if err := n.startWebhooks(); err != nil {
 			return nil, err
 		}
@@ -161,6 +163,28 @@ func (n *Node) loadBlocks() error {
 	return nil
 }
 
+// checkStoredRoot halts when the persisted last block does not match the state
+// that was loaded. A mismatch means the data directory was corrupted or a
+// divergent snapshot was restored; continuing would silently fork.
+func (n *Node) checkStoredRoot(height uint64) {
+	last, ok, err := n.store.LastBlock()
+	if err != nil {
+		n.halted = "storage failure: " + err.Error()
+		return
+	}
+	if !ok {
+		n.halted = fmt.Sprintf("state-root divergence: state height %d has no stored block", height)
+		return
+	}
+	root := n.state.Root()
+	if last.Height != height || last.StateRoot != hex.EncodeToString(root[:]) {
+		n.halted = fmt.Sprintf(
+			"state-root divergence: block %d root %s, state %d root %s",
+			last.Height, last.StateRoot, height, hex.EncodeToString(root[:]),
+		)
+	}
+}
+
 // State exposes the ledger for read-only callers. Callers must not mutate it.
 func (n *Node) State() *ledger.State {
 	n.mu.RLock()
@@ -192,7 +216,7 @@ func (n *Node) Status() Status {
 	}
 	return Status{
 		Network: n.cfg.Network, Chain: n.cfg.Chain, Height: n.state.Height(),
-		StateRoot: protocol.HashHex(root[:]), Time: n.state.BlockTime(),
+		StateRoot: hex.EncodeToString(root[:]), Time: n.state.BlockTime(),
 		Mempool: mempool, Halted: n.halted, Devnet: n.cfg.Devnet,
 		Protocol: "arne/1",
 	}

@@ -1,6 +1,7 @@
 package node
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,73 @@ func TestPruneDropsBlocksAndReceipts(t *testing.T) {
 	}
 	if _, ok := restarted.Block(4); !ok {
 		t.Fatal("restarted node cannot extend the chain")
+	}
+}
+
+func testNode(t *testing.T, store storage.Store) (*Node, Config, ledger.Genesis) {
+	t.Helper()
+	const network = "arne:devnet"
+	funder, _, err := protocol.NewKeyPair(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	faucet, _, err := protocol.NewKeyPair(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis := DevnetGenesis(network, 1_700_000_000, funder, faucet)
+	cfg := Config{
+		Network: network, Chain: genesis.Chain, Params: ledger.DefaultParams(),
+		Proposer: funder.Address, Faucet: faucet, FaucetAmount: 1_000_000,
+		Devnet: true,
+	}
+	n, err := New(cfg, genesis, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n, cfg, genesis
+}
+
+func TestHaltOnStateRootDivergence(t *testing.T) {
+	store := storage.NewMemory()
+	n, cfg, genesis := testNode(t, store)
+	produced, err := n.ProduceBlock(1_700_000_001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := n.Status().StateRoot; got != produced.StateRoot {
+		t.Fatalf("status root %s != block root %s", got, produced.StateRoot)
+	}
+	block, ok, err := store.Block(1)
+	if err != nil || !ok {
+		t.Fatalf("block 1: ok=%v err=%v", ok, err)
+	}
+	block.StateRoot = "0000000000000000000000000000000000000000000000000000000000000000"
+	if err := store.SaveBlock(block); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := New(cfg, genesis, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reopened.Status().Halted, "state-root divergence") {
+		t.Fatalf("halted = %q", reopened.Status().Halted)
+	}
+	if _, err := reopened.ProduceBlock(1_700_000_002); err == nil {
+		t.Fatal("halted node produced a block")
+	}
+}
+
+func TestHaltOnConsensusInvariant(t *testing.T) {
+	n, _, _ := testNode(t, storage.NewMemory())
+	if _, _, err := n.FinalizeTxs(nil, 5, 1_700_000_001, ""); err == nil {
+		t.Fatal("invalid height accepted")
+	}
+	if !strings.Contains(n.Status().Halted, "invariant") {
+		t.Fatalf("halted = %q", n.Status().Halted)
+	}
+	if _, err := n.ProduceBlock(1_700_000_002); err == nil {
+		t.Fatal("halted node produced a block")
 	}
 }

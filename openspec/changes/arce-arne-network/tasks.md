@@ -64,7 +64,7 @@
 - [ ] 6.5 Implement slashing for double-sign and downtime with evidence windows and reporter rewards; verify valid, stale, and forged evidence
 - [ ] 6.6 Implement commit certificates, validator-set proofs, and light-client verification; verify insufficient-quorum rejection
 - [ ] 6.7 Implement public and consortium validator admission; verify public join, consortium approval, and unapproved rejection
-- [ ] 6.8 Implement node halt on state-root divergence and consensus-critical invariant violation; verify the halt path with an injected divergence
+- [x] 6.8 Implement node halt on state-root divergence and consensus-critical invariant violation; verify the halt path with an injected divergence
 - [ ] 6.9 Add a two-node and a Go+Python mixed devnet; verify both finalize the same chain
 
 ## 7. Governance and economics

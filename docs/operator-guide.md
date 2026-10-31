@@ -270,9 +270,10 @@ deliveries.
 
 ## Incident response
 
-- **Halted node**: a conservation/invariant check failed. Stop it, preserve the
-  data directory and logs, do not restart in a loop. Restore from the last known
-  good backup and report the block height.
+- **Halted node**: a conservation/invariant check failed, or the last persisted
+  block's state root does not match the loaded state. Stop it, preserve the data
+  directory and logs, do not restart in a loop. Restore from the last known
+  good backup and report the block height and state root.
 - **Divergence**: compare `state_root` at the same height with a peer. CometBFT
   decides the chain, but a divergent app hash is still a bug; preserve both
   data directories and report the height.
