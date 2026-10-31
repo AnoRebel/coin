@@ -27,6 +27,7 @@ make test
 | `internal/preview` | Pre-signing preview and safety warnings |
 | `internal/webhook` | Signed webhook delivery, retries, replay checks |
 | `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
+| `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
@@ -262,6 +263,15 @@ file per block). Its schema version lives in `schema.json`, with
 `SCHEMA_VERSION` and `_MIGRATIONS` mirroring the Go registry; opening a store
 auto-migrates. `shortcut:` a file store is not RocksDB; upgrade when block
 volume or concurrent writers matter.
+
+`internal/snapshot` exports the app store as gzipped JSON. `Create` reads the
+last block and state, optionally from a full base, and stamps a SHA-256 digest
+over the whole document. `Verify` recomputes the digest and state root, checks
+block heights, `tx_root` values, and predecessor links. `Restore` requires a
+nonexistent destination, writes into a temporary sibling store, migrates it to
+the current schema, and renames it into place. Incrementals require the full
+base for both verification and restore. `shortcut:` snapshots are built in
+memory; stream the state map if production block volume makes that costly.
 
 ## Jurisdiction policy engine
 

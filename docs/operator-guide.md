@@ -180,6 +180,38 @@ volume while the node is stopped.
   - `halted` non-empty,
   - state root changing unexpectedly between restarts.
 
+## Snapshots
+
+Snapshots move or archive the app store without the encryption of a home
+backup. Stop the node first.
+
+```sh
+arned snapshot create --data-dir /var/lib/arne/app --out /backup/full.snap
+arned snapshot verify --in /backup/full.snap
+arned snapshot restore --in /backup/full.snap --data-dir /var/lib/arne-restored
+```
+
+A full snapshot contains every block and the state at the snapshot height. An
+incremental snapshot contains only blocks above a full base, plus the current
+state; create and restore it with the base file:
+
+```sh
+arned snapshot create --data-dir /var/lib/arne/app --out /backup/inc.snap --base /backup/full.snap
+arned snapshot verify --in /backup/inc.snap --base /backup/full.snap
+arned snapshot restore --in /backup/inc.snap --base /backup/full.snap --data-dir /var/lib/arne-restored
+```
+
+`--network` defaults to `arne:devnet`; `--chain` is derived from it unless set.
+The file is gzipped JSON with a SHA-256 digest over every field. Verification
+also recomputes the state root from the state map, checks block order, checks
+each `tx_root`, and links each block to its predecessor's state root. A
+tampered file is rejected before anything is written. Restore writes into a
+sibling temporary directory, verifies the result, and renames it into place;
+the destination must not exist.
+
+Snapshots do not include CometBFT keys or blockstore. For a consensus node, use
+the encrypted home backup instead (or keep both copies).
+
 ## Backup and restore
 
 The node has no online snapshot command. Stop it first (SIGTERM; it shuts down
