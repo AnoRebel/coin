@@ -494,8 +494,16 @@ class State:
             fee = self.params.min_fee
         if tx.max_fee < fee:
             raise _err(FEE_TOO_LOW, f"fee {fee} above max_fee {tx.max_fee}")
+        max_arce_fee = 0
+        if "max_arce_fee" in tx.payload:
+            value = tx.payload["max_arce_fee"]
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise _err(INVALID_PAYLOAD, "max_arce_fee must be a positive integer")
+            max_arce_fee = value
         native = types.native_asset(self.network)
         if tx.fee_asset == native:
+            if max_arce_fee and fee > max_arce_fee:
+                raise _err(LIMIT_EXCEEDED, f"fee {fee} above max_arce_fee {max_arce_fee}")
             self._sub_balance(tx.signer, native, fee)
             self._split_fee(native, fee)
             return fee
@@ -505,6 +513,11 @@ class State:
         if rate == 0:
             raise _err(NO_FEE_ROUTE, f"no fee route for {tx.fee_asset!r}")
         arce_fee = fee * rate // 100_000_000
+        if max_arce_fee and arce_fee > max_arce_fee:
+            raise _err(
+                LIMIT_EXCEEDED,
+                f"converted fee {arce_fee} above max_arce_fee {max_arce_fee}",
+            )
         self._sub_balance(tx.signer, tx.fee_asset, fee)
         self._add_pool(POOL_TREASURY, tx.fee_asset, fee)
         try:

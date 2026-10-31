@@ -241,8 +241,9 @@ a bug; do not send fractional JSON numbers.
 
 The fee asset is part of the signed transaction. Default to the native asset
 (`arce:<network>`). A foreign fee asset requires a `route` and a funded
-`fee_swap` pool; otherwise the node rejects with `NO_FEE_ROUTE`. Quote
-requirements are the operator's responsibility today.
+`fee_swap` pool; otherwise the node rejects with `NO_FEE_ROUTE`. Set the
+optional payload field `max_arce_fee` (ARCE base units) to bound the converted
+fee; a conversion above it is rejected with `LIMIT_EXCEEDED` before charging.
 
 ## 9. Webhooks and connectors
 

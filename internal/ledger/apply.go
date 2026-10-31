@@ -171,8 +171,19 @@ func (s *State) chargeFee(tx protocol.Tx) (uint64, error) {
 	if tx.MaxFee < fee {
 		return 0, txErr(CodeFeeTooLow, "fee %d above max_fee %d", fee, tx.MaxFee)
 	}
+	var maxArceFee uint64
+	if raw, ok := tx.Payload["max_arce_fee"]; ok {
+		v, ok := raw.(uint64)
+		if !ok || v == 0 {
+			return 0, txErr(CodeInvalidPayload, "max_arce_fee must be a positive integer")
+		}
+		maxArceFee = v
+	}
 	native := protocol.NativeAsset(s.Network)
 	if tx.FeeAsset == native {
+		if maxArceFee > 0 && fee > maxArceFee {
+			return 0, txErr(CodeLimitExceeded, "fee %d above max_arce_fee %d", fee, maxArceFee)
+		}
 		if err := s.subBalance(tx.Signer, native, fee); err != nil {
 			return 0, err
 		}
@@ -189,6 +200,9 @@ func (s *State) chargeFee(tx protocol.Tx) (uint64, error) {
 	arceFee, ok := mulDiv(fee, rate, 100_000_000)
 	if !ok {
 		return 0, txErr(CodeLimitExceeded, "fee conversion overflow")
+	}
+	if maxArceFee > 0 && arceFee > maxArceFee {
+		return 0, txErr(CodeLimitExceeded, "converted fee %d above max_arce_fee %d", arceFee, maxArceFee)
 	}
 	if err := s.subBalance(tx.Signer, tx.FeeAsset, fee); err != nil {
 		return 0, err

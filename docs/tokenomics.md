@@ -58,7 +58,10 @@ Default parameters:
 fee = max(base_fee, min_fee) + priority_fee
 ```
 
-The fee must be ≤ the signed `max_fee`, otherwise `FEE_TOO_LOW`. Failed
+The fee must be ≤ the signed `max_fee`, otherwise `FEE_TOO_LOW`. A payment in
+another asset must also respect the optional `max_arce_fee` payload field (ARCE
+base units), which bounds the converted ARCE fee and fails with
+`LIMIT_EXCEEDED`; a native fee is capped directly by it. Failed
 transactions are free and fully rolled back. That is a deliberate v1 shortcut:
 it avoids charging for bugs but leaves a spam vector until fee-on-failure lands.
 

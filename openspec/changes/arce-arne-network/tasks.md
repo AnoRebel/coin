@@ -37,7 +37,7 @@
 - [x] 4.2 Implement supply policies (`fixed`, `capped`, `mintable`, `burnable`) and conservation checks; verify cap, fixed-supply, and burn vectors
 - [x] 4.3 Implement account state with per-asset balances, nonce, authorization policy, and account creation; verify independent balances and overspend rejection
 - [x] 4.4 Implement atomic transfers with fee charging and rollback; verify success and every failure path leaves state unchanged
-- [ ] 4.5 Implement fee payment in ARCE and in registered assets with auto-conversion and slippage limits; verify fee-cap, no-route, and slippage vectors
+- [x] 4.5 Implement fee payment in ARCE and in registered assets with auto-conversion and slippage limits; verify fee-cap, no-route, and slippage vectors
 - [x] 4.6 Implement nonce ordering, expiration, replay rejection, and mempool replacement; verify duplicate and expired transactions fail
 - [x] 4.7 Implement escrow with release, refund, arbiter, and timeout; verify double-release and unauthorized release fail
 - [x] 4.8 Implement bounded, revocable allowances; verify over-allowance and post-revocation transfers fail

@@ -369,6 +369,30 @@ def test_foreign_fee_needs_route(f: Fixture) -> None:
     f.state.check_all()
 
 
+def test_fee_slippage_limit(f: Fixture) -> None:
+    f.apply(f.tx(f.alice, types.TX_REGISTER_ASSET, {"asset": _register(f)}, 0))
+    f.apply(f.tx(f.alice, types.TX_MINT, {"asset": "usd:devnet", "to": f.bob.address, "amount": 10_000}, 1))
+    f.state.set_route("usd:devnet", 100_000_000)
+
+    def pay(fee_asset: str, cap) -> types.Tx:
+        payload = {"asset": NATIVE, "to": f.carol.address, "amount": 10}
+        if cap is not None:
+            payload["max_arce_fee"] = cap
+        tx = f.tx(f.bob, types.TX_TRANSFER, payload, f.state.account(f.bob.address)[0].nonce)
+        tx.signatures.clear()
+        tx.fee_asset = fee_asset
+        tx.sign(f.bob)
+        return tx
+
+    assert f.apply(pay("usd:devnet", 999)).code == ledger.LIMIT_EXCEEDED
+    assert f.apply(pay("usd:devnet", 1000)).success
+    assert f.apply(pay(NATIVE, 999)).code == ledger.LIMIT_EXCEEDED
+    assert f.apply(pay(NATIVE, 1000)).success
+    for bad in (0, "1000"):
+        assert f.apply(pay(NATIVE, bad)).code == ledger.INVALID_PAYLOAD
+    f.state.check_all()
+
+
 def test_state_proofs(f: Fixture) -> None:
     key = f"balance/{f.alice.address}/{NATIVE}"
     root = f.state.root()

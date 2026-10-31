@@ -157,7 +157,9 @@ treasury   = fee - burn - validators
 
 For a non-native fee asset, the whole fee moves to the treasury in that asset
 and the `fee_swap` pool pays `fee * route / 1e8` ARCE, which is split normally.
-No route or an underfunded pool → `NO_FEE_ROUTE`.
+No route or an underfunded pool → `NO_FEE_ROUTE`. An optional payload field
+`max_arce_fee` caps the ARCE amount (converted fee, or the native fee itself);
+exceeding it fails with `LIMIT_EXCEEDED` before any balance changes.
 
 ## Blocks and consensus
 

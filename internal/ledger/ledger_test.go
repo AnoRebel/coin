@@ -638,6 +638,61 @@ func TestFeeInForeignAsset(t *testing.T) {
 	}
 }
 
+func TestFeeSlippageLimit(t *testing.T) {
+	f := newFixture(t)
+	assetMap := map[string]any{
+		"id": "usd:devnet", "class": "fiat", "symbol": "USD", "name": "US Dollar",
+		"decimals": uint64(2), "policy": "capped", "max_supply": uint64(1_000_000_000),
+		"issuer": f.alice.Address, "registered": uint64(0), "meta": map[string]any{},
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxRegisterAsset, map[string]any{"asset": assetMap}, 0)); !r.Success {
+		t.Fatalf("register: %+v", r)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxMint, map[string]any{
+		"asset": "usd:devnet", "to": f.bob.Address, "amount": uint64(10_000),
+	}, 1)); !r.Success {
+		t.Fatalf("mint: %+v", r)
+	}
+	f.state.SetRoute("usd:devnet", 100_000_000) // 1:1 with ARCE
+
+	pay := func(feeAsset string, cap any) protocol.Tx {
+		payload := map[string]any{
+			"asset": protocol.NativeAsset(testNet), "to": f.carol.Address, "amount": uint64(10),
+		}
+		if cap != nil {
+			payload["max_arce_fee"] = cap
+		}
+		acct, _ := f.state.Account(f.bob.Address)
+		tx := f.tx(t, f.bob, protocol.TxTransfer, payload, acct.Nonce)
+		tx.FeeAsset = feeAsset
+		tx.Signatures = nil
+		if err := tx.Sign(f.bob); err != nil {
+			t.Fatal(err)
+		}
+		return tx
+	}
+	if r := f.apply(t, pay("usd:devnet", uint64(999))); r.Success || r.Code != CodeLimitExceeded {
+		t.Fatalf("slippage over cap accepted: %+v", r)
+	}
+	if r := f.apply(t, pay("usd:devnet", uint64(1000))); !r.Success {
+		t.Fatalf("slippage at cap rejected: %+v", r)
+	}
+	if r := f.apply(t, pay(protocol.NativeAsset(testNet), uint64(999))); r.Success || r.Code != CodeLimitExceeded {
+		t.Fatalf("native fee over cap accepted: %+v", r)
+	}
+	if r := f.apply(t, pay(protocol.NativeAsset(testNet), uint64(1000))); !r.Success {
+		t.Fatalf("native fee at cap rejected: %+v", r)
+	}
+	for _, bad := range []any{uint64(0), "1000"} {
+		if r := f.apply(t, pay(protocol.NativeAsset(testNet), bad)); r.Success || r.Code != CodeInvalidPayload {
+			t.Fatalf("max_arce_fee %v accepted: %+v", bad, r)
+		}
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStateProofs(t *testing.T) {
 	f := newFixture(t)
 	native := protocol.NativeAsset(testNet)

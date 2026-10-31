@@ -261,6 +261,11 @@ transaction; unknown payload keys are currently ignored.
 | `mint` | `asset`, `to`, `amount` (issuer only, policy permitting) |
 | `burn` | `asset`, `amount` (burnable policy only) |
 
+Any transaction payload may include `max_arce_fee` (positive integer, ARCE base
+units). When the fee is paid in another asset, the converted ARCE amount must
+not exceed it; otherwise the transaction is rejected with `LIMIT_EXCEEDED`
+before any fee is charged. For a native fee it caps the fee directly.
+
 `amount` is always integer base units and must be > 0 where an amount is
 required. An `atomic` batch rolls back entirely if any item fails. In a
 `best_effort` batch each item is validated and applied independently; failures

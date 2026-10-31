@@ -450,6 +450,8 @@ once for the transaction. Scheduled/recurring runs are still planned.
 - `INSUFFICIENT_FUNDS`: the amount plus fee exceeds the balance.
 - `EXPIRED`: the transaction's `expires_at` passed before inclusion.
 - `NO_FEE_ROUTE`: the chosen fee asset has no rate or the swap pool is empty.
+- `LIMIT_EXCEEDED`: the converted fee exceeds your `max_arce_fee`, or a batch
+  or priority fee is above its cap.
 - `UNKNOWN_ASSET`: wrong ID or wrong network suffix.
 - `WRONG_NETWORK`: address or transaction built for another network.
 

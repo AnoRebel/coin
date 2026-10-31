@@ -497,6 +497,21 @@ func ledgerVectors() map[string]any {
 		mk("alice", protocol.TxCancelSub, map[string]any{"id": subID}, native),
 		mk("bob", protocol.TxChargeSub, map[string]any{"id": subID, "amount": uint64(1)}, native),
 	)
+	for name, kp := range keys {
+		account, _ := st.Account(kp.Address)
+		nonces[name] = account.Nonce
+	}
+	run(15, 1_700_001_400, map[string]uint64{usdID: 100_000_000},
+		mk("bob", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000), "max_arce_fee": uint64(1_000),
+		}, usdID),
+		mk("bob", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000), "max_arce_fee": uint64(999),
+		}, usdID),
+		mk("carol", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000), "max_arce_fee": uint64(1_000),
+		}, native),
+	)
 	return map[string]any{
 		"network": network, "chain": chain, "mnemonic": mnemonic,
 		"genesis": map[string]any{
