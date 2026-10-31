@@ -500,3 +500,80 @@ def test_refund_and_intent_are_exclusive(f: Fixture) -> None:
         "asset": NATIVE, "to": f.alice.address, "amount": 1,
         "refund_of": pay.hash, "intent": "0" * 32}, 0))
     assert result.code == ledger.INVALID_PAYLOAD
+
+
+def test_subscription_lifecycle_and_limits(f: Fixture) -> None:
+    start = NOW
+    sub_id = types.subscription_id(NETWORK, f.alice.address, f.bob.address, NATIVE, 0)
+    created = f.apply_at(f.tx(f.alice, types.TX_CREATE_SUB, {
+        "payee": f.bob.address, "asset": NATIVE, "amount_per_period": 2_000_000,
+        "period": 1000, "total_cap": 5_000_000,
+    }, 0), start)
+    assert created.success, created.error
+    assert created.events[0]["type"] == "subscription_created"
+    assert f.state.subscription(sub_id).status == types.SUB_ACTIVE
+
+    def charge(nonce: int, amount: int, at: int) -> ledger.Receipt:
+        return f.apply_at(f.tx(f.bob, types.TX_CHARGE_SUB, {"id": sub_id, "amount": amount}, nonce), at)
+
+    bob_before = f.state.balance(f.bob.address, NATIVE)
+    assert charge(0, 1_500_000, start + 10).success
+    bob_after = f.state.balance(f.bob.address, NATIVE)
+    over = charge(1, 1_000_000, start + 20)
+    assert over.code == "SUBSCRIPTION_LIMIT"
+    assert f.state.balance(f.bob.address, NATIVE) == bob_after > bob_before
+    assert charge(1, 500_000, start + 30).success
+    assert charge(2, 1, start + 40).code == "SUBSCRIPTION_LIMIT"
+
+    # A new period resets the per-period counter but not the total.
+    assert charge(2, 2_000_000, start + 1000).success
+    sub = f.state.subscription(sub_id)
+    assert (sub.charged_period, sub.charged_total) == (2_000_000, 4_000_000)
+    assert charge(3, 1, start + 1010).code == "SUBSCRIPTION_LIMIT"
+    assert charge(3, 2_000_000, start + 2000).code == "SUBSCRIPTION_LIMIT"
+    assert charge(3, 1_000_000, start + 2010).success
+    assert charge(4, 1, start + 3000).code == "SUBSCRIPTION_LIMIT"
+    assert f.state.subscription(sub_id).charged_total == 5_000_000
+    f.state.check_all()
+
+
+def test_subscription_authorization_and_expiry(f: Fixture) -> None:
+    start = NOW
+    missing = f.apply_at(f.tx(f.bob, types.TX_CHARGE_SUB, {"id": "0" * 32, "amount": 1}, 0), start)
+    assert missing.code == "SUBSCRIPTION_NOT_FOUND"
+
+    sub_id = types.subscription_id(NETWORK, f.alice.address, f.bob.address, NATIVE, 0)
+    created = f.apply_at(f.tx(f.alice, types.TX_CREATE_SUB, {
+        "payee": f.bob.address, "asset": NATIVE, "amount_per_period": 1_000_000,
+        "period": 3600, "total_cap": 3_000_000, "expires_at": start + 1000,
+    }, 0), start + 2)
+    assert created.success, created.error
+
+    payer_charge = f.apply_at(f.tx(f.alice, types.TX_CHARGE_SUB, {"id": sub_id, "amount": 1}, 1), start + 3)
+    assert payer_charge.code == "UNAUTHORIZED"
+    payee_cancel = f.apply_at(f.tx(f.bob, types.TX_CANCEL_SUB, {"id": sub_id}, 0), start + 4)
+    assert payee_cancel.code == "UNAUTHORIZED"
+    assert f.apply_at(f.tx(f.alice, types.TX_CANCEL_SUB, {"id": sub_id}, 1), start + 5).success
+    post_cancel = f.apply_at(f.tx(f.bob, types.TX_CHARGE_SUB, {"id": sub_id, "amount": 1}, 0), start + 6)
+    assert post_cancel.code == "SUBSCRIPTION_CLOSED"
+    double_cancel = f.apply_at(f.tx(f.alice, types.TX_CANCEL_SUB, {"id": sub_id}, 2), start + 7)
+    assert double_cancel.code == "SUBSCRIPTION_CLOSED"
+
+    expiring_id = types.subscription_id(NETWORK, f.alice.address, f.bob.address, NATIVE, 2)
+    expiring = f.apply_at(f.tx(f.alice, types.TX_CREATE_SUB, {
+        "payee": f.bob.address, "asset": NATIVE, "amount_per_period": 1_000_000,
+        "period": 3600, "total_cap": 3_000_000, "expires_at": start + 200,
+    }, 2), start + 10)
+    assert expiring.success, expiring.error
+    assert f.apply_at(f.tx(f.bob, types.TX_CHARGE_SUB, {"id": expiring_id, "amount": 1}, 0), start + 50).success
+    expired = f.apply_at(f.tx(f.bob, types.TX_CHARGE_SUB, {"id": expiring_id, "amount": 1}, 1), start + 201)
+    assert expired.code == "SUBSCRIPTION_EXPIRED"
+
+    for payload in (
+        {"payee": f.alice.address, "asset": NATIVE, "amount_per_period": 1, "period": 3600, "total_cap": 1},
+        {"payee": f.bob.address, "asset": NATIVE, "amount_per_period": 1, "period": 0, "total_cap": 1},
+        {"payee": f.bob.address, "asset": NATIVE, "amount_per_period": 0, "period": 3600, "total_cap": 1},
+    ):
+        invalid = f.apply_at(f.tx(f.alice, types.TX_CREATE_SUB, payload, 3), start + 300)
+        assert invalid.code == "INVALID_PAYLOAD"
+    f.state.check_all()

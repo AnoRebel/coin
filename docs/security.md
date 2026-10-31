@@ -46,6 +46,9 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
 - Refund fraud/over-refund: refunds are signed by the original recipient,
   return the original asset to the original payer, and are capped by the
   cumulative on-chain `refunded` total; refund-of-refund is rejected.
+- Unauthorized recurring charges: only the payer can create or cancel, only the
+  named payee can charge, per-period and total caps are enforced on chain, and
+  expiry is checked before every charge.
 - Supply inflation: conservation check after every transaction and block; a
   violation halts the node.
 - Storage corruption: checksum on every record.

@@ -224,6 +224,56 @@ func TestIntentQuery(t *testing.T) {
 	}
 }
 
+func TestSubscriptionQuery(t *testing.T) {
+	n, payer := newTestNode(t, 0)
+	e := New(n, Config{})
+	payee, _, err := protocol.NewKeyPair(testNetwork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := protocol.NativeAsset(testNetwork)
+	id := protocol.SubscriptionID(testNetwork, payer.Address, payee.Address, native, 0)
+	missing := httptest.NewRecorder()
+	e.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/v1/subscriptions/"+id, nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing: %d %s", missing.Code, missing.Body)
+	}
+	now := uint64(time.Now().Unix())
+	tx := protocol.Tx{
+		Version: protocol.CurrentTxVersion, Network: testNetwork, Chain: "arne-devnet-1",
+		Type: protocol.TxCreateSub, Signer: payer.Address, Nonce: 0,
+		CreatedAt: now, ExpiresAt: now + 3600, FeeAsset: native, MaxFee: 1000,
+		Payload: map[string]any{"payee": payee.Address, "asset": native,
+			"amount_per_period": uint64(500), "period": uint64(3600), "total_cap": uint64(2000)},
+	}
+	if err := tx.Sign(payer); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := protocol.Encode(tx.ToCBOR())
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := httptest.NewRecorder()
+	e.ServeHTTP(submit, httptest.NewRequest(http.MethodPost, "/v1/transactions", bytes.NewReader(raw)))
+	if submit.Code != http.StatusAccepted {
+		t.Fatalf("submit: %d %s", submit.Code, submit.Body)
+	}
+	if _, err := n.ProduceBlock(now + 1); err != nil {
+		t.Fatal(err)
+	}
+	query := httptest.NewRecorder()
+	e.ServeHTTP(query, httptest.NewRequest(http.MethodGet, "/v1/subscriptions/"+id, nil))
+	var sub protocol.Subscription
+	if err := json.Unmarshal(query.Body.Bytes(), &sub); err != nil {
+		t.Fatal(err)
+	}
+	if query.Code != http.StatusOK || sub.ID != id || sub.Payer != payer.Address ||
+		sub.Payee != payee.Address || sub.AmountPerPeriod != 500 || sub.TotalCap != 2000 ||
+		sub.Status != protocol.SubscriptionActive {
+		t.Fatalf("query: %d %s", query.Code, query.Body)
+	}
+}
+
 func TestTransferQuery(t *testing.T) {
 	n, signer := newTestNode(t, 0)
 	e := New(n, Config{})

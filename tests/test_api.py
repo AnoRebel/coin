@@ -134,6 +134,31 @@ def test_intent_query(client: TestClient, setup) -> None:
     }
 
 
+def test_subscription_query(client: TestClient, setup) -> None:
+    node, keys = setup
+    payer, payee = keys["funder"], keys["recipient"]
+    sub_id = types.subscription_id(NETWORK, payer.address, payee.address, "arce:devnet", 0)
+    missing = client.get("/v1/subscriptions/" + "0" * 32)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "SUBSCRIPTION_NOT_FOUND"
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type=types.TX_CREATE_SUB,
+        signer=payer.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=10_000,
+        payload={"payee": payee.address, "asset": "arce:devnet", "amount_per_period": 500,
+                 "period": 3600, "total_cap": 2000},
+    )
+    tx.sign(payer)
+    submitted = client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()))
+    assert submitted.status_code == 202, submitted.text
+    node.produce_block(now + 1)
+    body = client.get(f"/v1/subscriptions/{sub_id}").json()
+    assert body["id"] == sub_id and body["payer"] == payer.address and body["payee"] == payee.address
+    assert (body["amount_per_period"], body["period"], body["total_cap"]) == (500, 3600, 2000)
+    assert body["status"] == "active" and body["charged_total"] == 0
+
+
 def test_transfer_query(client: TestClient, setup) -> None:
     node, keys = setup
     key = keys["funder"]

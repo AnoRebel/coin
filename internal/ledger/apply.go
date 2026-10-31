@@ -39,6 +39,11 @@ const (
 	CodeRefundNotFound    Code = "REFUND_NOT_FOUND"
 	CodeRefundMismatch    Code = "REFUND_MISMATCH"
 	CodeRefundExceeded    Code = "REFUND_EXCEEDED"
+	CodeSubNotFound       Code = "SUBSCRIPTION_NOT_FOUND"
+	CodeSubExists         Code = "SUBSCRIPTION_EXISTS"
+	CodeSubClosed         Code = "SUBSCRIPTION_CLOSED"
+	CodeSubExpired        Code = "SUBSCRIPTION_EXPIRED"
+	CodeSubLimit          Code = "SUBSCRIPTION_LIMIT"
 	CodeAllowanceExceeded Code = "ALLOWANCE_EXCEEDED"
 	CodeLimitExceeded     Code = "LIMIT_EXCEEDED"
 	CodeConservation      Code = "CONSERVATION_VIOLATION"
@@ -261,6 +266,12 @@ func (s *State) execute(tx protocol.Tx, now uint64, r *Receipt) error {
 		return s.execTransfer(tx, now, r)
 	case protocol.TxCreateIntent:
 		return s.execCreateIntent(tx, now, r)
+	case protocol.TxCreateSub:
+		return s.execCreateSubscription(tx, now, r)
+	case protocol.TxChargeSub:
+		return s.execChargeSubscription(tx, now, r)
+	case protocol.TxCancelSub:
+		return s.execCancelSubscription(tx, now, r)
 	case protocol.TxBatch:
 		return s.execBatch(tx, r)
 	case protocol.TxRegisterAsset:
@@ -474,6 +485,158 @@ func (s *State) checkIntent(id, payee, asset string, amount, now uint64) (protoc
 		return in, txErr(CodeIntentMismatch, "payment does not match intent %s", id)
 	}
 	return in, nil
+}
+
+func (s *State) execCreateSubscription(tx protocol.Tx, now uint64, r *Receipt) error {
+	payee, err := payloadString(tx.Payload, "payee")
+	if err != nil {
+		return err
+	}
+	asset, err := payloadString(tx.Payload, "asset")
+	if err != nil {
+		return err
+	}
+	perPeriod, err := payloadUint(tx.Payload, "amount_per_period")
+	if err != nil {
+		return err
+	}
+	period, err := payloadUint(tx.Payload, "period")
+	if err != nil {
+		return err
+	}
+	totalCap, err := payloadUint(tx.Payload, "total_cap")
+	if err != nil {
+		return err
+	}
+	if perPeriod == 0 || period == 0 || totalCap == 0 {
+		return txErr(CodeInvalidPayload, "amount_per_period, period, and total_cap must be positive")
+	}
+	if payee == tx.Signer {
+		return txErr(CodeInvalidPayload, "payee must differ from payer")
+	}
+	if err := s.requireAsset(asset); err != nil {
+		return err
+	}
+	if err := s.requireAddress(payee); err != nil {
+		return err
+	}
+	var expiresAt uint64
+	if raw, ok := tx.Payload["expires_at"]; ok {
+		expiresAt, ok = raw.(uint64)
+		if !ok {
+			return txErr(CodeInvalidPayload, "expires_at must be unsigned")
+		}
+		if expiresAt <= now {
+			return txErr(CodeInvalidPayload, "expires_at must be in the future")
+		}
+	}
+	id := protocol.SubscriptionID(s.Network, tx.Signer, payee, asset, tx.Nonce)
+	if _, exists, err := s.Subscription(id); err != nil {
+		return err
+	} else if exists {
+		return txErr(CodeSubExists, "subscription %s already exists", id)
+	}
+	sub := protocol.Subscription{
+		ID: id, Payer: tx.Signer, Payee: payee, Asset: asset,
+		AmountPerPeriod: perPeriod, Period: period, TotalCap: totalCap,
+		PeriodStart: now, ExpiresAt: expiresAt, Status: protocol.SubscriptionActive, CreatedAt: now,
+	}
+	if err := s.putSubscription(sub); err != nil {
+		return err
+	}
+	r.Events = append(r.Events, Event{Type: "subscription_created", Attrs: map[string]string{
+		"id": id, "payer": tx.Signer, "payee": payee, "asset": asset,
+		"amount_per_period": fmt.Sprint(perPeriod), "period": fmt.Sprint(period),
+		"total_cap": fmt.Sprint(totalCap), "expires_at": fmt.Sprint(expiresAt),
+	}})
+	return nil
+}
+
+func (s *State) execChargeSubscription(tx protocol.Tx, now uint64, r *Receipt) error {
+	id, err := payloadString(tx.Payload, "id")
+	if err != nil {
+		return err
+	}
+	amount, err := payloadUint(tx.Payload, "amount")
+	if err != nil {
+		return err
+	}
+	if amount == 0 {
+		return txErr(CodeInvalidPayload, "amount must be positive")
+	}
+	sub, ok, err := s.Subscription(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return txErr(CodeSubNotFound, "subscription %s", id)
+	}
+	if sub.Status != protocol.SubscriptionActive {
+		return txErr(CodeSubClosed, "subscription %s is %s", id, sub.Status)
+	}
+	if tx.Signer != sub.Payee {
+		return txErr(CodeUnauthorized, "only the subscription payee may charge")
+	}
+	if sub.ExpiresAt != 0 && now > sub.ExpiresAt {
+		return txErr(CodeSubExpired, "subscription %s expired at %d", id, sub.ExpiresAt)
+	}
+	// Advances reset the per-period counter; unused periods do not accumulate.
+	if now >= sub.PeriodStart && now-sub.PeriodStart >= sub.Period {
+		periods := (now - sub.PeriodStart) / sub.Period
+		sub.PeriodStart += periods * sub.Period
+		sub.ChargedPeriod = 0
+	}
+	if sub.ChargedPeriod > sub.AmountPerPeriod || sub.ChargedTotal > sub.TotalCap {
+		return txErr(CodeSubLimit, "subscription %s totals are inconsistent", id)
+	}
+	if amount > sub.AmountPerPeriod-sub.ChargedPeriod || amount > sub.TotalCap-sub.ChargedTotal {
+		return txErr(CodeSubLimit, "charge exceeds subscription %s limits", id)
+	}
+	if err := s.move(sub.Payer, sub.Payee, sub.Asset, amount, r); err != nil {
+		return err
+	}
+	sub.ChargedPeriod += amount
+	sub.ChargedTotal += amount
+	if err := s.putSubscription(sub); err != nil {
+		return err
+	}
+	r.Events = append(r.Events, Event{Type: "subscription_charged", Attrs: map[string]string{
+		"id": id, "payer": sub.Payer, "payee": sub.Payee, "asset": sub.Asset,
+		"amount": fmt.Sprint(amount), "charged_period": fmt.Sprint(sub.ChargedPeriod),
+		"charged_total":   fmt.Sprint(sub.ChargedTotal),
+		"remaining_total": fmt.Sprint(sub.TotalCap - sub.ChargedTotal),
+		"period_start":    fmt.Sprint(sub.PeriodStart),
+	}})
+	return nil
+}
+
+func (s *State) execCancelSubscription(tx protocol.Tx, now uint64, r *Receipt) error {
+	id, err := payloadString(tx.Payload, "id")
+	if err != nil {
+		return err
+	}
+	sub, ok, err := s.Subscription(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return txErr(CodeSubNotFound, "subscription %s", id)
+	}
+	if sub.Status != protocol.SubscriptionActive {
+		return txErr(CodeSubClosed, "subscription %s is %s", id, sub.Status)
+	}
+	if tx.Signer != sub.Payer {
+		return txErr(CodeUnauthorized, "only the subscription payer may cancel")
+	}
+	sub.Status = protocol.SubscriptionCancelled
+	sub.CancelledAt = now
+	if err := s.putSubscription(sub); err != nil {
+		return err
+	}
+	r.Events = append(r.Events, Event{Type: "subscription_cancelled", Attrs: map[string]string{
+		"id": id, "payer": sub.Payer, "payee": sub.Payee,
+	}})
+	return nil
 }
 
 // checkRefund validates a refund against the original transfer index and

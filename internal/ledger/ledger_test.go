@@ -882,3 +882,150 @@ func eventOf(r Receipt, typ string) (Event, bool) {
 	}
 	return Event{}, false
 }
+
+func TestSubscriptionLifecycleAndLimits(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	start := uint64(1_700_000_100)
+	id := protocol.SubscriptionID(testNet, f.alice.Address, f.bob.Address, native, 0)
+
+	r := f.applyAt(t, f.tx(t, f.alice, protocol.TxCreateSub, map[string]any{
+		"payee": f.bob.Address, "asset": native, "amount_per_period": uint64(2_000_000),
+		"period": uint64(1000), "total_cap": uint64(5_000_000),
+	}, 0), start)
+	if !r.Success {
+		t.Fatalf("create: %s %s", r.Code, r.Error)
+	}
+	if _, ok := eventOf(r, "subscription_created"); !ok {
+		t.Fatalf("events = %+v", r.Events)
+	}
+	sub, ok, err := f.state.Subscription(id)
+	if err != nil || !ok || sub.Status != protocol.SubscriptionActive ||
+		sub.AmountPerPeriod != 2_000_000 || sub.TotalCap != 5_000_000 {
+		t.Fatalf("subscription = %+v ok=%v err=%v", sub, ok, err)
+	}
+
+	charge := func(nonce, amount, at uint64) Receipt {
+		return f.applyAt(t, f.tx(t, f.bob, protocol.TxChargeSub, map[string]any{
+			"id": id, "amount": amount,
+		}, nonce), at)
+	}
+	bobBefore := f.state.Balance(f.bob.Address, native)
+	if r = charge(0, 1_500_000, start+10); !r.Success {
+		t.Fatalf("charge: %s %s", r.Code, r.Error)
+	}
+	if ev, ok := eventOf(r, "subscription_charged"); !ok || ev.Attrs["remaining_total"] != "3500000" {
+		t.Fatalf("events = %+v", r.Events)
+	}
+	// Same period: only 500,000 of the 2,000,000 per-period allowance remains.
+	bobAfter := f.state.Balance(f.bob.Address, native)
+	if r = charge(1, 1_000_000, start+20); r.Success || r.Code != CodeSubLimit {
+		t.Fatalf("over-period = %+v", r)
+	}
+	if got := f.state.Balance(f.bob.Address, native); got != bobAfter || got <= bobBefore {
+		t.Fatalf("failed charge moved value: %d -> %d", bobAfter, got)
+	}
+	if r = charge(1, 500_000, start+30); !r.Success {
+		t.Fatalf("remaining charge: %s %s", r.Code, r.Error)
+	}
+	if r = charge(2, 1, start+40); r.Success || r.Code != CodeSubLimit {
+		t.Fatalf("full-period charge = %+v", r)
+	}
+
+	// A new period resets the per-period counter but not the total.
+	if r = charge(2, 2_000_000, start+1000); !r.Success {
+		t.Fatalf("next period: %s %s", r.Code, r.Error)
+	}
+	if sub, _, _ = f.state.Subscription(id); sub.ChargedPeriod != 2_000_000 || sub.ChargedTotal != 4_000_000 {
+		t.Fatalf("counters = %+v", sub)
+	}
+	if r = charge(3, 1, start+1010); r.Success || r.Code != CodeSubLimit {
+		t.Fatalf("second charge in period = %+v", r)
+	}
+	// Only 1,000,000 remains under the total cap, regardless of period.
+	if r = charge(3, 2_000_000, start+2000); r.Success || r.Code != CodeSubLimit {
+		t.Fatalf("over-total = %+v", r)
+	}
+	if r = charge(3, 1_000_000, start+2010); !r.Success {
+		t.Fatalf("final charge: %s %s", r.Code, r.Error)
+	}
+	if r = charge(4, 1, start+3000); r.Success || r.Code != CodeSubLimit {
+		t.Fatalf("cap exhausted = %+v", r)
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubscriptionAuthorizationAndExpiry(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	start := uint64(1_700_000_100)
+
+	if r := f.applyAt(t, f.tx(t, f.bob, protocol.TxChargeSub, map[string]any{
+		"id": strings.Repeat("0", 32), "amount": uint64(1),
+	}, 0), start); r.Success || r.Code != CodeSubNotFound {
+		t.Fatalf("missing = %+v", r)
+	}
+
+	id := protocol.SubscriptionID(testNet, f.alice.Address, f.bob.Address, native, 0)
+	r := f.applyAt(t, f.tx(t, f.alice, protocol.TxCreateSub, map[string]any{
+		"payee": f.bob.Address, "asset": native, "amount_per_period": uint64(1_000_000),
+		"period": uint64(3600), "total_cap": uint64(3_000_000), "expires_at": start + 1000,
+	}, 0), start+2)
+	if !r.Success {
+		t.Fatalf("create: %s %s", r.Code, r.Error)
+	}
+
+	if r = f.applyAt(t, f.tx(t, f.alice, protocol.TxChargeSub, map[string]any{
+		"id": id, "amount": uint64(1),
+	}, 1), start+3); r.Success || r.Code != CodeUnauthorized {
+		t.Fatalf("payer charge = %+v", r)
+	}
+	if r = f.applyAt(t, f.tx(t, f.bob, protocol.TxCancelSub, map[string]any{"id": id}, 0), start+4); r.Success || r.Code != CodeUnauthorized {
+		t.Fatalf("payee cancel = %+v", r)
+	}
+	if r = f.applyAt(t, f.tx(t, f.alice, protocol.TxCancelSub, map[string]any{"id": id}, 1), start+5); !r.Success {
+		t.Fatalf("cancel: %s %s", r.Code, r.Error)
+	}
+	if r = f.applyAt(t, f.tx(t, f.bob, protocol.TxChargeSub, map[string]any{
+		"id": id, "amount": uint64(1),
+	}, 0), start+6); r.Success || r.Code != CodeSubClosed {
+		t.Fatalf("post-cancel charge = %+v", r)
+	}
+	if r = f.applyAt(t, f.tx(t, f.alice, protocol.TxCancelSub, map[string]any{"id": id}, 2), start+7); r.Success || r.Code != CodeSubClosed {
+		t.Fatalf("double cancel = %+v", r)
+	}
+
+	id2 := protocol.SubscriptionID(testNet, f.alice.Address, f.bob.Address, native, 2)
+	r = f.applyAt(t, f.tx(t, f.alice, protocol.TxCreateSub, map[string]any{
+		"payee": f.bob.Address, "asset": native, "amount_per_period": uint64(1_000_000),
+		"period": uint64(3600), "total_cap": uint64(3_000_000), "expires_at": start + 200,
+	}, 2), start+10)
+	if !r.Success {
+		t.Fatalf("expiring create: %s %s", r.Code, r.Error)
+	}
+	if r = f.applyAt(t, f.tx(t, f.bob, protocol.TxChargeSub, map[string]any{
+		"id": id2, "amount": uint64(1),
+	}, 0), start+50); !r.Success {
+		t.Fatalf("pre-expiry charge: %s %s", r.Code, r.Error)
+	}
+	if r = f.applyAt(t, f.tx(t, f.bob, protocol.TxChargeSub, map[string]any{
+		"id": id2, "amount": uint64(1),
+	}, 1), start+201); r.Success || r.Code != CodeSubExpired {
+		t.Fatalf("post-expiry charge = %+v", r)
+	}
+
+	for _, payload := range []map[string]any{
+		{"payee": f.alice.Address, "asset": native, "amount_per_period": uint64(1), "period": uint64(3600), "total_cap": uint64(1)},
+		{"payee": f.bob.Address, "asset": native, "amount_per_period": uint64(1), "period": uint64(0), "total_cap": uint64(1)},
+		{"payee": f.bob.Address, "asset": native, "amount_per_period": uint64(0), "period": uint64(3600), "total_cap": uint64(1)},
+	} {
+		if r = f.applyAt(t, f.tx(t, f.alice, protocol.TxCreateSub, payload, 3), start+300); r.Success || r.Code != CodeInvalidPayload {
+			t.Fatalf("invalid create %+v = %+v", payload, r)
+		}
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -92,6 +92,7 @@ proves absence at the returned `state_root`.
 | --- | --- | --- |
 | GET | `/v1/escrows/{id}` | Escrow object, or `404 ESCROW_NOT_FOUND` |
 | GET | `/v1/intents/{id}` | Payment intent, or `404 INTENT_NOT_FOUND` |
+| GET | `/v1/subscriptions/{id}` | Recurring authorization, or `404 SUBSCRIPTION_NOT_FOUND` |
 | GET | `/v1/transfers/{hash}` | Indexed payment transfer, or `404 TRANSFER_NOT_FOUND` |
 | GET | `/v1/allowances/{owner}/{spender}/{asset}` | `{"owner","spender","asset","remaining","expires_at"}` |
 
@@ -246,6 +247,9 @@ transaction; unknown payload keys are currently ignored.
 | --- | --- |
 | `transfer` | `asset`, `to`, `amount`, optional `intent` ID, optional `refund_of` transaction hash, optional `memo` (text ≤256 bytes) or `memo_enc` (sealed bytes; mutually exclusive) |
 | `create_intent` | `reference` (1–64 ASCII letters, digits, `_`, `-`), `asset`, positive `amount`, optional future `expires_at`, optional `memo` (≤256 UTF-8 bytes; no NUL, CR, LF) |
+| `create_subscription` | `payee`, `asset`, positive `amount_per_period`, positive `period` (seconds), positive `total_cap`, optional future `expires_at` — signed by the payer |
+| `charge_subscription` | `id`, positive `amount` — signed by the payee |
+| `cancel_subscription` | `id` — signed by the payer |
 | `batch` | `items`: 1–100 × `{asset, to, amount}`, optional `mode`: `atomic` (default) or `best_effort` |
 | `register_asset` | `asset`: full asset map without supply |
 | `create_escrow` | `asset`, `beneficiary`, `arbiter`, `amount`, `timeout` |
@@ -313,6 +317,48 @@ refund of a refund is rejected. Combining `intent` and `refund_of` is
 `from`, `to`, `asset`, `amount`, and `remaining`. Only direct `transfer` and
 `transfer_from` records are indexed; batch items and escrow releases are not.
 
+### Subscriptions
+
+A subscription is an on-chain authorization: the payer signs
+`create_subscription`, then only the named payee may submit
+`charge_subscription` within its limits. The payer may cancel at any time.
+
+```json
+{
+  "id": "…32 hex…", "payer": "arce-devnet1…", "payee": "arce-devnet1…",
+  "asset": "arce:devnet", "amount_per_period": 500000000,
+  "period": 2592000, "total_cap": 6000000000,
+  "charged_period": 0, "charged_total": 0, "period_start": 1793151119,
+  "expires_at": 0, "status": "active", "created_at": 1793151119
+}
+```
+
+The ID is
+`SHA-256("arne-sub-v1\0" + network + "\0" + payer + "\0" + payee + "\0" + asset + "\0" + nonce)`
+truncated to 16 bytes, where `nonce` is the payer's creation nonce. Derive it
+from the signed transaction rather than inventing one; the CLIs print it.
+
+Rules:
+
+- `amount_per_period` caps the total charged inside one period. When the block
+  time reaches `period_start + period`, the counter resets and `period_start`
+  advances by whole periods. Unused periods do not accumulate.
+- `total_cap` caps all charges for the life of the authorization.
+- `expires_at` (optional) rejects charges after that block time.
+- `status` is `active` or `cancelled`. Cancellation is immediate; later charges
+  and a second cancellation return `SUBSCRIPTION_CLOSED`.
+- A charge transfers `amount` from payer to payee and emits
+  `subscription_charged` with `charged_period`, `charged_total`,
+  `remaining_total`, and `period_start`.
+- Creation emits `subscription_created`. Cancellation emits
+  `subscription_cancelled`.
+- The payee pays the transaction fee; the payer pays the charged amount.
+- `payee` must differ from `payer`; zero amounts, periods, or caps are
+  `INVALID_PAYLOAD`.
+
+Charges are ordinary transactions for nonces, fees, and receipts. There is no
+automatic scheduler: the payee (or a payroll job) submits each charge.
+
 ## JSON-RPC
 
 `POST /rpc` with a single object or an array (batch). Notifications omit `id` and
@@ -361,9 +407,14 @@ Branch on `code`.
 | `INTENT_EXPIRED` | Block time is past the intent expiry | 400 |
 | `INTENT_EXISTS` | Payee/reference already registered | 400 |
 | `INTENT_MISMATCH` | Recipient, asset, or amount differs from the intent | 400 |
-| `REFUND_NOT_FOUND` | `refund_of` does not name an indexed transfer | 400 |
+| `REFUND_NOT_FOUND` | `refund_of` does not name an indexed transfer | 404 |
 | `REFUND_MISMATCH` | Wrong payer/asset destination, or refunding a refund | 400 |
 | `REFUND_EXCEEDED` | Refund is larger than the remaining original amount | 400 |
+| `SUBSCRIPTION_NOT_FOUND` | Subscription does not exist | 404 |
+| `SUBSCRIPTION_EXISTS` | Derived subscription ID already exists | 400 |
+| `SUBSCRIPTION_CLOSED` | Authorization is already cancelled | 400 |
+| `SUBSCRIPTION_EXPIRED` | Block time is past the authorization expiry | 400 |
+| `SUBSCRIPTION_LIMIT` | Charge exceeds the per-period or total cap | 400 |
 | `UNAUTHORIZED` | Wrong issuer/arbiter/owner for the action | 403 |
 | `SUPPLY_LIMIT` | Fixed-supply or cap exceeded | 400 |
 | `ESCROW_NOT_FOUND` | Unknown escrow ID | 404 |

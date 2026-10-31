@@ -25,6 +25,8 @@ pool, messaging, compliance connectors, and the web console are specified but
 | Encrypted memos (opt-in) | Implemented (Go + Python) |
 | `arce:`/`arne:` payment URIs | Implemented (Go + Python) |
 | Payable-once intents, canonical links + local QR output | Implemented (Go + Python) |
+| Linked refunds with cumulative over-refund protection | Implemented (Go + Python) |
+| Subscriptions with per-period, total, expiry, and cancel controls | Implemented (Go + Python) |
 | Transaction-submit idempotency | Implemented; process-local, 24-hour retention |
 | Pre-signing preview + lookalike/unknown-asset warnings | Implemented (Go + Python) |
 | Signed webhooks with retries + replay protection | Implemented (Go + Python) |

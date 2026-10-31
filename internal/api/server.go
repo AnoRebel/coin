@@ -69,6 +69,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/escrows/:id", s.getEscrow)
 	e.GET("/v1/intents/:id", s.getIntent)
 	e.GET("/v1/transfers/:hash", s.getTransfer)
+	e.GET("/v1/subscriptions/:id", s.getSubscription)
 	e.GET("/v1/allowances/:owner/:spender/:asset", s.getAllowance)
 	e.GET("/v1/blocks", s.listBlocks)
 	e.GET("/v1/blocks/:height", s.getBlock)
@@ -286,6 +287,17 @@ func (s *Server) getIntent(c *echo.Context) error {
 		return apiErr(http.StatusNotFound, "INTENT_NOT_FOUND", "intent not found")
 	}
 	return c.JSON(http.StatusOK, in)
+}
+
+func (s *Server) getSubscription(c *echo.Context) error {
+	sub, ok, err := s.node.Subscription(c.Param("id"))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apiErr(http.StatusNotFound, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
+	}
+	return c.JSON(http.StatusOK, sub)
 }
 
 func (s *Server) getTransfer(c *echo.Context) error {
@@ -586,7 +598,7 @@ func statusFor(code ledger.Code) int {
 	switch code {
 	case ledger.CodeUnauthorized:
 		return http.StatusForbidden
-	case ledger.CodeEscrowNotFound, ledger.CodeUnknownAsset, ledger.CodeRefundNotFound:
+	case ledger.CodeEscrowNotFound, ledger.CodeUnknownAsset, ledger.CodeRefundNotFound, ledger.CodeSubNotFound:
 		return http.StatusNotFound
 	case ledger.CodeLimitExceeded:
 		return http.StatusTooManyRequests

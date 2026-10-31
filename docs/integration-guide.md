@@ -143,6 +143,33 @@ submissions need a new nonce; an `Idempotency-Key` only replays the exact
 signed bytes. A batch item or escrow release is not in the transfer index, so
 it cannot be named by `refund_of`.
 
+### Bill a subscription
+
+Recurring billing is pull-based: the payer authorizes once, then the payee
+submits each charge.
+
+1. The payer signs `create_subscription` with `payee`, `asset`,
+   `amount_per_period`, `period` seconds, and `total_cap`, plus optional
+   `expires_at`. Obtain the ID from `subscription_created`; do not derive it
+   from your own nonce unless you just signed the transaction.
+2. At each billing point the payee signs `charge_subscription` with that `id`
+   and the amount due. The ledger enforces both caps and the expiry.
+3. Reconcile `subscription_charged`: it reports `charged_period`,
+   `charged_total`, `remaining_total`, and `period_start`. Read the
+   authorization with `GET /v1/subscriptions/{id}` for current state.
+4. On `SUBSCRIPTION_LIMIT` or `SUBSCRIPTION_EXPIRED`, do not retry blindly.
+   Record the shortfall, request a new authorization, or bill the remainder
+   next period. On `SUBSCRIPTION_CLOSED`, stop billing.
+5. If your job needs the amount still available this period, read the
+   subscription and apply the same reset rule: `charged_period` is zero once
+   block time has reached `period_start + period`.
+
+Charges are ordinary transactions: each needs the payee's next nonce and pays
+the fee from the payee's balance. An `Idempotency-Key` prevents duplicate
+submission of the same signed bytes, but a second charge with a new nonce is a
+new payment and is allowed within the caps. There is no on-chain scheduler;
+run charges from a durable job with your own invoice IDs.
+
 ## 4. Subscribe to events
 
 Server-sent events:

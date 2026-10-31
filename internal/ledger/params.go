@@ -63,6 +63,7 @@ const (
 	kEscrow    = "escrow/%s"
 	kEscrowAmt = "escrow_held/%s"
 	kIntent    = "intent/%s"
+	kSub       = "subscription/%s"
 	kTransfer  = "transfer/%s"
 	kRefunded  = "refunded/%s"
 	kAllowance = "allowance/%s/%s/%s"

@@ -626,6 +626,13 @@ func (n *Node) Intent(id string) (protocol.Intent, bool, error) {
 	return n.state.Intent(id)
 }
 
+// Subscription returns a recurring-payment authorization.
+func (n *Node) Subscription(id string) (protocol.Subscription, bool, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Subscription(id)
+}
+
 // Transfer returns the index entry for a finalized transfer.
 func (n *Node) Transfer(hash string) (protocol.Transfer, bool, error) {
 	n.mu.RLock()

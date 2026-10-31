@@ -383,6 +383,59 @@ def cmd_intent_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fetch_subscription(url: str, network: str, sub_id: str) -> dict[str, Any]:
+    if re.fullmatch(r"[0-9a-f]{32}", sub_id) is None:
+        raise ValueError("subscription ID must be 32 lowercase hex characters")
+    actual = _get(url, "/v1/status")["network"]
+    if actual != network:
+        raise ValueError(f"API network {actual} conflicts with {network}")
+    return _get(url, f"/v1/subscriptions/{sub_id}")
+
+
+def cmd_subscription_create(args: argparse.Namespace) -> int:
+    decimals = _get(args.url, f"/v1/assets/{args.asset}")["decimals"]
+    payload = {
+        "payee": args.payee, "asset": args.asset,
+        "amount_per_period": parse_amount(args.amount_per_period, decimals),
+        "period": args.period, "total_cap": parse_amount(args.total_cap, decimals),
+    }
+    if args.expires:
+        payload["expires_at"] = args.expires
+    tx = _signed_tx(args, types.TX_CREATE_SUB, payload)
+    print(f"subscription: {types.subscription_id(args.network, tx.signer, args.payee, args.asset, tx.nonce)}")
+    return _submit(args.url, tx, args.wait)
+
+
+def cmd_subscription_show(args: argparse.Namespace) -> int:
+    print(json.dumps(_fetch_subscription(args.url, args.network, args.id), indent=2))
+    return 0
+
+
+def cmd_subscription_charge(args: argparse.Namespace) -> int:
+    subscription = _fetch_subscription(args.url, args.network, args.id)
+    decimals = _get(args.url, f"/v1/assets/{subscription['asset']}")["decimals"]
+    amount = args.amount
+    if not amount:
+        charged = subscription["charged_period"]
+        if int(time.time()) - subscription["period_start"] >= subscription["period"]:
+            charged = 0
+        units = min(
+            subscription["amount_per_period"] - charged,
+            subscription["total_cap"] - subscription["charged_total"],
+        )
+        if units <= 0:
+            raise ValueError("nothing left to charge in this period")
+        amount = format_amount(units, decimals)
+    tx = _signed_tx(args, types.TX_CHARGE_SUB,
+                    {"id": args.id, "amount": parse_amount(amount, decimals)})
+    return _submit(args.url, tx, args.wait)
+
+
+def cmd_subscription_cancel(args: argparse.Namespace) -> int:
+    tx = _signed_tx(args, types.TX_CANCEL_SUB, {"id": args.id})
+    return _submit(args.url, tx, args.wait)
+
+
 def _write_intent_qr(path: str, uri: str) -> None:
     import io
 
@@ -682,6 +735,30 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "link":
             command.add_argument("--qr", default="", help="write a PNG QR code to a new file")
         command.set_defaults(func=function, to="", asset="", amount="", memo="")
+
+    subscription = sub.add_parser("subscription", help="authorize and charge recurring payments")
+    subscription_sub = subscription.add_subparsers(dest="subscription_command", required=True)
+    subscription_create = subscription_sub.add_parser("create", help="authorize charges as the payer")
+    subscription_create.add_argument("--payee", required=True)
+    subscription_create.add_argument("--asset", required=True)
+    subscription_create.add_argument("--amount-per-period", required=True)
+    subscription_create.add_argument("--period", type=int, required=True, help="period length in seconds")
+    subscription_create.add_argument("--total-cap", required=True)
+    subscription_create.add_argument("--expires", type=int, default=0, help="Unix expiry (0 means no expiry)")
+    write_flags(subscription_create)
+    subscription_create.set_defaults(func=cmd_subscription_create)
+    subscription_show = subscription_sub.add_parser("show", help="inspect a subscription")
+    subscription_show.add_argument("--id", required=True)
+    subscription_show.add_argument("--network", default="arne:devnet")
+    subscription_show.add_argument("--url", default=DEFAULT_URL)
+    subscription_show.set_defaults(func=cmd_subscription_show)
+    for name, function in (("charge", cmd_subscription_charge), ("cancel", cmd_subscription_cancel)):
+        command = subscription_sub.add_parser(name)
+        command.add_argument("--id", required=True)
+        if name == "charge":
+            command.add_argument("--amount", default="", help="default: what this period allows")
+        write_flags(command)
+        command.set_defaults(func=function)
 
     memo = sub.add_parser("memo", help="opt-in encrypted memos")
     memo_sub = memo.add_subparsers(dest="memo_command", required=True)

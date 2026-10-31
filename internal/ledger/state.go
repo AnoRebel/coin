@@ -277,6 +277,32 @@ func (s *State) putIntent(in protocol.Intent) error {
 	return nil
 }
 
+// Subscription returns a recurring-payment authorization.
+func (s *State) Subscription(id string) (protocol.Subscription, bool, error) {
+	b, ok := s.get(fmt.Sprintf(kSub, id))
+	if !ok {
+		return protocol.Subscription{}, false, nil
+	}
+	m, err := protocol.DecodeMap(b)
+	if err != nil {
+		return protocol.Subscription{}, false, err
+	}
+	sub, err := protocol.SubscriptionFromCBOR(m)
+	if err != nil {
+		return protocol.Subscription{}, false, err
+	}
+	return sub, true, nil
+}
+
+func (s *State) putSubscription(sub protocol.Subscription) error {
+	b, err := protocol.Encode(sub.ToCBOR())
+	if err != nil {
+		return err
+	}
+	s.set(fmt.Sprintf(kSub, sub.ID), b)
+	return nil
+}
+
 // Transfer returns the index entry for a finalized transfer.
 func (s *State) Transfer(hash string) (protocol.Transfer, bool, error) {
 	b, ok := s.get(fmt.Sprintf(kTransfer, hash))

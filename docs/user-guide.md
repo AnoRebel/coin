@@ -226,6 +226,40 @@ refund emits a `refund` event carrying `refund_of`, `from`, `to`, `asset`,
 releases are not indexed for `refund_of`; refund those only through the batch
 or escrow flow that produced them.
 
+### Subscriptions
+
+A subscription is a bounded, on-chain authorization for recurring charges. The
+payer signs it; the payee charges against it; the payer cancels it.
+
+```sh
+# Payer: allow up to 5 ARCE per 30 days and 60 ARCE in total.
+arned subscription create --mnemonic "<payer mnemonic>" \
+  --payee <payee-address> --asset arce:devnet \
+  --amount-per-period 5 --period 2592000 --total-cap 60 --wait
+
+# Payee: charge. Omit --amount to take what this period still allows.
+arned subscription charge --mnemonic "<payee mnemonic>" \
+  --id <subscription-id> --wait
+
+# Anyone can inspect; only the payer can cancel.
+arned subscription show --id <subscription-id>
+arned subscription cancel --mnemonic "<payer mnemonic>" \
+  --id <subscription-id> --wait
+```
+
+- One period is `period` seconds. Reaching the next period resets the
+  per-period counter; unused periods do not accumulate.
+- No charge may exceed `amount_per_period` in its period or `total_cap` over
+  the authorization.
+- `--expires <unix-time>` optionally stops charges after that block time.
+- Cancellation is immediate and permanent; later charges are rejected.
+- Only the named payee may charge, and only the payer may cancel.
+- The payee pays the transaction fee; the payer pays the charged amount.
+- Nothing charges automatically. The payee or a payroll job submits each charge.
+
+`arne` accepts the same commands. Both CLIs print the subscription ID at
+creation; it is derived from the payer, payee, asset, and creation nonce.
+
 ### Preview before signing
 
 `preview` signs a transfer, dry-runs it against current state, and prints what

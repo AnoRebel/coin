@@ -76,6 +76,17 @@ are consensus state: enabling them changes state roots, so regenerate shared
 vectors and upgrade validators together. Batch items and escrow releases are
 not indexed.
 
+Subscriptions live at `subscription/<id>`, keyed by
+`SubscriptionID(network, payer, payee, asset, payer nonce)`. The record holds
+the caps, the current period start, the per-period and cumulative counters, and
+the status. `charge_subscription` advances `period_start` by whole periods and
+resets `charged_period` before checking limits, so retries land on the same
+decision for the same block time. State writes and transfers share the
+transaction journal: a rejected charge moves no value and leaves the counters
+untouched. They are consensus state and change state roots, so regenerate
+vectors and upgrade validators together. There is no scheduler in the node;
+the payee submits every charge.
+
 ## Identity and addresses
 
 - Key derivation: BIP-39 mnemonic → SLIP-0010 Ed25519 at

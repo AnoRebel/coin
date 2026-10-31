@@ -37,6 +37,11 @@ INTENT_MISMATCH = "INTENT_MISMATCH"
 REFUND_NOT_FOUND = "REFUND_NOT_FOUND"
 REFUND_MISMATCH = "REFUND_MISMATCH"
 REFUND_EXCEEDED = "REFUND_EXCEEDED"
+SUB_NOT_FOUND = "SUBSCRIPTION_NOT_FOUND"
+SUB_EXISTS = "SUBSCRIPTION_EXISTS"
+SUB_CLOSED = "SUBSCRIPTION_CLOSED"
+SUB_EXPIRED = "SUBSCRIPTION_EXPIRED"
+SUB_LIMIT = "SUBSCRIPTION_LIMIT"
 ALLOWANCE_EXCEEDED = "ALLOWANCE_EXCEEDED"
 LIMIT_EXCEEDED = "LIMIT_EXCEEDED"
 CONSERVATION = "CONSERVATION_VIOLATION"
@@ -105,6 +110,7 @@ K_SUPPLY = "supply/%s"
 K_BURNED = "burned/%s"
 K_ESCROW = "escrow/%s"
 K_INTENT = "intent/%s"
+K_SUB = "subscription/%s"
 K_TRANSFER = "transfer/%s"
 K_REFUNDED = "refunded/%s"
 K_ESCROW_AMT = "escrow_held/%s"
@@ -331,6 +337,13 @@ class State:
     def _put_intent(self, intent: types.Intent) -> None:
         self._set(K_INTENT % intent.id, cbor.encode(intent.to_cbor()))
 
+    def subscription(self, sub_id: str) -> types.Subscription | None:
+        raw = self._get(K_SUB % sub_id)
+        return types.Subscription.from_cbor(cbor.decode_map(raw)) if raw is not None else None
+
+    def _put_subscription(self, sub: types.Subscription) -> None:
+        self._set(K_SUB % sub.id, cbor.encode(sub.to_cbor()))
+
     def transfer(self, tx_hash: str) -> types.Transfer | None:
         raw = self._get(K_TRANSFER % tx_hash)
         return types.Transfer.from_cbor(cbor.decode_map(raw)) if raw is not None else None
@@ -515,6 +528,9 @@ class State:
         handler = {
             types.TX_TRANSFER: lambda t, r: self._exec_transfer(t, now, r),
             types.TX_CREATE_INTENT: lambda t, r: self._exec_create_intent(t, now, r),
+            types.TX_CREATE_SUB: lambda t, r: self._exec_create_subscription(t, now, r),
+            types.TX_CHARGE_SUB: lambda t, r: self._exec_charge_subscription(t, now, r),
+            types.TX_CANCEL_SUB: lambda t, r: self._exec_cancel_subscription(t, now, r),
             types.TX_BATCH: self._exec_batch,
             types.TX_REGISTER_ASSET: lambda t, r: self._exec_register_asset(t, now, r),
             types.TX_CREATE_ESCROW: lambda t, r: self._exec_create_escrow(t, now, r),
@@ -636,6 +652,83 @@ class State:
         if (intent.payee, intent.asset, intent.amount) != (payee, asset, amount):
             raise _err(INTENT_MISMATCH, f"payment does not match intent {intent_id}")
         return intent
+
+    def _exec_create_subscription(self, tx: Tx, now: int, receipt: Receipt) -> None:
+        payee = _payload_str(tx.payload, "payee")
+        asset = _payload_str(tx.payload, "asset")
+        per_period = _payload_uint(tx.payload, "amount_per_period")
+        period = _payload_uint(tx.payload, "period")
+        total_cap = _payload_uint(tx.payload, "total_cap")
+        if per_period == 0 or period == 0 or total_cap == 0:
+            raise _err(INVALID_PAYLOAD, "amount_per_period, period, and total_cap must be positive")
+        if payee == tx.signer:
+            raise _err(INVALID_PAYLOAD, "payee must differ from payer")
+        self._require_asset(asset)
+        self._require_address(payee)
+        expires_at = 0
+        if "expires_at" in tx.payload:
+            expires_at = _payload_uint(tx.payload, "expires_at")
+            if expires_at <= now:
+                raise _err(INVALID_PAYLOAD, "expires_at must be in the future")
+        sub_id = types.subscription_id(self.network, tx.signer, payee, asset, tx.nonce)
+        if self.subscription(sub_id) is not None:
+            raise _err(SUB_EXISTS, f"subscription {sub_id} already exists")
+        self._put_subscription(types.Subscription(
+            id=sub_id, payer=tx.signer, payee=payee, asset=asset,
+            amount_per_period=per_period, period=period, total_cap=total_cap,
+            charged_period=0, charged_total=0, period_start=now, expires_at=expires_at,
+            status=types.SUB_ACTIVE, created_at=now,
+        ))
+        self._event(receipt, "subscription_created", id=sub_id, payer=tx.signer,
+                    payee=payee, asset=asset, amount_per_period=per_period,
+                    period=period, total_cap=total_cap, expires_at=expires_at)
+
+    def _exec_charge_subscription(self, tx: Tx, now: int, receipt: Receipt) -> None:
+        sub_id = _payload_str(tx.payload, "id")
+        amount = _payload_uint(tx.payload, "amount")
+        if amount == 0:
+            raise _err(INVALID_PAYLOAD, "amount must be positive")
+        sub = self.subscription(sub_id)
+        if sub is None:
+            raise _err(SUB_NOT_FOUND, f"subscription {sub_id}")
+        if sub.status != types.SUB_ACTIVE:
+            raise _err(SUB_CLOSED, f"subscription {sub_id} is {sub.status}")
+        if tx.signer != sub.payee:
+            raise _err(UNAUTHORIZED, "only the subscription payee may charge")
+        if sub.expires_at and now > sub.expires_at:
+            raise _err(SUB_EXPIRED, f"subscription {sub_id} expired at {sub.expires_at}")
+        # Advances reset the per-period counter; unused periods do not accumulate.
+        if now >= sub.period_start and now - sub.period_start >= sub.period:
+            sub.period_start += ((now - sub.period_start) // sub.period) * sub.period
+            sub.charged_period = 0
+        if sub.charged_period > sub.amount_per_period or sub.charged_total > sub.total_cap:
+            raise _err(SUB_LIMIT, f"subscription {sub_id} totals are inconsistent")
+        if (amount > sub.amount_per_period - sub.charged_period
+                or amount > sub.total_cap - sub.charged_total):
+            raise _err(SUB_LIMIT, f"charge exceeds subscription {sub_id} limits")
+        self._move(sub.payer, sub.payee, sub.asset, amount, receipt)
+        sub.charged_period += amount
+        sub.charged_total += amount
+        self._put_subscription(sub)
+        self._event(receipt, "subscription_charged", id=sub_id, payer=sub.payer,
+                    payee=sub.payee, asset=sub.asset, amount=amount,
+                    charged_period=sub.charged_period, charged_total=sub.charged_total,
+                    remaining_total=sub.total_cap - sub.charged_total,
+                    period_start=sub.period_start)
+
+    def _exec_cancel_subscription(self, tx: Tx, now: int, receipt: Receipt) -> None:
+        sub_id = _payload_str(tx.payload, "id")
+        sub = self.subscription(sub_id)
+        if sub is None:
+            raise _err(SUB_NOT_FOUND, f"subscription {sub_id}")
+        if sub.status != types.SUB_ACTIVE:
+            raise _err(SUB_CLOSED, f"subscription {sub_id} is {sub.status}")
+        if tx.signer != sub.payer:
+            raise _err(UNAUTHORIZED, "only the subscription payer may cancel")
+        sub.status = types.SUB_CANCELLED
+        sub.cancelled_at = now
+        self._put_subscription(sub)
+        self._event(receipt, "subscription_cancelled", id=sub_id, payer=sub.payer, payee=sub.payee)
 
     def _check_refund(self, tx: Tx, refund_of: str, to: str, asset: str, amount: int) -> int:
         original = self.transfer(refund_of)

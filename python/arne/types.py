@@ -27,16 +27,22 @@ TX_REVOKE_ALLOWANCE = "revoke_allowance"
 TX_MINT = "mint"
 TX_BURN = "burn"
 TX_CREATE_INTENT = "create_intent"
+TX_CREATE_SUB = "create_subscription"
+TX_CHARGE_SUB = "charge_subscription"
+TX_CANCEL_SUB = "cancel_subscription"
 
 TX_TYPES = {
     TX_TRANSFER, TX_BATCH, TX_REGISTER_ASSET, TX_CREATE_ESCROW, TX_RELEASE_ESCROW,
     TX_REFUND_ESCROW, TX_APPROVE, TX_TRANSFER_FROM, TX_REVOKE_ALLOWANCE, TX_MINT, TX_BURN,
-    TX_CREATE_INTENT,
+    TX_CREATE_INTENT, TX_CREATE_SUB, TX_CHARGE_SUB, TX_CANCEL_SUB,
 }
 
 ESCROW_OPEN = "open"
 ESCROW_RELEASED = "released"
 ESCROW_REFUNDED = "refunded"
+
+SUB_ACTIVE = "active"
+SUB_CANCELLED = "cancelled"
 
 _NETWORK_RE = re.compile(r"^arne:(mainnet|testnet|devnet|consortium/[a-z0-9][a-z0-9-]{1,31})$")
 _ASSET_ID_RE = re.compile(r"^[a-z][a-z0-9]{1,15}:[a-z0-9][a-z0-9/-]{0,63}$")
@@ -197,6 +203,11 @@ def valid_intent_reference(reference: str) -> bool:
     return re.fullmatch(r"[A-Za-z0-9_-]{1,64}", reference) is not None
 
 
+def subscription_id(network: str, payer: str, payee: str, asset: str, nonce: int) -> str:
+    body = f"arne-sub-v1\0{network}\0{payer}\0{payee}\0{asset}\0{nonce}"
+    return hashlib.sha256(body.encode()).digest()[:16].hex()
+
+
 def valid_tx_hash(tx_hash: str) -> bool:
     return re.fullmatch(r"[0-9a-f]{64}", tx_hash) is not None
 
@@ -263,6 +274,51 @@ class Transfer:
             sender=_text(m, "from"), to=_text(m, "to"), asset=_text(m, "asset"),
             amount=_uint(m, "amount"), refund_of=_text(m, "refund_of") if "refund_of" in m else "",
         )
+
+
+@dataclass
+class Subscription:
+    """Payer-authorized recurring payment, charged by the payee."""
+
+    id: str
+    payer: str
+    payee: str
+    asset: str
+    amount_per_period: int
+    period: int
+    total_cap: int
+    charged_period: int
+    charged_total: int
+    period_start: int
+    expires_at: int
+    status: str
+    created_at: int
+    cancelled_at: int = 0
+
+    def to_cbor(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "id": self.id, "payer": self.payer, "payee": self.payee, "asset": self.asset,
+            "amount_per_period": self.amount_per_period, "period": self.period,
+            "total_cap": self.total_cap, "charged_period": self.charged_period,
+            "charged_total": self.charged_total, "period_start": self.period_start,
+            "expires_at": self.expires_at, "status": self.status, "created_at": self.created_at,
+        }
+        if self.cancelled_at:
+            result["cancelled_at"] = self.cancelled_at
+        return result
+
+    @classmethod
+    def from_cbor(cls, m: Mapping[str, Any]) -> Subscription:
+        fields = {key: _text(m, key) for key in ("id", "payer", "payee", "asset", "status")}
+        fields.update({
+            key: _uint(m, key) for key in (
+                "amount_per_period", "period", "total_cap", "charged_period",
+                "charged_total", "period_start", "expires_at", "created_at",
+            )
+        })
+        if "cancelled_at" in m:
+            fields["cancelled_at"] = _uint(m, "cancelled_at")
+        return cls(**fields)
 
 
 @dataclass

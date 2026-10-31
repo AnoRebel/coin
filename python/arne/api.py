@@ -302,6 +302,14 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
             "refundable": transfer.amount - refunded,
         }
 
+    @app.get("/v1/subscriptions/{sub_id}")
+    def get_subscription(sub_id: str) -> dict[str, Any]:
+        with node._lock:
+            subscription = node.state.subscription(sub_id)
+        if subscription is None:
+            raise ApiError(404, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
+        return subscription.to_cbor()
+
     @app.get("/v1/escrows/{escrow_id}")
     def get_escrow(escrow_id: str) -> dict[str, Any]:
         escrow = node.state.escrow(escrow_id)

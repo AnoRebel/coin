@@ -470,6 +470,33 @@ func ledgerVectors() map[string]any {
 			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000), "refund_of": paymentHash,
 		}, native),
 	)
+	// Failed refunds above left the nonce counter ahead; subscription IDs
+	// depend on the payer's committed nonce.
+	for name, kp := range keys {
+		account, _ := st.Account(kp.Address)
+		nonces[name] = account.Nonce
+	}
+	subID := protocol.SubscriptionID(network, keys["alice"].Address, keys["bob"].Address, native, nonces["alice"])
+	run(12, 1_700_001_200, nil,
+		mk("alice", protocol.TxCreateSub, map[string]any{
+			"payee": keys["bob"].Address, "asset": native,
+			"amount_per_period": uint64(2_000_000), "period": uint64(3600),
+			"total_cap": uint64(5_000_000), "expires_at": uint64(1_700_010_000),
+		}, native),
+	)
+	run(13, 1_700_001_300, nil,
+		mk("bob", protocol.TxChargeSub, map[string]any{"id": subID, "amount": uint64(1_000_000)}, native),
+		mk("bob", protocol.TxChargeSub, map[string]any{"id": subID, "amount": uint64(1_500_000)}, native),
+	)
+	for name, kp := range keys {
+		account, _ := st.Account(kp.Address)
+		nonces[name] = account.Nonce
+	}
+	run(14, 1_700_004_900, nil,
+		mk("bob", protocol.TxChargeSub, map[string]any{"id": subID, "amount": uint64(2_000_000)}, native),
+		mk("alice", protocol.TxCancelSub, map[string]any{"id": subID}, native),
+		mk("bob", protocol.TxChargeSub, map[string]any{"id": subID, "amount": uint64(1)}, native),
+	)
 	return map[string]any{
 		"network": network, "chain": chain, "mnemonic": mnemonic,
 		"genesis": map[string]any{

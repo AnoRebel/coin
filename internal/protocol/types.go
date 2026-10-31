@@ -265,6 +265,87 @@ func EscrowFromCBOR(m map[string]any) (Escrow, error) {
 	return e, nil
 }
 
+// Subscription is a payer-authorized recurring payment. Charges are signed by
+// the payee and bounded per period and in total.
+type Subscription struct {
+	ID              string `json:"id"`
+	Payer           string `json:"payer"`
+	Payee           string `json:"payee"`
+	Asset           string `json:"asset"`
+	AmountPerPeriod uint64 `json:"amount_per_period"`
+	Period          uint64 `json:"period"`
+	TotalCap        uint64 `json:"total_cap"`
+	ChargedPeriod   uint64 `json:"charged_period"`
+	ChargedTotal    uint64 `json:"charged_total"`
+	PeriodStart     uint64 `json:"period_start"`
+	ExpiresAt       uint64 `json:"expires_at"`
+	Status          string `json:"status"`
+	CreatedAt       uint64 `json:"created_at"`
+	CancelledAt     uint64 `json:"cancelled_at,omitempty"`
+}
+
+const (
+	SubscriptionActive    = "active"
+	SubscriptionCancelled = "cancelled"
+)
+
+// ToCBOR renders the subscription for the state tree.
+func (s Subscription) ToCBOR() map[string]any {
+	m := map[string]any{
+		"id": s.ID, "payer": s.Payer, "payee": s.Payee, "asset": s.Asset,
+		"amount_per_period": s.AmountPerPeriod, "period": s.Period,
+		"total_cap": s.TotalCap, "charged_period": s.ChargedPeriod,
+		"charged_total": s.ChargedTotal, "period_start": s.PeriodStart,
+		"expires_at": s.ExpiresAt, "status": s.Status, "created_at": s.CreatedAt,
+	}
+	if s.CancelledAt != 0 {
+		m["cancelled_at"] = s.CancelledAt
+	}
+	return m
+}
+
+// SubscriptionFromCBOR decodes a canonical subscription record.
+func SubscriptionFromCBOR(m map[string]any) (Subscription, error) {
+	s := Subscription{}
+	var err error
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{{"id", &s.ID}, {"payer", &s.Payer}, {"payee", &s.Payee},
+		{"asset", &s.Asset}, {"status", &s.Status}} {
+		if *f.dst, err = str(m, f.key); err != nil {
+			return s, err
+		}
+	}
+	for _, f := range []struct {
+		key string
+		dst *uint64
+	}{
+		{"amount_per_period", &s.AmountPerPeriod}, {"period", &s.Period},
+		{"total_cap", &s.TotalCap}, {"charged_period", &s.ChargedPeriod},
+		{"charged_total", &s.ChargedTotal}, {"period_start", &s.PeriodStart},
+		{"expires_at", &s.ExpiresAt}, {"created_at", &s.CreatedAt},
+	} {
+		if *f.dst, err = num(m, f.key); err != nil {
+			return s, err
+		}
+	}
+	if raw, ok := m["cancelled_at"]; ok {
+		if s.CancelledAt, ok = raw.(uint64); !ok {
+			return s, fmt.Errorf("%w: cancelled_at", ErrValidation)
+		}
+	}
+	return s, nil
+}
+
+// SubscriptionID derives a stable ID from the payer, payee, asset, and the
+// payer's creation nonce. One nonce exists once per payer, so IDs are unique.
+func SubscriptionID(network, payer, payee, asset string, nonce uint64) string {
+	h := sha256.Sum256([]byte("arne-sub-v1\x00" + network + "\x00" + payer + "\x00" +
+		payee + "\x00" + asset + "\x00" + fmt.Sprint(nonce)))
+	return hex.EncodeToString(h[:16])
+}
+
 // Intent is a payable request created by a payee. It is payable at most once.
 type Intent struct {
 	ID        string `json:"id"`
@@ -436,6 +517,9 @@ const (
 	TxMint            = "mint"
 	TxBurn            = "burn"
 	TxCreateIntent    = "create_intent"
+	TxCreateSub       = "create_subscription"
+	TxChargeSub       = "charge_subscription"
+	TxCancelSub       = "cancel_subscription"
 )
 
 var txTypes = map[string]bool{
@@ -443,6 +527,7 @@ var txTypes = map[string]bool{
 	TxCreateEscrow: true, TxReleaseEscrow: true, TxRefundEscrow: true,
 	TxApprove: true, TxTransferFrom: true, TxRevokeAllowance: true,
 	TxMint: true, TxBurn: true, TxCreateIntent: true,
+	TxCreateSub: true, TxChargeSub: true, TxCancelSub: true,
 }
 
 // Tx is the versioned transaction envelope. Signatures are excluded from the
