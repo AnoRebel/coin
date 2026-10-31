@@ -237,10 +237,19 @@ must fail. Do not commit the corruption.
 
 ## Storage
 
-Pebble keys: `b<height>` for blocks, `meta/last`, `state/current`. Each value is
-`SHA-256(payload) || JSON payload`; a checksum mismatch is `ErrCorrupt` and the
-node refuses to load. A block write and its state snapshot are committed in one
-atomic batch, so a crash leaves the last fully committed height.
+Pebble keys: `b<height>` for blocks, `meta/last`, `state/current`, `meta/schema`.
+Each value is `SHA-256(payload) || JSON payload`; a checksum mismatch is
+`ErrCorrupt` and the node refuses to load. A block write and its state snapshot
+are committed in one atomic batch, so a crash leaves the last fully committed
+height.
+
+`internal/storage.SchemaVersion` is the newest schema this binary understands;
+an unversioned store reports 0. Add a step to `schemaMigrations` with a unique
+`Version`, `Name`, and replay-safe `Up` (plus `Down` when rollback is
+meaningful). Each step runs in a batch that also writes `meta/schema`, so an
+interrupted migration leaves the previous version. Startup calls
+`Store.Migrate(SchemaVersion)`; `arned migrate` does the same on demand. Never
+delete `meta/schema` to "reset" a store — it hides a half-applied migration.
 
 `Store.Prune(before)` deletes blocks below a height in one synced batch; the
 state snapshot and last-height marker are untouched. The node calls it after
@@ -248,7 +257,9 @@ each commit when `Config.KeepBlocks` is non-zero, and evicts the matching
 in-memory blocks and receipts. Archive mode is `KeepBlocks == 0`.
 
 The Python node uses `FileStore` (one checksummed snapshot file plus one JSON
-file per block). `shortcut:` a file store is not RocksDB; upgrade when block
+file per block). Its schema version lives in `schema.json`, with
+`SCHEMA_VERSION` and `_MIGRATIONS` mirroring the Go registry; opening a store
+auto-migrates. `shortcut:` a file store is not RocksDB; upgrade when block
 volume or concurrent writers matter.
 
 ## Known shortcuts

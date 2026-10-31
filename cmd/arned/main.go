@@ -54,7 +54,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
 		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
-		webhookCmd(), intentCmd(), subscriptionCmd(), backupCmd(), restoreCmd())
+		webhookCmd(), intentCmd(), subscriptionCmd(), migrateCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
@@ -153,6 +153,10 @@ func devnetCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+			}
+			if err := store.Migrate(storage.SchemaVersion); err != nil {
+				_ = store.Close()
+				return err
 			}
 			defer store.Close()
 			seed, err := webhookSeed(webhookURLs, webhookKey)

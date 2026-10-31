@@ -28,6 +28,10 @@ type Store interface {
 	SaveCommit(b ledger.Block, snapshot map[string][]byte) error
 	// Prune deletes blocks below before. State and the latest block remain.
 	Prune(before uint64) error
+	// Migrate moves the on-disk schema to target; it is a no-op at target.
+	Migrate(target uint32) error
+	// SchemaVersion reports the on-disk schema.
+	SchemaVersion() (uint32, error)
 	LoadState() (map[string][]byte, uint64, bool, error)
 	Close() error
 }
@@ -352,5 +356,16 @@ func (m *Memory) LoadState() (map[string][]byte, uint64, bool, error) {
 
 // Close is a no-op.
 func (m *Memory) Close() error { return nil }
+
+// SchemaVersion is always current for an in-memory store.
+func (m *Memory) SchemaVersion() (uint32, error) { return SchemaVersion, nil }
+
+// Migrate is a no-op for an in-memory store.
+func (m *Memory) Migrate(target uint32) error {
+	if target > SchemaVersion {
+		return ErrSchemaTarget
+	}
+	return nil
+}
 
 var _ = fmt.Sprintf

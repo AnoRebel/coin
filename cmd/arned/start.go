@@ -96,6 +96,10 @@ func startCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				if err := store.Migrate(storage.SchemaVersion); err != nil {
+					_ = store.Close()
+					return err
+				}
 				defer store.Close()
 			}
 

@@ -116,6 +116,29 @@ startup error. Back up both `data/` and `app/` while stopped.
 A node reopens at the last committed height. A corrupt record is a hard error;
 do not "fix" it by deleting a checksum. Restore from backup.
 
+## Schema migrations
+
+Every store records an on-disk schema version. An unversioned store reports 0
+and the current binary supports 1. `arned start` and the devnet command migrate
+automatically after opening the store, and refuse to run if the store is newer
+than the binary.
+
+```sh
+arned migrate --data-dir /var/lib/arne/app --status
+arned migrate --data-dir /var/lib/arne/app           # to the current version
+arned migrate --data-dir /var/lib/arne/app --to 0    # roll back
+```
+
+Each step commits its data change and the new version in one synced batch, so a
+crash leaves the previous version intact; rerunning the same step is a no-op.
+Stop the node before running the command by hand. Version 1 only records the
+baseline marker and rewrites no data. For a destructively migrated store, take
+an encrypted backup before `--to 0` and keep the previous binary until the
+restored node serves blocks.
+
+The Python node does the same on open and exposes `arne migrate --data-dir DIR
+[--status] [--to N]`; its version lives in `schema.json`.
+
 ## API exposure
 
 - Bind to `127.0.0.1` unless you need remote access. There is no TLS in the node;
@@ -236,9 +259,10 @@ deliveries.
 
 ## Upgrades
 
-- Code upgrades are stop, replace binary, start. Storage format is stable within
-  `arne/1` but there is no migration framework; read release notes before
-  jumping versions.
+- Code upgrades are stop, replace binary, start. Opening the store runs any
+  pending schema migration automatically; a store written by a newer binary is
+  refused. Use `arned migrate --status` to inspect and `--to 0` to roll back
+  after taking an encrypted backup. Read release notes before jumping versions.
 - Genesis or consensus-parameter changes mean a new network. There is no
   coordinated activation height yet.
 - Keep the previous binary and a data backup until the new version has produced

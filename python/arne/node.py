@@ -12,6 +12,7 @@ import json
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Full, Queue
@@ -23,6 +24,18 @@ from .keys import KeyPair
 
 PROTOCOL_VERSION = "arne/1"
 MEMPOOL_LIMIT = 10_000
+SCHEMA_VERSION = 1
+# version -> (name, up, down). Step 1 only records the on-disk version; the
+# existing block and state files already use the v1 layout.
+_MIGRATIONS: dict[int, tuple[str, Callable[[], None], Callable[[], None]]] = {
+    1: ("baseline-version-marker", lambda: None, lambda: None),
+}
+
+
+def read_schema_version(directory: str | Path) -> int:
+    """Return the stored schema version without opening or migrating the store."""
+    path = Path(directory) / "schema.json"
+    return int(json.loads(path.read_text())["version"]) if path.exists() else 0
 
 
 @dataclass
@@ -103,9 +116,40 @@ class FileStore:
     concurrent writers matter.
     """
 
-    def __init__(self, directory: str | Path) -> None:
+    def __init__(self, directory: str | Path, *, auto_migrate: bool = True) -> None:
         self.root = Path(directory)
         (self.root / "blocks").mkdir(parents=True, exist_ok=True)
+        # Refuse a store written by a newer binary before reading it.
+        if auto_migrate:
+            self.migrate()
+
+    def schema_version(self) -> int:
+        return read_schema_version(self.root)
+
+    def _write_schema(self, version: int) -> None:
+        self._write(
+            self.root / "schema.json",
+            json.dumps({"version": version}, sort_keys=True, separators=(",", ":")).encode(),
+        )
+
+    def migrate(self, target: int = SCHEMA_VERSION) -> None:
+        """Move one version step at a time; rerunning at the target is a no-op."""
+        if not 0 <= target <= SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema target {target}")
+        current = self.schema_version()
+        if current > SCHEMA_VERSION:
+            raise ledger.InvariantError(
+                f"storage schema {current} is newer than this binary ({SCHEMA_VERSION})"
+            )
+        if current == target:
+            return
+        steps = range(current + 1, target + 1) if current < target else range(current, target, -1)
+        for version in steps:
+            if version not in _MIGRATIONS:
+                raise ValueError(f"missing schema migration {version}")
+            _, up, down = _MIGRATIONS[version]
+            up() if current < target else down()
+            self._write_schema(version if current < target else version - 1)
 
     def _write(self, path: Path, payload: bytes) -> None:
         tmp = path.with_suffix(path.suffix + ".tmp")

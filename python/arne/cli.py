@@ -19,7 +19,15 @@ from . import cbor, ledger, paymenturi, preview, types
 from . import memo as memo_codec
 from .address import validate_address
 from .keys import keypair_from_mnemonic, new_keypair
-from .node import Config, FileStore, MemoryStore, Node, devnet_genesis
+from .node import (
+    SCHEMA_VERSION,
+    Config,
+    FileStore,
+    MemoryStore,
+    Node,
+    devnet_genesis,
+    read_schema_version,
+)
 
 DEFAULT_URL = os.environ.get("ARNE_API", "http://127.0.0.1:8080")
 
@@ -86,6 +94,17 @@ def parse_api_keys(specs: list[str]) -> dict[str, list[str]]:
 
 
 # --- serve / devnet ---
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    if args.status:
+        print(f"schema: {read_schema_version(args.data_dir)} (binary supports {SCHEMA_VERSION})")
+        return 0
+    store = FileStore(args.data_dir, auto_migrate=False)
+    before = store.schema_version()
+    store.migrate(args.to)
+    print(f"schema: {before} -> {store.schema_version()}")
+    return 0
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -759,6 +778,12 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--amount", default="", help="default: what this period allows")
         write_flags(command)
         command.set_defaults(func=function)
+
+    migrate = sub.add_parser("migrate", help="inspect or migrate the on-disk schema")
+    migrate.add_argument("--data-dir", required=True)
+    migrate.add_argument("--to", type=int, default=SCHEMA_VERSION)
+    migrate.add_argument("--status", action="store_true")
+    migrate.set_defaults(func=cmd_migrate)
 
     memo = sub.add_parser("memo", help="opt-in encrypted memos")
     memo_sub = memo.add_subparsers(dest="memo_command", required=True)
