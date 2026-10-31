@@ -121,7 +121,7 @@
 - [ ] 11.4 Implement W3C VC 2.0 KYC/accreditation verification with selective disclosure and no raw PII on-chain; verify jurisdiction, expiry, and revocation
 - [ ] 11.5 Implement scoped, time-bounded auditor access with automatic expiry and access logging; verify scope and expiry
 - [ ] 11.6 Implement data retention, legal hold, deletion/anonymization, and ledger-integrity preservation; verify retention and hold
-- [ ] 11.7 Implement FATF, MiCA, and ISO 20022 reference profiles; verify required-field validation and disclaimers
+- [x] 11.7 Implement FATF, MiCA, and ISO 20022 reference profiles; verify required-field validation and disclaimers
 - [ ] 11.8 Implement transaction-monitoring alerts and case dispositions without unauthorized auto-freeze; verify alert, disposition, and freeze policy
 - [ ] 11.9 Add tests proving no universal decryption path exists; verify ungranted access fails and exceptional access is logged
 

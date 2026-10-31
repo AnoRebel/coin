@@ -334,6 +334,31 @@ deliveries.
 - **Disk full**: the node halts on storage errors. Free space, restart, verify
   the last height.
 
+## Compliance reference profiles
+
+FATF, MiCA, and ISO 20022 reference profiles are available as a library
+(`internal/compliance/profile`, `python/arne/profile.py`) for deployers who need
+to collect or validate the fields those regimes expect:
+
+| Profile | Use it for |
+| --- | --- |
+| `fatf` | Travel Rule originator/beneficiary data above a threshold |
+| `mica` | Crypto-asset metadata: DTI, LEI, white paper |
+| `iso20022` | UETR, end-to-end ID, and instruction ID on payments |
+
+Two operator decisions matter:
+
+- The FATF trigger defaults to `1000` base units. That default is a placeholder:
+  set `JurisdictionThreshold` per jurisdiction in the asset's own units, because
+  the real trigger is a fiat amount and differs by country.
+- The profiles validate shape and presence only. They do not check the ISO 24165
+  registry, screen sanctions, exchange Travel Rule data, or make a deployment
+  compliant. Every profile carries a disclaimer; do not remove it from user-facing
+  output or present a profile as legal advice.
+
+Enable only the profiles your deployment actually follows. Selecting a profile
+does not change consensus or the public ledger.
+
 ## Missing before production
 
 Do not describe this node as production-ready until these exist:

@@ -1,0 +1,177 @@
+{
+  "cases": [
+    {
+      "name": "mica-valid",
+      "config": {"profiles": ["mica"], "threshold": 1000},
+      "target": "asset",
+      "metadata": {
+        "iso24165": "DTI4K8H2Q1",
+        "iso17442": "5493001KJTIIGC8Y1R12",
+        "white_paper": "https://example.test/whitepaper.pdf",
+        "white_paper_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "ok": true
+    },
+    {
+      "name": "mica-missing-dti",
+      "config": {"profiles": ["mica"], "threshold": 1000},
+      "target": "asset",
+      "metadata": {
+        "iso17442": "5493001KJTIIGC8Y1R12",
+        "white_paper": "https://example.test/whitepaper.pdf"
+      },
+      "ok": false,
+      "field": "iso24165"
+    },
+    {
+      "name": "mica-bad-lei",
+      "config": {"profiles": ["mica"], "threshold": 1000},
+      "target": "asset",
+      "metadata": {
+        "iso24165": "DTI4K8H2Q1",
+        "iso17442": "too-short",
+        "white_paper": "https://example.test/whitepaper.pdf"
+      },
+      "ok": false,
+      "field": "iso17442"
+    },
+    {
+      "name": "mica-bad-white-paper",
+      "config": {"profiles": ["mica"], "threshold": 1000},
+      "target": "asset",
+      "metadata": {
+        "iso24165": "DTI4K8H2Q1",
+        "iso17442": "5493001KJTIIGC8Y1R12",
+        "white_paper": "ipfs://example"
+      },
+      "ok": false,
+      "field": "white_paper"
+    },
+    {
+      "name": "mica-disabled",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "asset",
+      "metadata": {},
+      "ok": true
+    },
+    {
+      "name": "fatf-below-threshold",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "transfer",
+      "transfer": {"jurisdiction": "us", "amount": 999, "fields": {}},
+      "ok": true
+    },
+    {
+      "name": "fatf-at-threshold",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "transfer",
+      "transfer": {"jurisdiction": "us", "amount": 1000, "fields": {}},
+      "ok": true
+    },
+    {
+      "name": "fatf-above-missing",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "transfer",
+      "transfer": {"jurisdiction": "us", "amount": 1500, "fields": {}},
+      "ok": false,
+      "field": "originator_name"
+    },
+    {
+      "name": "fatf-above-valid",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "transfer",
+      "transfer": {
+        "jurisdiction": "us",
+        "amount": 1500,
+        "fields": {
+          "originator_name": "Alice Example",
+          "originator_account": "acct-1",
+          "beneficiary_name": "Bob Example",
+          "beneficiary_account": "acct-2"
+        }
+      },
+      "ok": true
+    },
+    {
+      "name": "fatf-jurisdiction-override",
+      "config": {"profiles": ["fatf"], "threshold": 1000, "jurisdiction_threshold": {"se": 500}},
+      "target": "transfer",
+      "transfer": {
+        "jurisdiction": "se",
+        "amount": 600,
+        "fields": {
+          "originator_name": "Alice Example",
+          "originator_account": "acct-1",
+          "beneficiary_name": "Bob Example"
+        }
+      },
+      "ok": false,
+      "field": "beneficiary_account"
+    },
+    {
+      "name": "fatf-disabled",
+      "config": {"profiles": ["mica"], "threshold": 1000},
+      "target": "transfer",
+      "transfer": {"jurisdiction": "us", "amount": 1000000, "fields": {}},
+      "ok": true
+    },
+    {
+      "name": "iso20022-valid",
+      "config": {"profiles": ["iso20022"], "threshold": 1000},
+      "target": "iso20022",
+      "fields": {
+        "uetr": "123e4567-e89b-42d3-a456-426614174000",
+        "end_to_end_id": "INV-2026-0001",
+        "instruction_id": "PMT-0001",
+        "purpose_code": "GDDS",
+        "remittance_information": "invoice 2026-0001"
+      },
+      "ok": true
+    },
+    {
+      "name": "iso20022-missing-uetr",
+      "config": {"profiles": ["iso20022"], "threshold": 1000},
+      "target": "iso20022",
+      "fields": {"end_to_end_id": "E2E", "instruction_id": "INS"},
+      "ok": false,
+      "field": "uetr"
+    },
+    {
+      "name": "iso20022-bad-uetr",
+      "config": {"profiles": ["iso20022"], "threshold": 1000},
+      "target": "iso20022",
+      "fields": {
+        "uetr": "123E4567-E89B-42D3-A456-426614174000",
+        "end_to_end_id": "E2E",
+        "instruction_id": "INS"
+      },
+      "ok": false,
+      "field": "uetr"
+    },
+    {
+      "name": "iso20022-long-end-to-end",
+      "config": {"profiles": ["iso20022"], "threshold": 1000},
+      "target": "iso20022",
+      "fields": {
+        "uetr": "123e4567-e89b-42d3-a456-426614174000",
+        "end_to_end_id": "123456789012345678901234567890123456",
+        "instruction_id": "INS"
+      },
+      "ok": false,
+      "field": "end_to_end_id"
+    },
+    {
+      "name": "iso20022-disabled",
+      "config": {"profiles": ["fatf"], "threshold": 1000},
+      "target": "iso20022",
+      "fields": {},
+      "ok": true
+    }
+  ],
+  "profile_fields": {
+    "fatf": {"required": ["originator_name", "originator_account", "beneficiary_name", "beneficiary_account"], "retention_days": 1825},
+    "mica": {"required": ["iso24165", "iso17442", "white_paper"]},
+    "iso20022": {"required": ["uetr", "end_to_end_id", "instruction_id"]}
+  },
+  "disclaimer_contains": "deployer"
+}

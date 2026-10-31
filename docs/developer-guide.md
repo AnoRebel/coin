@@ -27,6 +27,7 @@ make test
 | `internal/preview` | Pre-signing preview and safety warnings |
 | `internal/webhook` | Signed webhook delivery, retries, replay checks |
 | `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
+| `internal/compliance/profile` | FATF, MiCA, and ISO 20022 reference profiles |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -338,6 +339,46 @@ the next one:
 The Python parity implementation is `python/arne/policy.py`. Both suites read
 `spec/vectors/policy.json`; keep Go and Python behavior aligned when changing
 the matcher.
+
+## Compliance reference profiles
+
+`internal/compliance/profile` (mirrored by `python/arne/profile.py`) provides
+selectable FATF, MiCA, and ISO 20022 field sets. A profile is required fields
+plus a disclaimer, never a compliance certification:
+
+| Profile | Required fields | Optional |
+| --- | --- | --- |
+| `fatf` | `originator_name`, `originator_account`, `beneficiary_name`, `beneficiary_account` | addresses, `counterparty_vasp`, `purpose` |
+| `mica` | `iso24165`, `iso17442`, `white_paper` | `white_paper_hash`, `casp_lei`, `order_book_venue` |
+| `iso20022` | `uetr`, `end_to_end_id`, `instruction_id` | `purpose_code`, `remittance_information` |
+
+```go
+cfg, err := profile.New("arne:devnet", profile.FATF, profile.MiCA)
+err = cfg.ValidateAsset(metadata)              // MiCA fields and formats
+err = cfg.ValidateTransfer(profile.Transfer{   // FATF above threshold only
+    Jurisdiction: "us", Amount: 1500, Fields: travelRule,
+})
+err = cfg.ValidatePayment(isoFields)           // ISO 20022 identifiers
+```
+
+- FATF applies only when `amount > threshold`. `DefaultFATFThreshold` is `1000`
+  base units; override per jurisdiction with `JurisdictionThreshold`, because
+  the trigger is a fiat value and therefore asset- and jurisdiction-specific.
+  The comparison is strict, so an amount equal to the threshold is exempt.
+- `iso24165` is checked syntactically (9–32 uppercase alphanumerics), not against
+  the DTI registry. `iso17442` is 20 uppercase alphanumerics. `uetr` must be a
+  lowercase UUIDv4; `end_to_end_id` and `instruction_id` are 1–35 characters.
+- Validation returns a `ValidationError` naming the profile and the first failing
+  field, so callers can report it directly instead of guessing.
+- `Config.Validate` rejects unknown or duplicate profiles, an empty profile list,
+  a zero threshold, and bad jurisdiction overrides. `Config.Disclaimers()`
+  returns the disclaimer text for every enabled profile.
+- Both suites read `spec/vectors/profiles.json`; add a vector for every new
+  rule. Disclaimers must contain the word "deployer" so no profile can be
+  presented as legal advice.
+
+`shortcut:` the profiles are validation libraries only; asset registration and
+payment submission do not call them yet.
 
 ## Known shortcuts
 

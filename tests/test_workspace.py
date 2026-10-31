@@ -20,7 +20,6 @@ from arne.workspace import (
     Workspace,
 )
 from fastapi.testclient import TestClient
-
 from test_api import NETWORK, make_node
 
 KEYS = {"key-alice": "alice", "key-bob": "bob", "key-carol": "carol", "key-dave": "dave"}
