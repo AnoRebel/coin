@@ -434,7 +434,33 @@ Best-effort batches are the payroll primitive: build the recipient list, submit
 once, then reconcile the `batch_item` events against the run. The fee is charged
 once for the transaction. Scheduled/recurring runs are still planned.
 
-## 11. Recovery and key safety
+## 11. Workspace roles and audit
+
+A node started with `--workspace <file>` enforces team roles on payments and
+payment records. The file maps API keys to member IDs and member IDs to roles:
+
+```json
+{
+  "members": {"alice": "owner", "bob": "admin", "carol": "member", "dave": "auditor"},
+  "principals": {"key-alice": "alice", "key-bob": "bob"}
+}
+```
+
+Every request then needs its key. Members can pay, auditors can only read,
+admins manage members below owner, and owners manage everyone:
+
+```sh
+curl -H "Authorization: Bearer key-carol" http://127.0.0.1:8080/v1/workspace
+curl -H "Authorization: Bearer key-dave"  http://127.0.0.1:8080/v1/workspace/audit
+curl -X PUT -H "Authorization: Bearer key-alice" \
+  -d '{"role":"admin"}' http://127.0.0.1:8080/v1/workspace/members/bob
+```
+
+Privileged attempts, including denials, are appended to
+`<workspace-file>.audit.jsonl` with actor, action, target, time, and result. The
+last owner cannot be removed or demoted.
+
+## 12. Recovery and key safety
 
 - Restore with the mnemonic and the same network ID and account index.
 - The same mnemonic produces different addresses on mainnet and devnet; this is
@@ -443,7 +469,7 @@ once for the transaction. Scheduled/recurring runs are still planned.
 - Passkeys, social recovery, and hardware-signer workflows are specified but not
   implemented.
 
-## 12. What to do when something fails
+## 13. What to do when something fails
 
 - `BAD_NONCE`: another transaction from the same account was confirmed first.
   Re-read the account nonce and re-sign.

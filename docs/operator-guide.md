@@ -148,6 +148,26 @@ The Python node does the same on open and exposes `arne migrate --data-dir DIR
   text only, not sender, recipient, amount, or time.
 - The faucet exists only on devnet and is disabled by `Devnet: false`.
 - Request bodies are capped at 2 MiB; keep proxy limits aligned.
+- `--workspace <file>` enables workspace roles. Every request then needs an API
+  key listed in the file's `principals` map; roles gate payments, payment reads,
+  membership changes, and audit access. Keep the file at mode `0600` because it
+  contains API keys. Audit records are appended to `<file>.audit.jsonl`.
+
+Workspace file:
+
+```json
+{
+  "members": {"alice": "owner", "bob": "admin", "carol": "member", "dave": "auditor"},
+  "principals": {"key-alice": "alice", "key-bob": "bob"}
+}
+```
+
+Roles: `owner` (everything, including managing owners), `admin` (channels,
+payments, members below owner, audit read), `member` (send and pay, read
+payment records), `auditor` (read payments and audit only). Only an owner can
+change or remove an owner, and the last owner cannot be demoted or removed.
+Membership changes are written back atomically; audit entries include actor,
+action, target, time, and result.
 
 Example proxy contract: forward `Authorization`, set `X-Forwarded-For` only from
 trusted proxies, and do not cache `/v1/events`.

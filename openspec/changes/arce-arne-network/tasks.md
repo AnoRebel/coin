@@ -110,7 +110,7 @@
 - [x] 10.5 Implement encrypted memos with size limits and public-memo warnings; verify decryption and oversize rejection
 - [ ] 10.6 Integrate MLS (RFC 9420) group channels with add/remove/update/commit and epoch rotation; verify removed-member decryption failure
 - [ ] 10.7 Implement channel messages, payment references, notices, file pointers, at-least-once delivery, deduplication, and offline catch-up; verify retry and retention
-- [ ] 10.8 Implement workspace roles, permissions, and audit logging; verify member/admin/auditor enforcement
+- [x] 10.8 Implement workspace roles, permissions, and audit logging; verify member/admin/auditor enforcement
 - [x] 10.9 Implement signed webhooks with retries and replay protection; verify valid, replayed, and retryable deliveries
 
 ## 11. Compliance

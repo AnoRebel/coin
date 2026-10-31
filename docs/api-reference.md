@@ -31,6 +31,46 @@ Protocol `arne/1`, API `v1`, transaction version `1`.
 
 `halted` is present only when the node halted, with the reason.
 
+### Workspace roles and audit
+
+Enable with `--workspace <file>`. When enabled, every workspace/payment request
+needs `Authorization: Bearer <key>` where the key appears in the file's
+`principals` map. Without a workspace these routes behave as before
+(`/v1/workspace*` returns `404`).
+
+| Method | Path | Permission | Description |
+| --- | --- | --- | --- |
+| GET | `/v1/workspace` | authenticated | Caller identity, role, and permission list |
+| GET | `/v1/workspace/members` | `member.read` | `{"items":[{"id","role"}…]}` |
+| PUT | `/v1/workspace/members/{id}` | `member.manage` | Body `{"role":"owner\|admin\|member\|auditor"}` |
+| DELETE | `/v1/workspace/members/{id}` | `member.manage` | `204`; also drops that member's principals |
+| GET | `/v1/workspace/audit?after=N&limit=M` | `audit.read` | Audit entries with `seq > after` |
+
+Roles and permissions:
+
+| Permission | owner | admin | member | auditor |
+| --- | --- | --- | --- | --- |
+| `channel.read` | yes | yes | yes | yes |
+| `channel.write` | yes | yes | yes | — |
+| `channel.manage` | yes | yes | — | — |
+| `payment.read` | yes | yes | yes | yes |
+| `payment.write` | yes | yes | yes | — |
+| `member.read` | yes | yes | yes | yes |
+| `member.manage` | yes | yes | — | — |
+| `settings.manage` | yes | — | — | — |
+| `audit.read` | yes | yes | — | yes |
+
+Audit entry:
+
+```json
+{"seq":3,"time":1793441482,"actor":"alice","action":"member.manage",
+ "target":"bob","result":"ok","detail":"member -> admin"}
+```
+
+`result` is `ok`, `accepted`, or `denied`. Denied permission checks are audited
+too. Only an owner may change or remove an owner; the last owner cannot be
+removed or demoted (`409 LAST_OWNER`).
+
 ### Assets
 
 | Method | Path | Description |
@@ -428,10 +468,12 @@ Branch on `code`.
 | `LIMIT_EXCEEDED` | Batch too large, priority fee capped, mempool full | 429 / 400 |
 | `CONSERVATION_VIOLATION` | Supply invariant broken (node halts) | 400 |
 | `INVARIANT_VIOLATION` | Internal/state invariant broken (node halts) | 400 |
+| `LAST_OWNER` | Cannot remove or demote the last workspace owner | 409 |
 
 Non-ledger API errors: `INVALID_ARGUMENT` (400), `BODY_TOO_LARGE` (413),
-`FORBIDDEN` (403, missing scope), `RATE_LIMITED` (429), `NOT_FOUND` (404,
-disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND`/`TRANSFER_NOT_FOUND` (404), `PRUNED` (410, block
+`FORBIDDEN` (403, missing scope or workspace permission), `RATE_LIMITED` (429),
+`NOT_FOUND` (404, disabled faucet or unconfigured workspace),
+`TX_NOT_FOUND`/`BLOCK_NOT_FOUND`/`TRANSFER_NOT_FOUND` (404), `PRUNED` (410, block
 outside `--keep-blocks`), `UNSUPPORTED` (500).
 
 ## Mempool and nonce rules

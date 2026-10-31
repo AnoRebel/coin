@@ -21,6 +21,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import cbor, ledger, types
+from . import workspace as ws
 from .node import Node
 
 MAX_BODY = 2 << 20
@@ -44,6 +45,7 @@ class ApiConfig:
     allowed_origins: list[str] = field(default_factory=list)
     rate_limit: int = 0  # requests per second per IP; 0 disables
     devnet: bool = False
+    workspace: ws.Workspace | None = None
 
 
 def error_response(status: int, code: str, message: str) -> JSONResponse:
@@ -209,6 +211,34 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
 
         return check
 
+    def ws_actor(request: Request) -> str:
+        if config.workspace is None:
+            raise ApiError(404, "NOT_FOUND", "workspace is not configured")
+        key = request.headers.get("authorization", "").removeprefix("Bearer ")
+        actor = config.workspace.actor(key)
+        if actor is None:
+            raise ApiError(401, "UNAUTHORIZED", "missing or invalid API key")
+        return actor
+
+    def require_ws(request: Request, action: str, target: str = "") -> str | None:
+        if config.workspace is None:
+            return None
+        actor = ws_actor(request)
+        try:
+            config.workspace.require(actor, action, target or request.url.path)
+        except ws.Forbidden as exc:
+            raise ApiError(403, "FORBIDDEN", str(exc)) from exc
+        return actor
+
+    def ws_error(exc: ws.WorkspaceError) -> ApiError:
+        if isinstance(exc, ws.Forbidden):
+            return ApiError(403, "FORBIDDEN", str(exc))
+        if isinstance(exc, ws.UnknownMember):
+            return ApiError(404, "NOT_FOUND", str(exc))
+        if isinstance(exc, ws.LastOwner):
+            return ApiError(409, "LAST_OWNER", str(exc))
+        return ApiError(400, "INVALID_ARGUMENT", str(exc))
+
     def rate_check(request: Request) -> None:
         if limiter is not None:
             client = request.client.host if request.client else "unknown"
@@ -281,7 +311,8 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         }
 
     @app.get("/v1/intents/{intent_id}")
-    def get_intent(intent_id: str) -> dict[str, Any]:
+    def get_intent(intent_id: str, request: Request) -> dict[str, Any]:
+        require_ws(request, ws.PAYMENT_READ, intent_id)
         with node._lock:
             intent = node.state.intent(intent_id)
         if intent is None:
@@ -289,7 +320,8 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         return intent.to_cbor()
 
     @app.get("/v1/transfers/{tx_hash}")
-    def get_transfer(tx_hash: str) -> dict[str, Any]:
+    def get_transfer(tx_hash: str, request: Request) -> dict[str, Any]:
+        require_ws(request, ws.PAYMENT_READ, tx_hash)
         with node._lock:
             transfer = node.state.transfer(tx_hash)
             refunded = node.state.refunded(tx_hash) if transfer is not None else 0
@@ -303,7 +335,8 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         }
 
     @app.get("/v1/subscriptions/{sub_id}")
-    def get_subscription(sub_id: str) -> dict[str, Any]:
+    def get_subscription(sub_id: str, request: Request) -> dict[str, Any]:
+        require_ws(request, ws.PAYMENT_READ, sub_id)
         with node._lock:
             subscription = node.state.subscription(sub_id)
         if subscription is None:
@@ -311,7 +344,8 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         return subscription.to_cbor()
 
     @app.get("/v1/escrows/{escrow_id}")
-    def get_escrow(escrow_id: str) -> dict[str, Any]:
+    def get_escrow(escrow_id: str, request: Request) -> dict[str, Any]:
+        require_ws(request, ws.PAYMENT_READ, escrow_id)
         escrow = node.state.escrow(escrow_id)
         if escrow is None:
             raise ApiError(404, ledger.ESCROW_NOT_FOUND, "escrow not found")
@@ -394,6 +428,7 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
     async def submit_tx(request: Request) -> Response:
         rate_check(request)
         require("write")(request)
+        actor = require_ws(request, ws.PAYMENT_WRITE)
         raw = _tx_bytes(await _read_body(request))
         keys = request.headers.getlist("Idempotency-Key")
         if len(keys) > 1 or (keys and not keys[0]):
@@ -404,11 +439,14 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         receipt = node.receipt(tx_hash) if replay else None
         if receipt is not None:
             return JSONResponse({"hash": tx_hash, "status": "finalized", "receipt": receipt.to_dict()})
+        if actor is not None:
+            config.workspace.audit(actor, ws.PAYMENT_WRITE, tx_hash, "accepted")
         return JSONResponse({"hash": tx_hash, "status": "accepted"}, status_code=202)
 
     @app.post("/v1/transactions/simulate")
     async def simulate_tx(request: Request) -> dict[str, Any]:
         rate_check(request)
+        require_ws(request, ws.PAYMENT_READ)
         raw = _tx_bytes(await _read_body(request))
         return node.simulate(raw).to_dict()
 
@@ -432,6 +470,52 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         if not isinstance(address, str) or not address:
             raise ApiError(400, "INVALID_ARGUMENT", "address required")
         return {"hash": node.faucet(address)}
+
+    # --- workspace ---
+
+    @app.get("/v1/workspace")
+    def get_workspace(request: Request) -> dict[str, Any]:
+        actor = ws_actor(request)
+        role = config.workspace.role_of(actor)
+        return {
+            "actor": actor, "role": role,
+            "permissions": [a for a in ws.ALL_ACTIONS if config.workspace.authorize(actor, a)],
+        }
+
+    @app.get("/v1/workspace/members")
+    def list_workspace_members(request: Request) -> dict[str, Any]:
+        require_ws(request, ws.MEMBER_READ)
+        return {"items": config.workspace.members()}
+
+    @app.put("/v1/workspace/members/{member_id}")
+    async def set_workspace_member(member_id: str, request: Request) -> dict[str, Any]:
+        actor = require_ws(request, ws.MEMBER_MANAGE, member_id)
+        try:
+            payload = json.loads(await _read_body(request))
+        except json.JSONDecodeError as exc:
+            raise ApiError(400, "INVALID_ARGUMENT", 'body must be {"role":"..."}') from exc
+        role = payload.get("role") if isinstance(payload, dict) else None
+        if not isinstance(role, str):
+            raise ApiError(400, "INVALID_ARGUMENT", 'body must be {"role":"..."}')
+        try:
+            config.workspace.set_role(actor, member_id, role)
+        except ws.WorkspaceError as exc:
+            raise ws_error(exc) from exc
+        return {"id": member_id, "role": role}
+
+    @app.delete("/v1/workspace/members/{member_id}", status_code=204)
+    def delete_workspace_member(member_id: str, request: Request) -> Response:
+        actor = require_ws(request, ws.MEMBER_MANAGE, member_id)
+        try:
+            config.workspace.remove(actor, member_id)
+        except ws.WorkspaceError as exc:
+            raise ws_error(exc) from exc
+        return Response(status_code=204)
+
+    @app.get("/v1/workspace/audit")
+    def get_workspace_audit(request: Request, after: int = 0, limit: int = 100) -> dict[str, Any]:
+        require_ws(request, ws.AUDIT_READ)
+        return {"items": config.workspace.entries(after, limit)}
 
     # --- JSON-RPC 2.0 ---
 

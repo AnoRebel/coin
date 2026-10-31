@@ -245,7 +245,16 @@ The fee asset is part of the signed transaction. Default to the native asset
 optional payload field `max_arce_fee` (ARCE base units) to bound the converted
 fee; a conversion above it is rejected with `LIMIT_EXCEEDED` before charging.
 
-## 9. Webhooks and connectors
+## 9. Workspace roles
+
+If the operator starts the node with `--workspace <file>`, include
+`Authorization: Bearer <key>` on workspace and payment routes. The caller's
+role decides whether a payment can be submitted, a payment record read, or a
+member changed. Use a key per person or service; do not share the owner key with
+integrations. Audit entries are available at `/v1/workspace/audit` for owners,
+admins, and auditors, with `after`/`limit` pagination.
+
+## 10. Webhooks and connectors
 
 Signed webhooks are implemented. Enable them on the node with `--webhook <url>`
 and `--webhook-key <64-hex-seed>`; generate a key with `arned webhook keygen`.
@@ -293,7 +302,7 @@ For text notifications without webhooks, poll or use SSE and reconcile by
 transaction hash. A transaction hash is unique per signed transaction and is the
 safest external reference.
 
-## 10. Error handling
+## 11. Error handling
 
 ```json
 {"error": {"code": "INSUFFICIENT_FUNDS", "message": "insufficient arce:devnet balance"}}
@@ -302,7 +311,7 @@ safest external reference.
 Branch on `code`, not on the message or HTTP status alone. Full table:
 [api-reference.md](api-reference.md#error-codes).
 
-## 11. Test checklist for integrators
+## 12. Test checklist for integrators
 
 - Round-trip: build a transaction in your language and submit it; the hash must
   match the node's receipt hash.

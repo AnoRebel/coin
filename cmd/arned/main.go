@@ -34,6 +34,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
 	"github.com/anorebel/anorebelcoin/internal/webhook"
+	"github.com/anorebel/anorebelcoin/internal/workspace"
 )
 
 const version = "0.1.0"
@@ -118,6 +119,7 @@ func devnetCmd() *cobra.Command {
 		keepBlocks     uint64
 		webhookURLs    []string
 		webhookKey     string
+		workspacePath  string
 	)
 	cmd := &cobra.Command{
 		Use:   "devnet",
@@ -187,9 +189,13 @@ func devnetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ws, err := loadWorkspace(workspacePath)
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
 				Devnet: true, RateLimit: rateLimit,
-				APIKeys: apiKeys, AllowedOrigins: allowedOrigins,
+				APIKeys: apiKeys, Workspace: ws, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
 				if err := srv.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -238,7 +244,21 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N blocks (0 archives all)")
 	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
 	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
+	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
 	return cmd
+}
+
+// loadWorkspace loads an optional workspace roles file. The sibling
+// "<path>.audit.jsonl" receives the audit log.
+func loadWorkspace(path string) (*workspace.Workspace, error) {
+	if path == "" {
+		return nil, nil
+	}
+	w, err := workspace.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("workspace: %w", err)
+	}
+	return w, nil
 }
 
 // --- wallet ---

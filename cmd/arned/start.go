@@ -44,6 +44,7 @@ func startCmd() *cobra.Command {
 		apiKeySpecs    []string
 		allowedOrigins []string
 		rateLimit      int
+		workspacePath  string
 		keepBlocks     uint64
 		webhookURLs    []string
 		webhookKey     string
@@ -173,9 +174,13 @@ func startCmd() *cobra.Command {
 			})
 			n.SetMempoolSize(func() int { return cmtNode.Mempool().Size() })
 
+			ws, err := loadWorkspace(workspacePath)
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
 				Devnet: devnet, RateLimit: rateLimit,
-				APIKeys: apiKeys, AllowedOrigins: allowedOrigins,
+				APIKeys: apiKeys, Workspace: ws, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
 				if err := srv.Start(apiAddr); err != nil && !errors.Is(err, io.EOF) {
@@ -211,6 +216,7 @@ func startCmd() *cobra.Command {
 	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N ledger blocks (0 archives all)")
 	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
 	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
+	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
 	return cmd
 }
 

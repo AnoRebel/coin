@@ -20,11 +20,13 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/node"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/smt"
+	"github.com/anorebel/anorebelcoin/internal/workspace"
 )
 
 // Config configures the HTTP surface.
 type Config struct {
 	APIKeys        map[string][]string // key -> scopes ("read","write","admin")
+	Workspace      *workspace.Workspace
 	AllowedOrigins []string
 	RateLimit      int // requests per second per IP; 0 disables
 	Devnet         bool
@@ -66,10 +68,10 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/accounts/:address", s.getAccount)
 	e.GET("/v1/accounts/:address/proof", s.accountProof)
 	e.GET("/v1/supply/:asset", s.supply)
-	e.GET("/v1/escrows/:id", s.getEscrow)
-	e.GET("/v1/intents/:id", s.getIntent)
-	e.GET("/v1/transfers/:hash", s.getTransfer)
-	e.GET("/v1/subscriptions/:id", s.getSubscription)
+	e.GET("/v1/escrows/:id", s.getEscrow, s.workspaceAction(workspace.ActionPaymentRead))
+	e.GET("/v1/intents/:id", s.getIntent, s.workspaceAction(workspace.ActionPaymentRead))
+	e.GET("/v1/transfers/:hash", s.getTransfer, s.workspaceAction(workspace.ActionPaymentRead))
+	e.GET("/v1/subscriptions/:id", s.getSubscription, s.workspaceAction(workspace.ActionPaymentRead))
 	e.GET("/v1/allowances/:owner/:spender/:asset", s.getAllowance)
 	e.GET("/v1/blocks", s.listBlocks)
 	e.GET("/v1/blocks/:height", s.getBlock)
@@ -78,10 +80,15 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/webhooks/key", s.webhookKey)
 	e.GET("/v1/proofs/*", s.keyProof)
 
-	e.POST("/v1/transactions", s.submitTx, s.require("write"))
-	e.POST("/v1/transactions/simulate", s.simulateTx)
+	e.POST("/v1/transactions", s.submitTx, s.require("write"), s.workspaceAction(workspace.ActionPaymentWrite))
+	e.POST("/v1/transactions/simulate", s.simulateTx, s.workspaceAction(workspace.ActionPaymentRead))
 	e.POST("/v1/blocks/produce", s.produceBlock, s.require("admin"))
 	e.POST("/v1/faucet", s.faucet, s.require("write"))
+	e.GET("/v1/workspace", s.getWorkspace)
+	e.GET("/v1/workspace/members", s.listWorkspaceMembers, s.workspaceAction(workspace.ActionMemberRead))
+	e.PUT("/v1/workspace/members/:id", s.setWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
+	e.DELETE("/v1/workspace/members/:id", s.deleteWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
+	e.GET("/v1/workspace/audit", s.getWorkspaceAudit, s.workspaceAction(workspace.ActionAuditRead))
 	e.POST("/rpc", s.rpc)
 	return e
 }
@@ -145,6 +152,123 @@ func (s *Server) require(scope string) echo.MiddlewareFunc {
 			}
 			return apiErr(http.StatusForbidden, "FORBIDDEN", "missing scope "+scope)
 		}
+	}
+}
+
+// workspaceAction enforces a workspace permission when a workspace is loaded.
+// Unknown API keys are rejected; the resolved member ID is stored as "actor".
+func (s *Server) workspaceAction(action workspace.Action) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if s.cfg.Workspace == nil {
+				return next(c)
+			}
+			actor, err := s.principal(c)
+			if err != nil {
+				return err
+			}
+			if err := s.cfg.Workspace.Require(actor, action, auditTarget(c)); err != nil {
+				return apiErr(http.StatusForbidden, "FORBIDDEN", "role cannot "+string(action))
+			}
+			c.Set("actor", actor)
+			return next(c)
+		}
+	}
+}
+
+func auditTarget(c *echo.Context) string {
+	if id := c.Param("id"); id != "" {
+		return id
+	}
+	return c.Path()
+}
+
+func (s *Server) principal(c *echo.Context) (string, error) {
+	if s.cfg.Workspace == nil {
+		return "", apiErr(http.StatusNotFound, "NOT_FOUND", "workspace is not configured")
+	}
+	key := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+	actor, ok := s.cfg.Workspace.Actor(key)
+	if !ok {
+		return "", apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid API key")
+	}
+	return actor, nil
+}
+
+func (s *Server) getWorkspace(c *echo.Context) error {
+	actor, err := s.principal(c)
+	if err != nil {
+		return err
+	}
+	role, _ := s.cfg.Workspace.RoleOf(actor)
+	return c.JSON(http.StatusOK, map[string]any{
+		"actor": actor, "role": role, "permissions": workspace.Permissions(role),
+	})
+}
+
+func (s *Server) listWorkspaceMembers(c *echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]any{"items": s.cfg.Workspace.Members()})
+}
+
+func (s *Server) setWorkspaceMember(c *echo.Context) error {
+	body, err := readBody(c)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Role workspace.Role `json:"role"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "body must be {\"role\":\"...\"}")
+	}
+	actor, _ := c.Get("actor").(string)
+	id := c.Param("id")
+	if err := s.cfg.Workspace.SetRole(actor, id, in.Role); err != nil {
+		return workspaceError(err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"id": id, "role": in.Role})
+}
+
+func (s *Server) deleteWorkspaceMember(c *echo.Context) error {
+	actor, _ := c.Get("actor").(string)
+	if err := s.cfg.Workspace.Remove(actor, c.Param("id")); err != nil {
+		return workspaceError(err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) getWorkspaceAudit(c *echo.Context) error {
+	var after uint64
+	if raw := c.QueryParam("after"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "after must be a sequence number")
+		}
+		after = v
+	}
+	limit := 100
+	if raw := c.QueryParam("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "limit must be positive")
+		}
+		limit = v
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": s.cfg.Workspace.Entries(after, limit)})
+}
+
+func workspaceError(err error) error {
+	switch {
+	case errors.Is(err, workspace.ErrForbidden), errors.Is(err, workspace.ErrUnknownActor):
+		return apiErr(http.StatusForbidden, "FORBIDDEN", err.Error())
+	case errors.Is(err, workspace.ErrUnknownMember):
+		return apiErr(http.StatusNotFound, "NOT_FOUND", err.Error())
+	case errors.Is(err, workspace.ErrLastOwner):
+		return apiErr(http.StatusConflict, "LAST_OWNER", err.Error())
+	case errors.Is(err, workspace.ErrInvalid):
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+	default:
+		return err
 	}
 }
 
@@ -434,6 +558,10 @@ func (s *Server) submitTx(c *echo.Context) error {
 	if replay {
 		if receipt, ok := s.node.Receipt(hash); ok {
 			return c.JSON(http.StatusOK, map[string]any{"hash": hash, "status": "finalized", "receipt": receipt})
+		}
+	} else if s.cfg.Workspace != nil {
+		if actor, ok := c.Get("actor").(string); ok {
+			_ = s.cfg.Workspace.Audit(actor, workspace.ActionPaymentWrite, hash, "accepted", "")
 		}
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{"hash": hash, "status": "accepted"})

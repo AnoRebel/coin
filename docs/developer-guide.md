@@ -28,6 +28,7 @@ make test
 | `internal/webhook` | Signed webhook delivery, retries, replay checks |
 | `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
+| `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
@@ -274,6 +275,25 @@ nonexistent destination, writes into a temporary sibling store, migrates it to
 the current schema, and renames it into place. Incrementals require the full
 base for both verification and restore. `shortcut:` snapshots are built in
 memory; stream the state map if production block volume makes that costly.
+
+## Workspace roles and audit
+
+`internal/workspace` (mirrored by `python/arne/workspace.py`) owns roles,
+permissions, and the audit log. `Load(path)` reads `members` and `principals`
+maps from JSON, loads `<path>.audit.jsonl`, and saves membership changes
+atomically with mode `0600`. The file contains API keys; treat it as a secret.
+
+The permission matrix is data, not scattered checks: `Authorize(member,
+action)` is the single source of truth. `Require` audits denials, while mutating
+methods audit successes with the previous and new role. `SetRole`/`Remove`
+reject non-managers, block admins from touching owners, and keep at least one
+owner. The API wraps payment submit/read and workspace routes with
+`workspaceAction`, so a missing or unmapped key is `401` and a denied role is
+`403`. Payment submission also appends an `accepted` entry with the tx hash.
+
+`shortcut:` the audit log is held in memory as well as appended to disk; stream
+it when audit volume makes that costly. Membership storage is a JSON file, not
+an external IAM system.
 
 ## Jurisdiction policy engine
 

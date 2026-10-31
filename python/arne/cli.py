@@ -144,11 +144,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print(f"webhooks: {len(args.webhook)} endpoint(s), signing key {node.webhook_public_key}")
 
     from .api import ApiConfig, create_app
+    from .workspace import Workspace, WorkspaceError
 
+    workspace = None
+    if args.workspace:
+        try:
+            workspace = Workspace.load(args.workspace)
+        except (OSError, ValueError, WorkspaceError) as exc:
+            raise ValueError(f"workspace: {exc}") from exc
     app = create_app(node, ApiConfig(
         devnet=True, rate_limit=args.rate_limit,
         api_keys=parse_api_keys(args.api_key),
         allowed_origins=args.allow_origin,
+        workspace=workspace,
     ))
 
     def producer() -> None:
@@ -657,6 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--rate-limit", type=int, default=200, help="requests per second per IP")
     serve.add_argument("--webhook", action="append", default=[], help="webhook endpoint URL")
     serve.add_argument("--webhook-key", default="", help="hex Ed25519 seed for webhooks")
+    serve.add_argument("--workspace", default="", help="workspace roles file (enables role enforcement)")
     serve.set_defaults(func=cmd_serve)
 
     devnet = sub.add_parser("devnet", help="alias for serve with devnet settings")
@@ -672,6 +681,7 @@ def build_parser() -> argparse.ArgumentParser:
     devnet.add_argument("--rate-limit", type=int, default=200, help="requests per second per IP")
     devnet.add_argument("--webhook", action="append", default=[], help="webhook endpoint URL")
     devnet.add_argument("--webhook-key", default="", help="hex Ed25519 seed for webhooks")
+    devnet.add_argument("--workspace", default="", help="workspace roles file (enables role enforcement)")
     devnet.set_defaults(func=cmd_serve)
 
     wallet = sub.add_parser("wallet", help="offline key management")
