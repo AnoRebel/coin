@@ -13,7 +13,7 @@ from .types import network_class, valid_asset_id
 _AMOUNT = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$")
 _SCHEME = re.compile(r"^[a-z]+$")
 _EXEC_HINTS = ("<script", "<iframe", "javascript:", "data:text/html", "onerror=", "<svg")
-_ALLOWED = {"network", "asset", "amount", "memo", "expires"}
+_ALLOWED = {"network", "asset", "amount", "memo", "expires", "intent"}
 
 
 class URIError(ValueError):
@@ -30,11 +30,13 @@ class Payment:
     memo: str = ""
     expires: int = 0
     warnings: list[str] = field(default_factory=list)
+    intent: str = ""
 
     def __str__(self) -> str:
         values = {
             "network": self.network, "asset": self.asset, "amount": self.amount,
             "memo": self.memo, "expires": str(self.expires) if self.expires else "",
+            "intent": self.intent,
         }
         query = "&".join(
             f"{key}={quote_plus(value)}" for key, value in sorted(values.items()) if value
@@ -53,11 +55,17 @@ class Payment:
         if amount and amount != self.amount:
             raise URIError(f"uri amount {self.amount} conflicts with {amount}")
 
+    def check_intent(self, intent: str) -> None:
+        if intent and intent != self.intent:
+            raise URIError(f"uri intent {self.intent} conflicts with {intent}")
+
     def summary(self) -> str:
         lines = [
             f"network: {self.network}", f"recipient: {self.to}",
             f"asset: {self.asset}", f"amount: {self.amount}",
         ]
+        if self.intent:
+            lines.append(f"intent: {self.intent}")
         if self.memo:
             lines.append(f"memo: {self.memo!r}")
         if self.expires:
@@ -94,7 +102,10 @@ def parse(raw: str, now: int | None = None) -> Payment:
     payment = Payment(
         scheme=scheme, network=one("network"), to=to, asset=one("asset"),
         amount=one("amount"), memo=one("memo"),
+        intent=one("intent"),
     )
+    if "intent" in params and not re.fullmatch(r"[0-9a-f]{32}", payment.intent):
+        raise URIError("intent")
     if not payment.network:
         raise URIError("network required")
     try:

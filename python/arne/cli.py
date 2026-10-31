@@ -6,6 +6,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -241,7 +242,7 @@ def _signed_tx(
     tx = types.Tx(
         version=1, network=args.network, chain=types.chain_id(args.network),
         tx_type=tx_type, signer=kp.address, nonce=account.get("nonce", 0),
-        created_at=now, expires_at=expires_at or now + 3600,
+        created_at=now, expires_at=min(expires_at or now + 3600, now + 3600),
         fee_asset=args.fee_asset or types.native_asset(args.network),
         max_fee=args.max_fee, payload=payload,
     )
@@ -251,22 +252,31 @@ def _signed_tx(
 
 def _apply_uri(args: argparse.Namespace) -> paymenturi.Payment | None:
     if not args.uri:
+        args.network = args.network or "arne:devnet"
         return None
     payment = paymenturi.parse(args.uri)
-    if args.network != "arne:devnet":
+    if args.network is not None:
         payment.check_network(args.network)
     payment.check_recipient(args.to)
     payment.check_amount(args.amount)
+    payment.check_intent(args.intent)
+    if args.asset and args.asset != payment.asset:
+        raise paymenturi.URIError("uri asset conflicts with --asset")
     if args.memo and payment.memo and args.memo != payment.memo:
         raise SystemExit("uri memo conflicts with --memo")
     args.network, args.to, args.asset = payment.network, payment.to, payment.asset
     args.amount = payment.amount
+    args.intent = payment.intent
     args.memo = args.memo or payment.memo
     return payment
 
 
 def _transfer_payload(args: argparse.Namespace, units: int) -> dict[str, Any]:
     payload: dict[str, Any] = {"asset": args.asset, "to": args.to, "amount": units}
+    if args.intent:
+        payload["intent"] = args.intent
+    if args.refund_of:
+        payload["refund_of"] = args.refund_of
     if args.memo and args.memo_to:
         payload["memo_enc"] = memo_codec.seal(bytes.fromhex(args.memo_to), args.memo.encode())
     elif args.memo:
@@ -275,8 +285,119 @@ def _transfer_payload(args: argparse.Namespace, units: int) -> dict[str, Any]:
     return payload
 
 
+def _fetch_intent(url: str, network: str, intent_id: str) -> types.Intent:
+    if re.fullmatch(r"[0-9a-f]{32}", intent_id) is None:
+        raise ValueError("intent ID must be 32 lowercase hex characters")
+    actual = _get(url, "/v1/status")["network"]
+    if actual != network:
+        raise ValueError(f"API network {actual} conflicts with {network}")
+    intent = types.Intent.from_cbor(_get(url, f"/v1/intents/{intent_id}"))
+    if intent.id != intent_id or types.intent_id(network, intent.payee, intent.reference) != intent_id:
+        raise ValueError("API returned a non-canonical intent")
+    return intent
+
+
+def _resolve_intent(args: argparse.Namespace, uri: paymenturi.Payment | None) -> paymenturi.Payment | None:
+    if not args.intent:
+        return uri
+    intent = _fetch_intent(args.url, args.network, args.intent)
+    if intent.status != types.INTENT_OPEN:
+        raise ValueError(f"intent is {intent.status}; payment transaction: {intent.tx_hash}")
+    if intent.expires_at and int(time.time()) > intent.expires_at:
+        raise ValueError("intent expired")
+    if (args.to and args.to != intent.payee) or (args.asset and args.asset != intent.asset):
+        raise ValueError("recipient or asset conflicts with intent")
+    decimals = _get(args.url, f"/v1/assets/{intent.asset}")["decimals"]
+    if args.amount and parse_amount(args.amount, decimals) != intent.amount:
+        raise ValueError("amount conflicts with intent")
+    args.to, args.asset = intent.payee, intent.asset
+    args.amount, args.memo = format_amount(intent.amount, decimals), args.memo or intent.memo
+    expiry = uri.expires if uri else 0
+    if intent.expires_at and (not expiry or intent.expires_at < expiry):
+        expiry = intent.expires_at
+    payment = paymenturi.Payment(
+        scheme=uri.scheme if uri else "arne", network=args.network, to=args.to,
+        asset=args.asset, amount=args.amount, memo=args.memo, intent=args.intent, expires=expiry,
+    )
+    return paymenturi.parse(str(payment))
+
+
+def _fetch_transfer(url: str, network: str, tx_hash: str) -> dict[str, Any]:
+    if not types.valid_tx_hash(tx_hash):
+        raise ValueError("--refund-of must be a 64-character lowercase hex transaction hash")
+    actual = _get(url, "/v1/status")["network"]
+    if actual != network:
+        raise ValueError(f"API network {actual} conflicts with {network}")
+    return _get(url, f"/v1/transfers/{tx_hash}")
+
+
+def _resolve_refund(args: argparse.Namespace) -> None:
+    """Fill a refund from the original transfer; the ledger repeats every check."""
+    if not args.refund_of:
+        return
+    if args.intent:
+        raise ValueError("use --intent or --refund-of, not both")
+    transfer = _fetch_transfer(args.url, args.network, args.refund_of)
+    if transfer["hash"] != args.refund_of:
+        raise ValueError("API returned a different transfer")
+    if transfer["refund_of"]:
+        raise ValueError("cannot refund a refund")
+    if not transfer["refundable"]:
+        raise ValueError("transfer is already fully refunded")
+    if (args.to and args.to != transfer["from"]) or (args.asset and args.asset != transfer["asset"]):
+        raise ValueError("recipient or asset conflicts with --refund-of")
+    decimals = _get(args.url, f"/v1/assets/{transfer['asset']}")["decimals"]
+    if args.amount and parse_amount(args.amount, decimals) > transfer["refundable"]:
+        raise ValueError(f"refund exceeds remaining {format_amount(transfer['refundable'], decimals)}")
+    args.to, args.asset = transfer["from"], transfer["asset"]
+    if not args.amount:
+        args.amount = format_amount(transfer["refundable"], decimals)
+
+
+def cmd_intent_create(args: argparse.Namespace) -> int:
+    if not types.valid_intent_reference(args.reference):
+        raise ValueError("reference must be 1-64 letters, digits, _ or -")
+    asset = _get(args.url, f"/v1/assets/{args.asset}")
+    payload = {"asset": args.asset, "amount": parse_amount(args.amount, asset["decimals"]),
+               "reference": args.reference}
+    if args.expires:
+        payload["expires_at"] = args.expires
+    if args.memo:
+        payload["memo"] = args.memo
+    tx = _signed_tx(args, types.TX_CREATE_INTENT, payload)
+    print(f"intent: {types.intent_id(args.network, tx.signer, args.reference)}")
+    return _submit(args.url, tx, args.wait)
+
+
+def cmd_intent_show(args: argparse.Namespace) -> int:
+    print(json.dumps(_fetch_intent(args.url, args.network, args.id).to_cbor(), indent=2))
+    return 0
+
+
+def cmd_intent_link(args: argparse.Namespace) -> int:
+    args.intent = args.id
+    payment = _resolve_intent(args, None)
+    print(str(payment))
+    if args.qr:
+        _write_intent_qr(args.qr, str(payment))
+    return 0
+
+
+def _write_intent_qr(path: str, uri: str) -> None:
+    import io
+
+    import segno
+
+    image = io.BytesIO()
+    segno.make_qr(uri, error="m", boost_error=False).save(image, kind="png", scale=8)
+    with open(path, "xb") as output:
+        output.write(image.getvalue())
+
+
 def cmd_pay(args: argparse.Namespace) -> int:
     uri = _apply_uri(args)
+    _resolve_refund(args)
+    uri = _resolve_intent(args, uri)
     if uri:
         print(uri.summary())
         if not args.yes:
@@ -318,6 +439,8 @@ def _simulate(url: str, tx: types.Tx) -> dict:
 
 def cmd_preview(args: argparse.Namespace) -> int:
     uri = _apply_uri(args)
+    _resolve_refund(args)
+    uri = _resolve_intent(args, uri)
     if not (args.to and args.asset and args.amount):
         raise SystemExit("--to, --asset, and --amount are required without --uri")
     validate_address(args.to, args.network)
@@ -380,6 +503,7 @@ def cmd_uri_parse(args: argparse.Namespace) -> int:
             "scheme": payment.scheme, "network": payment.network, "to": payment.to,
             "asset": payment.asset, "amount": payment.amount, "memo": payment.memo,
             "expires": payment.expires, "warnings": payment.warnings,
+            "intent": payment.intent,
             "canonical": str(payment),
         }, indent=2))
     else:
@@ -395,8 +519,8 @@ def cmd_uri_build(args: argparse.Namespace) -> int:
         f"&asset={quote_plus(args.asset)}&amount={quote_plus(args.amount)}"
     )
     payment = paymenturi.parse(raw)
-    payment.memo, payment.expires = args.memo, args.expires
-    if args.memo or args.expires:
+    payment.memo, payment.expires, payment.intent = args.memo, args.expires, args.intent
+    if args.memo or args.expires or args.intent:
         paymenturi.parse(str(payment))
     print(str(payment))
     return 0
@@ -520,9 +644,11 @@ def build_parser() -> argparse.ArgumentParser:
     pay.add_argument("--memo", default="")
     pay.add_argument("--memo-to", default="", help="recipient memo public key (hex)")
     pay.add_argument("--uri", default="", help="arce:/arne: payment URI")
+    pay.add_argument("--intent", default="", help="payment intent ID")
+    pay.add_argument("--refund-of", default="", help="original transaction hash to refund")
     pay.add_argument("--yes", action="store_true", help="confirm the URI preview")
     write_flags(pay)
-    pay.set_defaults(func=cmd_pay)
+    pay.set_defaults(func=cmd_pay, network=None)
 
     preview_cmd = sub.add_parser("preview", help="show a transfer before signing")
     preview_cmd.add_argument("--to", default="")
@@ -531,10 +657,31 @@ def build_parser() -> argparse.ArgumentParser:
     preview_cmd.add_argument("--memo", default="")
     preview_cmd.add_argument("--memo-to", default="", help="recipient memo public key (hex)")
     preview_cmd.add_argument("--uri", default="", help="arce:/arne: payment URI")
+    preview_cmd.add_argument("--intent", default="", help="payment intent ID")
+    preview_cmd.add_argument("--refund-of", default="", help="original transaction hash to refund")
     preview_cmd.add_argument("--known", action="append", default=[], help="trusted contact")
     preview_cmd.add_argument("--json", action="store_true")
     write_flags(preview_cmd)
-    preview_cmd.set_defaults(func=cmd_preview)
+    preview_cmd.set_defaults(func=cmd_preview, network=None)
+
+    intent = sub.add_parser("intent", help="create, inspect, and link payment intents")
+    intent_sub = intent.add_subparsers(dest="intent_command", required=True)
+    intent_create = intent_sub.add_parser("create", help="create an on-chain request signed by the payee")
+    intent_create.add_argument("--asset", required=True)
+    intent_create.add_argument("--amount", required=True)
+    intent_create.add_argument("--reference", required=True)
+    intent_create.add_argument("--memo", default="")
+    intent_create.add_argument("--expires", type=int, default=0, help="Unix expiry (0 means no expiry)")
+    write_flags(intent_create)
+    intent_create.set_defaults(func=cmd_intent_create)
+    for name, function in (("show", cmd_intent_show), ("link", cmd_intent_link)):
+        command = intent_sub.add_parser(name)
+        command.add_argument("--id", required=True)
+        command.add_argument("--network", default="arne:devnet")
+        command.add_argument("--url", default=DEFAULT_URL)
+        if name == "link":
+            command.add_argument("--qr", default="", help="write a PNG QR code to a new file")
+        command.set_defaults(func=function, to="", asset="", amount="", memo="")
 
     memo = sub.add_parser("memo", help="opt-in encrypted memos")
     memo_sub = memo.add_subparsers(dest="memo_command", required=True)
@@ -567,6 +714,7 @@ def build_parser() -> argparse.ArgumentParser:
     uri_build.add_argument("--asset", required=True)
     uri_build.add_argument("--amount", required=True)
     uri_build.add_argument("--memo", default="")
+    uri_build.add_argument("--intent", default="", help="payment intent ID")
     uri_build.add_argument("--expires", type=int, default=0)
     uri_build.set_defaults(func=cmd_uri_build)
 

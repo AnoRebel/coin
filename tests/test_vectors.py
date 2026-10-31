@@ -154,6 +154,7 @@ def test_uri_vectors() -> None:
         assert payment.asset == case["asset"], case["name"]
         assert payment.amount == case["amount"], case["name"]
         assert payment.memo == case["memo"], case["name"]
+        assert payment.intent == case.get("intent", ""), case["name"]
         assert payment.expires == case["expires"], case["name"]
         assert payment.warnings == case["warnings"], case["name"]
         assert str(payment) == case["canonical"], case["name"]

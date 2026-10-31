@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -18,11 +20,14 @@ from typing import Any
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import ledger, types
+from . import cbor, ledger, types
 from .node import Node
 
 MAX_BODY = 2 << 20
 API_VERSION = "v1"
+IDEMPOTENCY_TTL = 24 * 3600
+IDEMPOTENCY_LIMIT = 10_000
+_IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 
 
 class ApiError(Exception):
@@ -50,10 +55,12 @@ def error_response(status: int, code: str, message: str) -> JSONResponse:
 def _status_for(code: str) -> int:
     if code == ledger.UNAUTHORIZED:
         return 403
-    if code in (ledger.ESCROW_NOT_FOUND, ledger.UNKNOWN_ASSET):
+    if code in (ledger.ESCROW_NOT_FOUND, ledger.UNKNOWN_ASSET, ledger.REFUND_NOT_FOUND):
         return 404
     if code == ledger.LIMIT_EXCEEDED:
         return 429
+    if code == ledger.MEMPOOL_CONFLICT:
+        return 409
     return 400
 
 
@@ -130,6 +137,37 @@ class RateLimiter:
 def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
     config = config or ApiConfig()
     limiter = RateLimiter(config.rate_limit) if config.rate_limit > 0 else None
+    # shortcut: process-local cache; persist before multi-instance API deployment.
+    submissions: dict[bytes, tuple[bytes, str, float]] = {}
+    submissions_lock = threading.Lock()
+
+    def submit_with_key(raw: bytes, key: str, principal: str) -> tuple[str, bool]:
+        if not key:
+            return node.submit_tx(raw), False
+        if _IDEMPOTENCY_KEY.fullmatch(key) is None:
+            raise ApiError(400, "INVALID_ARGUMENT", "Idempotency-Key must be 1-128 letters, digits, _, ., :, or -")
+        try:
+            tx = types.Tx.from_cbor(cbor.decode_map(raw))
+        except (cbor.CBORError, types.ValidationError) as exc:
+            raise ApiError(400, "INVALID_SCHEMA", f"decode: {exc}") from exc
+        scope = hashlib.sha256("\0".join((principal, tx.network, tx.signer, key)).encode()).digest()
+        fingerprint = hashlib.sha256(raw).digest()
+        with submissions_lock:
+            now = time.monotonic()
+            if previous := submissions.get(scope):
+                if now < previous[2]:
+                    if previous[0] != fingerprint:
+                        raise ApiError(409, "IDEMPOTENCY_CONFLICT", "key already used for another signed transaction")
+                    return previous[1], True
+                del submissions[scope]
+            if len(submissions) >= IDEMPOTENCY_LIMIT:
+                for expired in [scope for scope, item in submissions.items() if now >= item[2]]:
+                    del submissions[expired]
+                if len(submissions) >= IDEMPOTENCY_LIMIT:
+                    raise ApiError(503, "IDEMPOTENCY_FULL", "idempotency cache full; retry later")
+            tx_hash = node.submit_tx(raw)
+            submissions[scope] = (fingerprint, tx_hash, time.monotonic() + IDEMPOTENCY_TTL)
+            return tx_hash, False
     app = FastAPI(
         title="AnorebelNetwork API", version="1.0.0", docs_url="/docs",
         openapi_url="/openapi.json",
@@ -242,6 +280,28 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
             "burned": node.state.burned(asset_id),
         }
 
+    @app.get("/v1/intents/{intent_id}")
+    def get_intent(intent_id: str) -> dict[str, Any]:
+        with node._lock:
+            intent = node.state.intent(intent_id)
+        if intent is None:
+            raise ApiError(404, "INTENT_NOT_FOUND", "intent not found")
+        return intent.to_cbor()
+
+    @app.get("/v1/transfers/{tx_hash}")
+    def get_transfer(tx_hash: str) -> dict[str, Any]:
+        with node._lock:
+            transfer = node.state.transfer(tx_hash)
+            refunded = node.state.refunded(tx_hash) if transfer is not None else 0
+        if transfer is None:
+            raise ApiError(404, "TRANSFER_NOT_FOUND", "transfer not found")
+        return {
+            "hash": tx_hash, "from": transfer.sender, "to": transfer.to,
+            "asset": transfer.asset, "amount": transfer.amount,
+            "refund_of": transfer.refund_of, "refunded": refunded,
+            "refundable": transfer.amount - refunded,
+        }
+
     @app.get("/v1/escrows/{escrow_id}")
     def get_escrow(escrow_id: str) -> dict[str, Any]:
         escrow = node.state.escrow(escrow_id)
@@ -323,11 +383,20 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
     # --- writes ---
 
     @app.post("/v1/transactions", status_code=202)
-    async def submit_tx(request: Request) -> dict[str, Any]:
+    async def submit_tx(request: Request) -> Response:
         rate_check(request)
         require("write")(request)
         raw = _tx_bytes(await _read_body(request))
-        return {"hash": node.submit_tx(raw), "status": "accepted"}
+        keys = request.headers.getlist("Idempotency-Key")
+        if len(keys) > 1 or (keys and not keys[0]):
+            raise ApiError(400, "INVALID_ARGUMENT", "one non-empty Idempotency-Key required")
+        tx_hash, replay = submit_with_key(
+            raw, keys[0] if keys else "", request.headers.get("Authorization", ""),
+        )
+        receipt = node.receipt(tx_hash) if replay else None
+        if receipt is not None:
+            return JSONResponse({"hash": tx_hash, "status": "finalized", "receipt": receipt.to_dict()})
+        return JSONResponse({"hash": tx_hash, "status": "accepted"}, status_code=202)
 
     @app.post("/v1/transactions/simulate")
     async def simulate_tx(request: Request) -> dict[str, Any]:

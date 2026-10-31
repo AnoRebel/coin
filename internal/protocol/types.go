@@ -265,6 +265,152 @@ func EscrowFromCBOR(m map[string]any) (Escrow, error) {
 	return e, nil
 }
 
+// Intent is a payable request created by a payee. It is payable at most once.
+type Intent struct {
+	ID        string `json:"id"`
+	Payee     string `json:"payee"`
+	Reference string `json:"reference"`
+	Asset     string `json:"asset"`
+	Amount    uint64 `json:"amount"`
+	ExpiresAt uint64 `json:"expires_at"`
+	Memo      string `json:"memo,omitempty"`
+	Status    string `json:"status"`
+	Payer     string `json:"payer,omitempty"`
+	TxHash    string `json:"tx_hash,omitempty"`
+	CreatedAt uint64 `json:"created_at"`
+	PaidAt    uint64 `json:"paid_at,omitempty"`
+}
+
+const (
+	IntentOpen = "open"
+	IntentPaid = "paid"
+)
+
+// ToCBOR renders the intent for the state tree.
+func (i Intent) ToCBOR() map[string]any {
+	m := map[string]any{
+		"id": i.ID, "payee": i.Payee, "reference": i.Reference,
+		"asset": i.Asset, "amount": i.Amount, "expires_at": i.ExpiresAt,
+		"status": i.Status, "created_at": i.CreatedAt,
+	}
+	if i.Memo != "" {
+		m["memo"] = i.Memo
+	}
+	if i.Payer != "" {
+		m["payer"] = i.Payer
+	}
+	if i.TxHash != "" {
+		m["tx_hash"] = i.TxHash
+	}
+	if i.PaidAt != 0 {
+		m["paid_at"] = i.PaidAt
+	}
+	return m
+}
+
+// IntentFromCBOR decodes an intent record.
+func IntentFromCBOR(m map[string]any) (Intent, error) {
+	in := Intent{}
+	var err error
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{{"id", &in.ID}, {"payee", &in.Payee}, {"reference", &in.Reference},
+		{"asset", &in.Asset}, {"status", &in.Status}} {
+		if *f.dst, err = str(m, f.key); err != nil {
+			return in, err
+		}
+	}
+	for _, f := range []struct {
+		key string
+		dst *uint64
+	}{{"amount", &in.Amount}, {"expires_at", &in.ExpiresAt}, {"created_at", &in.CreatedAt}} {
+		if *f.dst, err = num(m, f.key); err != nil {
+			return in, err
+		}
+	}
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{{"memo", &in.Memo}, {"payer", &in.Payer}, {"tx_hash", &in.TxHash}} {
+		if v, ok := m[f.key]; ok {
+			s, ok := v.(string)
+			if !ok {
+				return in, fmt.Errorf("%w: %s", ErrValidation, f.key)
+			}
+			*f.dst = s
+		}
+	}
+	if v, ok := m["paid_at"]; ok {
+		u, ok := v.(uint64)
+		if !ok {
+			return in, fmt.Errorf("%w: paid_at must be unsigned", ErrValidation)
+		}
+		in.PaidAt = u
+	}
+	return in, nil
+}
+
+// IntentID derives the stable ID from the payee and reference.
+func IntentID(network, payee, reference string) string {
+	h := sha256.Sum256([]byte("arne-intent-v1\x00" + network + "\x00" + payee + "\x00" + reference))
+	return hex.EncodeToString(h[:16])
+}
+
+var intentReference = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// ValidIntentReference reports whether a reference is safe to embed in links.
+func ValidIntentReference(reference string) bool {
+	return intentReference.MatchString(reference)
+}
+
+var txHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ValidTxHash reports whether h is a canonical lowercase SHA-256 hash.
+func ValidTxHash(h string) bool { return txHash.MatchString(h) }
+
+// Transfer is the consensus index entry for a finalized transfer. Refunds read
+// it to prove who paid whom, in which asset, and for how much.
+type Transfer struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Asset    string `json:"asset"`
+	Amount   uint64 `json:"amount"`
+	RefundOf string `json:"refund_of,omitempty"`
+}
+
+// ToCBOR renders the transfer index entry for the state tree.
+func (t Transfer) ToCBOR() map[string]any {
+	m := map[string]any{"from": t.From, "to": t.To, "asset": t.Asset, "amount": t.Amount}
+	if t.RefundOf != "" {
+		m["refund_of"] = t.RefundOf
+	}
+	return m
+}
+
+// TransferFromCBOR decodes a transfer index entry.
+func TransferFromCBOR(m map[string]any) (Transfer, error) {
+	t := Transfer{}
+	var err error
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{{"from", &t.From}, {"to", &t.To}, {"asset", &t.Asset}} {
+		if *f.dst, err = str(m, f.key); err != nil {
+			return t, err
+		}
+	}
+	if t.Amount, err = num(m, "amount"); err != nil {
+		return t, err
+	}
+	if _, ok := m["refund_of"]; ok {
+		if t.RefundOf, err = str(m, "refund_of"); err != nil {
+			return t, err
+		}
+	}
+	return t, nil
+}
+
 // Signature is a detached signature over the canonical signing preimage.
 type Signature struct {
 	Suite  string `json:"suite"`
@@ -289,13 +435,14 @@ const (
 	TxRevokeAllowance = "revoke_allowance"
 	TxMint            = "mint"
 	TxBurn            = "burn"
+	TxCreateIntent    = "create_intent"
 )
 
 var txTypes = map[string]bool{
 	TxTransfer: true, TxBatch: true, TxRegisterAsset: true,
 	TxCreateEscrow: true, TxReleaseEscrow: true, TxRefundEscrow: true,
 	TxApprove: true, TxTransferFrom: true, TxRevokeAllowance: true,
-	TxMint: true, TxBurn: true,
+	TxMint: true, TxBurn: true, TxCreateIntent: true,
 }
 
 // Tx is the versioned transaction envelope. Signatures are excluded from the

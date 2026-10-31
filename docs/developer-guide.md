@@ -43,12 +43,38 @@ Everything consensus-critical uses deterministic CBOR:
 - no floats, tags, indefinite lengths, or duplicate keys;
 - depth limit 64.
 
-`protocol.Encode`/`protocol.Decode` reject non-canonical input. Envelope
-decoders ignore unknown fields, so adding a consensus field is a protocol change:
-bump the transaction version rather than relying on compatibility.
+`protocol.Encode`/`protocol.Decode` reject non-canonical input. Version-1
+envelope and signature maps reject unknown fields; payload maps are open and
+each transaction handler validates its own fields. A new envelope field needs
+a transaction-version change rather than relying on compatibility.
 
 Go is the source of truth. If Go and Python disagree, fix Python and add a
 vector.
+
+Payment intents live at `intent/<id>` in the state tree. Their canonical CBOR
+stores the request and, after payment, the payer, transaction hash, and block
+time. `create_intent` and intent-linked transfers run within the existing
+transaction journal, including simulation rollback. Shared ledger vectors
+exercise creation, payment, and a rejected duplicate with identical Go/Python
+roots and block hashes. Upgrade every validator before admitting the new
+transaction type; older binaries reject `create_intent`.
+
+REST idempotency is an API concern, separate from consensus. Only accepted
+transaction submissions are cached, using unwrapped signed bytes and a scope
+derived from credential/network/signer/key. A lock serializes cache lookup
+and admission. Entries expire after 24 hours; capacity is bounded and never
+silently evicts a live key. This cache is neither durable nor shared between
+API processes. On-chain intent state remains the permanent payable-once guard.
+
+Refunds add two state-key families: `transfer/<tx-hash>` indexes every direct
+`transfer` and `transfer_from`, and `refunded/<original-hash>` accumulates
+successful refund amounts. `refund_of` reads the index inside the transaction
+journal, so a failed refund leaves both the original entry and the total
+unchanged. Because nonce ordering matters, a refund and its original cannot
+share a block unless the original appears earlier in the same block. These keys
+are consensus state: enabling them changes state roots, so regenerate shared
+vectors and upgrade validators together. Batch items and escrow releases are
+not indexed.
 
 ## Identity and addresses
 

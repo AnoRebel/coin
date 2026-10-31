@@ -32,9 +32,10 @@ type Config struct {
 
 // Server serves the node API.
 type Server struct {
-	node *node.Node
-	cfg  Config
-	lim  *limiter
+	node        *node.Node
+	cfg         Config
+	lim         *limiter
+	submissions submissions
 }
 
 // New builds an Echo server.
@@ -66,6 +67,8 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/accounts/:address/proof", s.accountProof)
 	e.GET("/v1/supply/:asset", s.supply)
 	e.GET("/v1/escrows/:id", s.getEscrow)
+	e.GET("/v1/intents/:id", s.getIntent)
+	e.GET("/v1/transfers/:hash", s.getTransfer)
 	e.GET("/v1/allowances/:owner/:spender/:asset", s.getAllowance)
 	e.GET("/v1/blocks", s.listBlocks)
 	e.GET("/v1/blocks/:height", s.getBlock)
@@ -274,6 +277,34 @@ func (s *Server) getEscrow(c *echo.Context) error {
 	return c.JSON(http.StatusOK, e)
 }
 
+func (s *Server) getIntent(c *echo.Context) error {
+	in, ok, err := s.node.Intent(c.Param("id"))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apiErr(http.StatusNotFound, "INTENT_NOT_FOUND", "intent not found")
+	}
+	return c.JSON(http.StatusOK, in)
+}
+
+func (s *Server) getTransfer(c *echo.Context) error {
+	hash := c.Param("hash")
+	t, ok, err := s.node.Transfer(hash)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apiErr(http.StatusNotFound, "TRANSFER_NOT_FOUND", "transfer not found")
+	}
+	refunded := s.node.Refunded(hash)
+	return c.JSON(http.StatusOK, map[string]any{
+		"hash": hash, "from": t.From, "to": t.To, "asset": t.Asset,
+		"amount": t.Amount, "refund_of": t.RefundOf, "refunded": refunded,
+		"refundable": t.Amount - refunded,
+	})
+}
+
 func (s *Server) getAllowance(c *echo.Context) error {
 	st := s.node.State()
 	owner, spender, asset := c.Param("owner"), c.Param("spender"), c.Param("asset")
@@ -380,9 +411,18 @@ func (s *Server) submitTx(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	hash, err := s.node.SubmitTx(raw)
+	keys := c.Request().Header.Values("Idempotency-Key")
+	if len(keys) > 1 || (len(keys) == 1 && keys[0] == "") {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "one non-empty Idempotency-Key required")
+	}
+	hash, replay, err := s.submitWithKey(raw, c.Request().Header.Get("Idempotency-Key"), c.Request().Header.Get("Authorization"))
 	if err != nil {
 		return mapLedgerError(err)
+	}
+	if replay {
+		if receipt, ok := s.node.Receipt(hash); ok {
+			return c.JSON(http.StatusOK, map[string]any{"hash": hash, "status": "finalized", "receipt": receipt})
+		}
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{"hash": hash, "status": "accepted"})
 }
@@ -546,10 +586,12 @@ func statusFor(code ledger.Code) int {
 	switch code {
 	case ledger.CodeUnauthorized:
 		return http.StatusForbidden
-	case ledger.CodeEscrowNotFound, ledger.CodeUnknownAsset:
+	case ledger.CodeEscrowNotFound, ledger.CodeUnknownAsset, ledger.CodeRefundNotFound:
 		return http.StatusNotFound
 	case ledger.CodeLimitExceeded:
 		return http.StatusTooManyRequests
+	case ledger.CodeMempoolConflict:
+		return http.StatusConflict
 	default:
 		return http.StatusBadRequest
 	}

@@ -100,6 +100,152 @@ func TestTransferAndFees(t *testing.T) {
 	}
 }
 
+func TestRefundLifecycle(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	pay := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(5_000_000),
+	}, 0))
+	if !pay.Success {
+		t.Fatalf("payment failed: %+v", pay)
+	}
+	original, ok, err := f.state.Transfer(pay.Hash)
+	if err != nil || !ok {
+		t.Fatalf("transfer not indexed: %v %v", ok, err)
+	}
+	if original.From != f.alice.Address || original.To != f.bob.Address ||
+		original.Amount != 5_000_000 || original.RefundOf != "" {
+		t.Fatalf("unexpected index entry: %+v", original)
+	}
+
+	aliceBefore := f.state.Balance(f.alice.Address, native)
+	partial := f.apply(t, f.tx(t, f.bob, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.alice.Address, "amount": uint64(2_000_000), "refund_of": pay.Hash,
+	}, 0))
+	if !partial.Success {
+		t.Fatalf("partial refund failed: %+v", partial)
+	}
+	if got := f.state.Refunded(pay.Hash); got != 2_000_000 {
+		t.Fatalf("refunded = %d", got)
+	}
+	if got := f.state.Balance(f.alice.Address, native); got != aliceBefore+2_000_000 {
+		t.Fatalf("alice balance = %d", got)
+	}
+	if len(partial.Events) != 2 || partial.Events[1].Type != "refund" ||
+		partial.Events[1].Attrs["remaining"] != "3000000" ||
+		partial.Events[1].Attrs["refund_of"] != pay.Hash {
+		t.Fatalf("refund events = %+v", partial.Events)
+	}
+	reversal, ok, err := f.state.Transfer(partial.Hash)
+	if err != nil || !ok || reversal.RefundOf != pay.Hash {
+		t.Fatalf("refund not indexed as a reversal: %+v %v", reversal, err)
+	}
+
+	last := f.apply(t, f.tx(t, f.bob, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.alice.Address, "amount": uint64(3_000_000), "refund_of": pay.Hash,
+	}, 1))
+	if !last.Success {
+		t.Fatalf("final refund failed: %+v", last)
+	}
+	if got := f.state.Refunded(pay.Hash); got != 5_000_000 {
+		t.Fatalf("refunded = %d", got)
+	}
+	root := f.state.Root()
+	over := f.apply(t, f.tx(t, f.bob, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.alice.Address, "amount": uint64(1), "refund_of": pay.Hash,
+	}, 2))
+	if over.Success || over.Code != CodeRefundExceeded {
+		t.Fatalf("over-refund accepted: %+v", over)
+	}
+	if f.state.Root() != root {
+		t.Fatal("rejected refund changed state")
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRefundRejections(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	pay := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(5_000_000),
+	}, 0))
+	if !pay.Success {
+		t.Fatalf("payment failed: %+v", pay)
+	}
+	if r := f.apply(t, f.tx(t, f.alice, protocol.TxRegisterAsset, map[string]any{"asset": map[string]any{
+		"id": "usd:devnet", "class": "fiat", "symbol": "USD", "name": "US Dollar",
+		"decimals": uint64(2), "policy": "capped", "max_supply": uint64(1_000_000),
+		"issuer": f.alice.Address, "registered": uint64(0), "meta": map[string]any{"iso4217": "USD"},
+	}}, 1)); !r.Success {
+		t.Fatalf("register: %+v", r)
+	}
+
+	cases := []struct {
+		name   string
+		kp     *protocol.KeyPair
+		nonce  uint64
+		change map[string]any
+		hash   string
+		code   Code
+	}{
+		{"unknown hash", f.bob, 0, nil, strings.Repeat("a", 64), CodeRefundNotFound},
+		{"malformed hash", f.bob, 0, nil, "deadbeef", CodeInvalidPayload},
+		{"payer cannot refund", f.alice, 2, nil, "", CodeUnauthorized},
+		{"stranger cannot refund", f.carol, 0, nil, "", CodeUnauthorized},
+		{"wrong destination", f.bob, 0, map[string]any{"to": f.carol.Address}, "", CodeRefundMismatch},
+		{"wrong asset", f.bob, 0, map[string]any{"asset": "usd:devnet"}, "", CodeRefundMismatch},
+	}
+	for _, tc := range cases {
+		payload := map[string]any{"asset": native, "to": f.alice.Address, "amount": uint64(1)}
+		for k, v := range tc.change {
+			payload[k] = v
+		}
+		if tc.hash != "" {
+			payload["refund_of"] = tc.hash
+		} else {
+			payload["refund_of"] = pay.Hash
+		}
+		r := f.apply(t, f.tx(t, tc.kp, protocol.TxTransfer, payload, tc.nonce))
+		if r.Success || r.Code != tc.code {
+			t.Fatalf("%s: %+v", tc.name, r)
+		}
+	}
+
+	// A refund cannot itself be refunded, and intent binding is exclusive.
+	first := f.apply(t, f.tx(t, f.bob, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.alice.Address, "amount": uint64(1_000_000), "refund_of": pay.Hash,
+	}, 0))
+	if !first.Success {
+		t.Fatalf("refund failed: %+v", first)
+	}
+	again := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000_000), "refund_of": first.Hash,
+	}, 2))
+	if again.Success || again.Code != CodeRefundMismatch {
+		t.Fatalf("refund of refund accepted: %+v", again)
+	}
+}
+
+func TestRefundAndIntentAreExclusive(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	pay := f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(5_000_000),
+	}, 0))
+	if !pay.Success {
+		t.Fatalf("payment failed: %+v", pay)
+	}
+	r := f.apply(t, f.tx(t, f.bob, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.alice.Address, "amount": uint64(1),
+		"refund_of": pay.Hash, "intent": strings.Repeat("0", 32),
+	}, 0))
+	if r.Success || r.Code != CodeInvalidPayload {
+		t.Fatalf("exclusive fields accepted: %+v", r)
+	}
+}
+
 func TestInsufficientFundsLeavesStateUnchanged(t *testing.T) {
 	f := newFixture(t)
 	root := f.state.Root()
@@ -597,4 +743,142 @@ func TestEncryptedMemo(t *testing.T) {
 	}, 1)); r.Success || r.Code != CodeInvalidPayload {
 		t.Fatalf("garbage memo_enc accepted: %+v", r)
 	}
+}
+
+func TestIntentPayableOnce(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	id := protocol.IntentID(testNet, f.bob.Address, "invoice-1")
+
+	r := f.apply(t, f.tx(t, f.bob, protocol.TxCreateIntent, map[string]any{
+		"reference": "invoice-1", "asset": native, "amount": uint64(5_000_000),
+		"expires_at": uint64(1_700_003_000),
+	}, 0))
+	if !r.Success {
+		t.Fatalf("create failed: %s %s", r.Code, r.Error)
+	}
+	if _, ok := eventOf(r, "intent_created"); !ok {
+		t.Fatalf("events = %+v", r.Events)
+	}
+	in, ok, err := f.state.Intent(id)
+	if err != nil || !ok || in.Status != protocol.IntentOpen || in.Payee != f.bob.Address {
+		t.Fatalf("intent = %+v ok=%v err=%v", in, ok, err)
+	}
+
+	r = f.apply(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(5_000_000), "intent": id,
+	}, 0))
+	if !r.Success {
+		t.Fatalf("pay failed: %s %s", r.Code, r.Error)
+	}
+	in, _, _ = f.state.Intent(id)
+	if in.Status != protocol.IntentPaid || in.Payer != f.alice.Address || in.TxHash != r.Hash {
+		t.Fatalf("paid intent = %+v", in)
+	}
+	bobBefore := f.state.Balance(f.bob.Address, native)
+
+	r = f.apply(t, f.tx(t, f.carol, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(5_000_000), "intent": id,
+	}, 0))
+	if r.Success || r.Code != CodeIntentPaid {
+		t.Fatalf("duplicate = %+v", r)
+	}
+	if got := f.state.Balance(f.bob.Address, native); got != bobBefore {
+		t.Fatalf("duplicate moved value: %d -> %d", bobBefore, got)
+	}
+	if err := f.state.CheckAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIntentExpiryAndMismatch(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	id := protocol.IntentID(testNet, f.bob.Address, "invoice-2")
+
+	r := f.applyAt(t, f.tx(t, f.bob, protocol.TxCreateIntent, map[string]any{
+		"reference": "invoice-2", "asset": native, "amount": uint64(1_000),
+		"expires_at": uint64(1_700_000_400),
+	}, 0), 1_700_000_100)
+	if !r.Success {
+		t.Fatalf("create failed: %s %s", r.Code, r.Error)
+	}
+
+	r = f.applyAt(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(2_000), "intent": id,
+	}, 0), 1_700_000_200)
+	if r.Success || r.Code != CodeIntentMismatch {
+		t.Fatalf("mismatch = %+v", r)
+	}
+
+	r = f.applyAt(t, f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1_000), "intent": id,
+	}, 0), 1_700_000_500)
+	if r.Success || r.Code != CodeIntentExpired {
+		t.Fatalf("expired = %+v", r)
+	}
+	in, _, _ := f.state.Intent(id)
+	if in.Status != protocol.IntentOpen {
+		t.Fatalf("expired intent status = %q", in.Status)
+	}
+}
+
+func TestIntentReferenceRejected(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	for _, reference := range []string{"", "with space", "slash/name", strings.Repeat("a", 65)} {
+		r := f.apply(t, f.tx(t, f.bob, protocol.TxCreateIntent, map[string]any{
+			"reference": reference, "asset": native, "amount": uint64(1_000),
+		}, 0))
+		if r.Success || r.Code != CodeInvalidPayload {
+			t.Fatalf("reference %q = %+v", reference, r)
+		}
+	}
+}
+
+func TestIntentMemoMustFitPaymentLink(t *testing.T) {
+	f := newFixture(t)
+	for _, memo := range []string{"line\nbreak", "nul\x00byte"} {
+		r := f.apply(t, f.tx(t, f.bob, protocol.TxCreateIntent, map[string]any{
+			"reference": "invoice", "asset": protocol.NativeAsset(testNet), "amount": uint64(1), "memo": memo,
+		}, 0))
+		if r.Success || r.Code != CodeInvalidPayload {
+			t.Fatalf("memo %q: %+v", memo, r)
+		}
+	}
+}
+
+func TestIntentSimulationDoesNotConsumePayment(t *testing.T) {
+	f := newFixture(t)
+	native := protocol.NativeAsset(testNet)
+	created := f.apply(t, f.tx(t, f.bob, protocol.TxCreateIntent, map[string]any{
+		"reference": "preview_invoice", "asset": native, "amount": uint64(1),
+	}, 0))
+	if !created.Success {
+		t.Fatalf("create: %+v", created)
+	}
+	id := protocol.IntentID(testNet, f.bob.Address, "preview_invoice")
+	tx := f.tx(t, f.alice, protocol.TxTransfer, map[string]any{
+		"asset": native, "to": f.bob.Address, "amount": uint64(1), "intent": id,
+	}, 0)
+	before := f.state.Root()
+	if r := f.state.SimulateTx(tx, 1_700_000_200, 1); !r.Success {
+		t.Fatalf("simulate: %+v", r)
+	}
+	in, _, _ := f.state.Intent(id)
+	if in.Status != protocol.IntentOpen || f.state.Root() != before {
+		t.Fatal("simulation consumed intent")
+	}
+	if r := f.apply(t, tx); !r.Success {
+		t.Fatalf("pay after simulation: %+v", r)
+	}
+}
+
+func eventOf(r Receipt, typ string) (Event, bool) {
+	for _, e := range r.Events {
+		if e.Type == typ {
+			return e, true
+		}
+	}
+	return Event{}, false
 }

@@ -427,6 +427,49 @@ func ledgerVectors() map[string]any {
 	run(5, 1_700_000_500, map[string]uint64{usdID: 100_000_000},
 		mk("bob", protocol.TxTransfer, map[string]any{"asset": native, "to": keys["carol"].Address, "amount": uint64(1_000)}, usdID),
 	)
+	// Read actual committed nonces: earlier steps deliberately contain failures.
+	for name, kp := range keys {
+		account, _ := st.Account(kp.Address)
+		nonces[name] = account.Nonce
+	}
+	intentID := protocol.IntentID(network, keys["bob"].Address, "invoice_42")
+	run(6, 1_700_000_600, nil,
+		mk("bob", protocol.TxCreateIntent, map[string]any{
+			"asset": native, "amount": uint64(5_000_000), "reference": "invoice_42",
+			"expires_at": uint64(1_700_001_000), "memo": "invoice 42",
+		}, native),
+	)
+	run(7, 1_700_000_700, nil,
+		mk("alice", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["bob"].Address, "amount": uint64(5_000_000), "intent": intentID,
+		}, native),
+	)
+	run(8, 1_700_000_800, nil,
+		mk("carol", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["bob"].Address, "amount": uint64(5_000_000), "intent": intentID,
+		}, native),
+	)
+	payment := mk("alice", protocol.TxTransfer, map[string]any{
+		"asset": native, "to": keys["bob"].Address, "amount": uint64(4_000_000),
+	}, native)
+	paymentHash, err := payment.Hash()
+	if err != nil {
+		panic(err)
+	}
+	run(9, 1_700_000_900, nil, payment)
+	run(10, 1_700_001_000, nil,
+		mk("bob", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000_000), "refund_of": paymentHash,
+		}, native),
+	)
+	run(11, 1_700_001_100, nil,
+		mk("bob", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(3_000_001), "refund_of": paymentHash,
+		}, native),
+		mk("carol", protocol.TxTransfer, map[string]any{
+			"asset": native, "to": keys["alice"].Address, "amount": uint64(1_000), "refund_of": paymentHash,
+		}, native),
+	)
 	return map[string]any{
 		"network": network, "chain": chain, "mnemonic": mnemonic,
 		"genesis": map[string]any{

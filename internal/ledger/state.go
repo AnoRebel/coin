@@ -251,6 +251,63 @@ func (s *State) putEscrow(e protocol.Escrow) error {
 	return nil
 }
 
+// Intent returns a payment intent.
+func (s *State) Intent(id string) (protocol.Intent, bool, error) {
+	b, ok := s.get(fmt.Sprintf(kIntent, id))
+	if !ok {
+		return protocol.Intent{}, false, nil
+	}
+	m, err := protocol.DecodeMap(b)
+	if err != nil {
+		return protocol.Intent{}, false, err
+	}
+	in, err := protocol.IntentFromCBOR(m)
+	if err != nil {
+		return protocol.Intent{}, false, err
+	}
+	return in, true, nil
+}
+
+func (s *State) putIntent(in protocol.Intent) error {
+	b, err := protocol.Encode(in.ToCBOR())
+	if err != nil {
+		return err
+	}
+	s.set(fmt.Sprintf(kIntent, in.ID), b)
+	return nil
+}
+
+// Transfer returns the index entry for a finalized transfer.
+func (s *State) Transfer(hash string) (protocol.Transfer, bool, error) {
+	b, ok := s.get(fmt.Sprintf(kTransfer, hash))
+	if !ok {
+		return protocol.Transfer{}, false, nil
+	}
+	m, err := protocol.DecodeMap(b)
+	if err != nil {
+		return protocol.Transfer{}, false, err
+	}
+	t, err := protocol.TransferFromCBOR(m)
+	if err != nil {
+		return protocol.Transfer{}, false, err
+	}
+	return t, true, nil
+}
+
+func (s *State) putTransfer(hash string, t protocol.Transfer) error {
+	b, err := protocol.Encode(t.ToCBOR())
+	if err != nil {
+		return err
+	}
+	s.set(fmt.Sprintf(kTransfer, hash), b)
+	return nil
+}
+
+// Refunded returns the total already refunded against an original transfer.
+func (s *State) Refunded(hash string) uint64 {
+	return s.getUint(fmt.Sprintf(kRefunded, hash))
+}
+
 // Allowance returns the remaining allowance for spender on owner's asset.
 func (s *State) Allowance(owner, spender, asset string) uint64 {
 	return s.getUint(fmt.Sprintf(kAllowance, owner, spender, asset))

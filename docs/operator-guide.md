@@ -129,6 +129,13 @@ do not "fix" it by deleting a checksum. Restore from backup.
 Example proxy contract: forward `Authorization`, set `X-Forwarded-For` only from
 trusted proxies, and do not cache `/v1/events`.
 
+Transaction-submit idempotency retains up to 10,000 accepted requests for
+24 hours in API-process memory. Restart clears it, and separate API instances
+do not share it. Route a retry sequence to one instance, and have integrations
+retain their own signed bytes and receipts. `503 IDEMPOTENCY_FULL` means the
+cache has no free/expired slot; it does not discard another live request to
+make room. This is distinct from the persistent payable-once intent guard.
+
 ## Docker Compose
 
 ```sh

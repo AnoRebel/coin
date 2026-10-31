@@ -70,17 +70,78 @@ transaction is not charged and changes no state.
 
 ## 3. Idempotency and retries
 
-- Transaction hashes are deterministic: resubmitting the same signed bytes
-  returns the same hash, and the mempool ignores duplicates.
-- Signing a new transaction (new nonce or expiry) changes the hash. Do not
-  rotate nonces on timeout; read the account again.
-- `BAD_NONCE` means another transaction from the same signer was confirmed
-  first. Rebuild the transaction with the fresh nonce.
-- API-level `Idempotency-Key` headers are accepted in CORS preflight but are
-  **not implemented**. Idempotency comes from the transaction hash today.
+Persist the signed bytes and an operation key **before** submitting. Retry
+those exact bytes and the same key after a transport error:
 
-Recommended retry policy: retry transport errors and 5xx with backoff; never
-retry a 4xx without changing the transaction.
+```python
+raw = cbor.encode(tx.to_cbor())
+response = httpx.post(
+    f"{base}/v1/transactions", content=raw,
+    headers={"Content-Type": "application/cbor", "Idempotency-Key": operation_id},
+)
+response.raise_for_status()
+result = response.json()
+# 202: accepted/pending; 200: retry with the original finalized receipt.
+receipt = result.get("receipt")
+```
+
+Keys allow 1–128 ASCII letters, digits, `_`, `.`, `:`, or `-`. Their scope is
+the authorization credential, network, and signer; reuse the same credential
+on retries. Different signed bytes return `409 IDEMPOTENCY_CONFLICT`, so do
+not re-sign or advance the nonce merely because a response was lost.
+
+Retention is 24 hours from acceptance, with a 10,000-entry process-local cache.
+Restart loses the cache. Capacity exhaustion returns `503 IDEMPOTENCY_FULL`
+without evicting a live key. Use one API instance per retry sequence and retain
+your own transaction/receipt records. Failed admission does not reserve a key.
+
+Without a key, a pending transaction's identical hash is deduplicated, but
+resubmission after confirmation normally fails its nonce check. After restart
+or cache expiry, query the transaction hash (or the intent's `tx_hash`) before
+deciding whether to sign another transaction. Retry transport errors and 5xx
+with backoff; reconcile a 4xx instead of automatically rotating the nonce.
+
+### Request and reconcile an intent
+
+1. The payee signs `create_intent` with `asset`, integer-base-unit `amount`,
+   a unique `reference`, and optional future `expires_at`/public `memo`.
+2. Wait for the creation receipt and obtain the ID from `intent_created`.
+3. Read `GET /v1/intents/{id}` or generate a canonical link with
+   `arned intent link --id <id> --qr invoice.png`.
+4. The payer resolves the intent on its declared network and signs a `transfer`
+   with the matching `to`, `asset`, `amount`, and `intent` ID.
+5. Submit with an idempotency key. On confirmation, reconcile `intent_paid` and
+   the intent's recorded `payer`, `tx_hash`, and `paid_at`.
+
+The ledger marks an intent paid only if the transfer succeeds. A new transfer
+cannot pay it twice, regardless of HTTP cache lifetime. An original keyed
+retry returns the original receipt while retained; a new payment attempt
+returns `INTENT_PAID`. Expired or mismatched payments leave it open and move no
+value. Store any sensitive invoice details off chain: the intent memo is public.
+
+### Reconcile a refund
+
+A refund is a new transfer, not a reversal of the original receipt. Reconcile
+both sides:
+
+1. The original recipient signs `transfer` with `refund_of` set to the original
+   transaction hash. The destination is the original payer and the asset is the
+   original asset; the ledger rejects anything else.
+2. On confirmation, read the refund's own receipt and its `refund` event. The
+   event contains `refund_of`, `from`, `to`, `asset`, `amount`, and
+   `remaining`.
+3. Query `GET /v1/transfers/{original-hash}` to obtain cumulative `refunded`
+   and `refundable`. Treat this index as the source of truth for over-refund
+   protection, not your local log.
+4. Mark the original invoice paid minus the cumulative refunds. Keep the
+   original receipt unchanged for audit.
+
+Refunds are ordinary transfers for fees and nonces. The refund signer pays the
+fee from its own balance, so a wallet holding only the received amount cannot
+return the final units until it is funded with a fee balance. Repeated
+submissions need a new nonce; an `Idempotency-Key` only replays the exact
+signed bytes. A batch item or escrow release is not in the transfer index, so
+it cannot be named by `refund_of`.
 
 ## 4. Subscribe to events
 

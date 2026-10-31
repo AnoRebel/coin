@@ -15,11 +15,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/govalues/decimal"
 	"github.com/spf13/cobra"
 
 	"github.com/anorebel/anorebelcoin/internal/api"
@@ -52,7 +54,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
 		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
-		webhookCmd(), backupCmd(), restoreCmd())
+		webhookCmd(), intentCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
@@ -348,37 +350,34 @@ func printJSON(v any) error {
 	return nil
 }
 
+// amountPattern keeps user input to plain decimals; decimal.Parse also
+// accepts exponents and a leading plus, which are surprising for money.
+var amountPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+
 func parseAmount(s string, decimals uint8) (uint64, error) {
 	s = strings.TrimSpace(s)
-	if s == "" || strings.HasPrefix(s, "-") {
-		return 0, errors.New("invalid amount")
+	if !amountPattern.MatchString(s) {
+		return 0, fmt.Errorf("invalid amount %q", s)
 	}
-	parts := strings.SplitN(s, ".", 2)
-	whole, err := strconv.ParseUint(parts[0], 10, 64)
+	d, err := decimal.Parse(s)
 	if err != nil {
 		return 0, fmt.Errorf("invalid amount %q", s)
 	}
-	scale := uint64(1)
+	if d.Cmp(d.Trunc(int(decimals))) != 0 {
+		return 0, fmt.Errorf("amount has more than %d decimals", decimals)
+	}
+	whole, frac, ok := d.Int64(int(decimals))
+	if !ok {
+		return 0, errors.New("amount too large")
+	}
+	scale := int64(1)
 	for i := uint8(0); i < decimals; i++ {
 		scale *= 10
 	}
-	if whole > (1<<63)/scale {
+	if whole > (1<<63-1)/scale {
 		return 0, errors.New("amount too large")
 	}
-	out := whole * scale
-	if len(parts) == 2 {
-		frac := parts[1]
-		if uint8(len(frac)) > decimals {
-			return 0, fmt.Errorf("amount has more than %d decimals", decimals)
-		}
-		frac += strings.Repeat("0", int(decimals)-len(frac))
-		f, err := strconv.ParseUint(frac, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid amount %q", s)
-		}
-		out += f
-	}
-	return out, nil
+	return uint64(whole)*uint64(scale) + uint64(frac), nil
 }
 
 func formatAmount(v uint64, decimals uint8) string {
@@ -390,6 +389,14 @@ func formatAmount(v uint64, decimals uint8) string {
 		scale *= 10
 	}
 	return fmt.Sprintf("%d.%0*d", v/scale, decimals, v%scale)
+}
+
+// shortAmount omits unnecessary trailing fractional zeros from a human amount.
+func shortAmount(v uint64, decimals uint8) string {
+	if decimals == 0 {
+		return strconv.FormatUint(v, 10)
+	}
+	return strings.TrimRight(strings.TrimRight(formatAmount(v, decimals), "0"), ".")
 }
 
 type assetInfo struct {
@@ -492,9 +499,9 @@ func balanceCmd() *cobra.Command {
 
 // paymentRequest is the transfer-shaped input shared by pay and preview.
 type paymentRequest struct {
-	network, to, asset, amount, memo string
-	expires                          uint64
-	uri                              *paymenturi.Payment
+	network, to, asset, amount, memo, intent, refundOf string
+	expires                                            uint64
+	uri                                                *paymenturi.Payment
 }
 
 // applyURI folds --uri into the request and refuses conflicting explicit values.
@@ -517,10 +524,17 @@ func (r *paymentRequest) applyURI(raw string, networkSet bool) error {
 	if err := p.CheckAmount(r.amount); err != nil {
 		return err
 	}
+	if err := p.CheckIntent(r.intent); err != nil {
+		return err
+	}
+	if r.asset != "" && r.asset != p.Asset {
+		return errors.New("uri asset conflicts with --asset")
+	}
 	if r.memo != "" && p.Memo != "" && r.memo != p.Memo {
 		return errors.New("uri memo conflicts with --memo")
 	}
 	r.network, r.to, r.asset, r.amount = p.Network, p.To, p.Asset, p.Amount
+	r.intent = p.Intent
 	if r.memo == "" {
 		r.memo = p.Memo
 	}
@@ -552,14 +566,20 @@ func transferPayload(asset, to string, units uint64, memo, memoTo string) (map[s
 
 func payCmd() *cobra.Command {
 	var network, mnemonic, to, asset, amount, memoTo, rawURI string
-	var memo string
+	var memo, intent, refundOf string
 	var wait, yes bool
 	cmd := &cobra.Command{
 		Use:   "pay",
 		Short: "Sign and submit a transfer",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req := paymentRequest{network: network, to: to, asset: asset, amount: amount, memo: memo}
+			req := paymentRequest{network: network, to: to, asset: asset, amount: amount, memo: memo, intent: intent, refundOf: refundOf}
 			if err := req.applyURI(rawURI, cmd.Flags().Changed("network")); err != nil {
+				return err
+			}
+			if err := req.resolveRefund(); err != nil {
+				return err
+			}
+			if err := req.resolveIntent(); err != nil {
 				return err
 			}
 			network, to, asset, amount, memo = req.network, req.to, req.asset, req.amount, req.memo
@@ -593,8 +613,14 @@ func payCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if req.intent != "" {
+				payload["intent"] = req.intent
+			}
+			if req.refundOf != "" {
+				payload["refund_of"] = req.refundOf
+			}
 			expiresAt := uint64(time.Now().Unix()) + 3600
-			if req.expires != 0 {
+			if req.expires != 0 && req.expires < expiresAt {
 				expiresAt = req.expires
 			}
 			tx := protocol.Tx{
@@ -610,26 +636,7 @@ func payCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := http.Post(apiURL("/v1/transactions"), "application/cbor", bytes.NewReader(raw))
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode >= 300 {
-				return fmt.Errorf("submit failed: %s", strings.TrimSpace(string(body)))
-			}
-			var out struct {
-				Hash string `json:"hash"`
-			}
-			if err := json.Unmarshal(body, &out); err != nil {
-				return err
-			}
-			fmt.Println(out.Hash)
-			if wait {
-				return waitForReceipt(out.Hash)
-			}
-			return nil
+			return submitTx(raw, wait)
 		},
 	}
 	cmd.Flags().StringVar(&network, "network", "arne:devnet", "network id")
@@ -640,6 +647,8 @@ func payCmd() *cobra.Command {
 	cmd.Flags().StringVar(&memo, "memo", "", "memo text")
 	cmd.Flags().StringVar(&memoTo, "memo-to", "", "recipient memo public key (hex); encrypts --memo")
 	cmd.Flags().StringVar(&rawURI, "uri", "", "arce:/arne: payment URI; shows a preview first")
+	cmd.Flags().StringVar(&intent, "intent", "", "payment intent ID; recipient, asset, and amount must match")
+	cmd.Flags().StringVar(&refundOf, "refund-of", "", "original transaction hash to refund; fills recipient, asset, and remaining amount")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the URI preview without prompting")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the receipt")
 	_ = cmd.MarkFlagRequired("mnemonic")
@@ -657,6 +666,12 @@ func previewCmd() *cobra.Command {
 		Short: "Show a transfer before signing, with safety warnings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := req.applyURI(rawURI, cmd.Flags().Changed("network")); err != nil {
+				return err
+			}
+			if err := req.resolveRefund(); err != nil {
+				return err
+			}
+			if err := req.resolveIntent(); err != nil {
 				return err
 			}
 			if req.to == "" || req.asset == "" || req.amount == "" {
@@ -686,8 +701,14 @@ func previewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if req.intent != "" {
+				payload["intent"] = req.intent
+			}
+			if req.refundOf != "" {
+				payload["refund_of"] = req.refundOf
+			}
 			expiresAt := uint64(time.Now().Unix()) + 3600
-			if req.expires != 0 {
+			if req.expires != 0 && req.expires < expiresAt {
 				expiresAt = req.expires
 			}
 			chain, _ := protocol.ChainID(req.network)
@@ -731,6 +752,8 @@ func previewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&req.memo, "memo", "", "memo text")
 	cmd.Flags().StringVar(&memoTo, "memo-to", "", "recipient memo public key (hex); encrypts --memo")
 	cmd.Flags().StringVar(&rawURI, "uri", "", "arce:/arne: payment URI")
+	cmd.Flags().StringVar(&req.intent, "intent", "", "payment intent ID; recipient, asset, and amount must match")
+	cmd.Flags().StringVar(&req.refundOf, "refund-of", "", "original transaction hash to refund; fills recipient, asset, and remaining amount")
 	cmd.Flags().StringArrayVar(&known, "known", nil, "trusted contact address for lookalike checks (repeatable)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "JSON output")
 	_ = cmd.MarkFlagRequired("mnemonic")
@@ -766,7 +789,7 @@ func simulateTransfer(raw []byte) (ledger.Receipt, error) {
 // --- payment URIs ---
 
 func uriCmd() *cobra.Command {
-	var network, to, asset, amount, memo, scheme, raw string
+	var network, to, asset, amount, memo, scheme, raw, intent string
 	var expires uint64
 	var jsonOut bool
 	cmd := &cobra.Command{
@@ -785,6 +808,7 @@ func uriCmd() *cobra.Command {
 				return printJSON(map[string]any{
 					"scheme": p.Scheme, "network": p.Network, "to": p.To, "asset": p.Asset,
 					"amount": p.Amount, "memo": p.Memo, "expires": p.Expires,
+					"intent":   p.Intent,
 					"warnings": p.Warnings, "canonical": p.String(),
 				})
 			}
@@ -811,8 +835,8 @@ func uriCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p.Memo, p.Expires = memo, expires
-			if memo != "" || expires != 0 {
+			p.Memo, p.Expires, p.Intent = memo, expires, intent
+			if memo != "" || expires != 0 || intent != "" {
 				if _, err := paymenturi.ParseAt(p.String(), uint64(time.Now().Unix())); err != nil {
 					return err
 				}
@@ -827,6 +851,7 @@ func uriCmd() *cobra.Command {
 	build.Flags().StringVar(&asset, "asset", "", "asset id")
 	build.Flags().StringVar(&amount, "amount", "", "decimal amount")
 	build.Flags().StringVar(&memo, "memo", "", "optional memo")
+	build.Flags().StringVar(&intent, "intent", "", "payment intent ID")
 	build.Flags().Uint64Var(&expires, "expires", 0, "unix expiry")
 	for _, f := range []string{"to", "asset", "amount"} {
 		_ = build.MarkFlagRequired(f)

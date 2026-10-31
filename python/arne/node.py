@@ -264,7 +264,8 @@ class Node:
             for other_hash, other in list(self.mempool.items()):
                 if other.signer == tx.signer and other.nonce == tx.nonce:
                     if other.priority_fee >= tx.priority_fee:
-                        return tx_hash
+                        raise ledger.LedgerError(ledger.MEMPOOL_CONFLICT,
+                                                 "pending transaction at this nonce has equal or higher priority fee")
                     del self.mempool[other_hash]
             if len(self.mempool) >= MEMPOOL_LIMIT:
                 raise ledger.LedgerError(ledger.LIMIT_EXCEEDED, "mempool full")

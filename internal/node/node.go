@@ -272,7 +272,7 @@ func (n *Node) SubmitTx(raw []byte) (string, error) {
 		if other.Signer == tx.Signer && other.Nonce == tx.Nonce {
 			if other.PriorityFee >= tx.PriorityFee {
 				n.mu.Unlock()
-				return hash, nil
+				return "", &ledger.Error{Code: ledger.CodeMempoolConflict, Message: "pending transaction at this nonce has equal or higher priority fee"}
 			}
 			delete(n.mempool, h)
 		}
@@ -617,6 +617,27 @@ func (n *Node) Receipt(hash string) (ledger.Receipt, bool) {
 	defer n.mu.RUnlock()
 	r, ok := n.receipts[hash]
 	return r, ok
+}
+
+// Intent returns a payment intent.
+func (n *Node) Intent(id string) (protocol.Intent, bool, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Intent(id)
+}
+
+// Transfer returns the index entry for a finalized transfer.
+func (n *Node) Transfer(hash string) (protocol.Transfer, bool, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Transfer(hash)
+}
+
+// Refunded returns the total refunded against a transfer.
+func (n *Node) Refunded(hash string) uint64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.state.Refunded(hash)
 }
 
 // Simulate dry-runs a transaction without touching state.

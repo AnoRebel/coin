@@ -5,7 +5,9 @@ go 1.27.3
 require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/cometbft/cometbft v1.0.1
+	github.com/govalues/decimal v0.1.36
 	github.com/labstack/echo/v5 v5.4.2
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.58.0
 )

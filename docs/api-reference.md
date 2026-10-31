@@ -91,6 +91,8 @@ proves absence at the returned `state_root`.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/v1/escrows/{id}` | Escrow object, or `404 ESCROW_NOT_FOUND` |
+| GET | `/v1/intents/{id}` | Payment intent, or `404 INTENT_NOT_FOUND` |
+| GET | `/v1/transfers/{hash}` | Indexed payment transfer, or `404 TRANSFER_NOT_FOUND` |
 | GET | `/v1/allowances/{owner}/{spender}/{asset}` | `{"owner","spender","asset","remaining","expires_at"}` |
 
 ```json
@@ -178,6 +180,31 @@ events; overload drops new events, so reconcile from the chain after downtime.
 
 Submitting does not mean success. Poll the receipt or watch events.
 
+### Transaction-submit idempotency
+
+`POST /v1/transactions` accepts one optional `Idempotency-Key` header: 1–128
+ASCII letters, digits, `_`, `.`, `:`, or `-`. Keys are scoped by authorization
+credential, transaction network, and signer. Authorization runs before lookup.
+
+- Retry the same signed CBOR bytes with the same key. Raw CBOR and a JSON
+  wrapper containing those bytes refer to the same request.
+- Before finalization, a retry returns the original `202 {"hash","status":"accepted"}`.
+- After finalization, a retry returns `200 {"hash","status":"finalized","receipt":{…}}`
+  with the original receipt, while it is retained by the node.
+- Different signed bytes in the same scope return `409 IDEMPOTENCY_CONFLICT`;
+  changing nonce, timestamp, or signature also changes the bytes.
+- Failed admission does not reserve a key. Successful admission retains it
+  for 24 hours, without extending expiry on retries. Expired keys are reusable.
+- The cache holds at most 10,000 entries. If all are unexpired, a new key
+  returns `503 IDEMPOTENCY_FULL` rather than evicting another client's record.
+
+The cache is process-local and is lost on restart; use one API instance for a
+retry sequence. It is not a durable job queue and does not guarantee that an
+accepted transaction will finalize. Intent state and account nonces still
+prevent duplicate execution after cache loss. Receipt lookup follows the
+node's pruning policy; retain accounting receipts in your integration.
+Other REST writes and JSON-RPC do not yet support idempotency keys.
+
 ## Transaction envelope
 
 Canonical CBOR map:
@@ -217,7 +244,8 @@ transaction; unknown payload keys are currently ignored.
 
 | Type | Payload |
 | --- | --- |
-| `transfer` | `asset`, `to`, `amount`, optional `memo` (text ≤256 bytes) or `memo_enc` (sealed bytes; mutually exclusive) |
+| `transfer` | `asset`, `to`, `amount`, optional `intent` ID, optional `refund_of` transaction hash, optional `memo` (text ≤256 bytes) or `memo_enc` (sealed bytes; mutually exclusive) |
+| `create_intent` | `reference` (1–64 ASCII letters, digits, `_`, `-`), `asset`, positive `amount`, optional future `expires_at`, optional `memo` (≤256 UTF-8 bytes; no NUL, CR, LF) |
 | `batch` | `items`: 1–100 × `{asset, to, amount}`, optional `mode`: `atomic` (default) or `best_effort` |
 | `register_asset` | `asset`: full asset map without supply |
 | `create_escrow` | `asset`, `beneficiary`, `arbiter`, `amount`, `timeout` |
@@ -234,6 +262,56 @@ required. An `atomic` batch rolls back entirely if any item fails. In a
 `best_effort` batch each item is validated and applied independently; failures
 are skipped and reported as `batch_item` events with `success: "false"` and a
 `code`, while successful items commit.
+
+### Payment intents
+
+Submit a `create_intent` transaction signed by the payee through the existing
+transaction endpoint. Creation charges the usual transaction fee. The stable
+ID is the first 16 bytes, in lowercase hex, of
+`SHA-256("arne-intent-v1\0" + network + "\0" + payee + "\0" + reference)`.
+The same payee/reference cannot be created twice on one network.
+
+`GET /v1/intents/{id}` returns `id`, `payee`, `reference`, `asset`, `amount`,
+`expires_at`, `status`, and `created_at`, plus `memo` when present. Omitted
+creation expiry is stored as `0` (no expiry). A payment includes the ID in its
+`transfer` payload; its recipient, asset, and amount must exactly match. Expiry
+is evaluated at block time (payment is rejected when block time is greater
+than `expires_at`). Successful payment records `status: "paid"`, `payer`,
+`tx_hash`, and `paid_at`, and emits `intent_paid`. Creation emits
+`intent_created`. Simulation and failed payments do not consume the intent.
+
+This on-chain guard prevents a second payment. A keyed retry of the original
+signed transfer returns its original result as described above; a new transfer
+attempting to pay that intent fails with `INTENT_PAID`.
+
+`arned intent link --id <id>` and `arne intent link --id <id>` resolve the
+stored request and output the same canonical `arne:` URI, including `network`,
+`intent`, recipient, asset, amount, and optional memo/expiry. Amounts omit
+unnecessary fractional zeros. Add `--qr <new-file.png>` for a local PNG QR code.
+
+### Refunds
+
+A refund is a `transfer` whose payload adds `refund_of`: the 64-character
+lowercase hex hash of an earlier direct transfer. It must be signed by that
+transfer's recipient, return the same asset to the original payer, and not
+exceed the amount still refundable.
+
+`GET /v1/transfers/{hash}` returns the index entry used by both CLIs:
+
+```json
+{
+  "hash": "…64 hex…", "from": "arce-devnet1…", "to": "arce-devnet1…",
+  "asset": "arce:devnet", "amount": 500000000,
+  "refund_of": "", "refunded": 200000000, "refundable": 300000000
+}
+```
+
+`refunded` is cumulative for that original hash; `refundable` is `amount -
+refunded`. A refund transaction itself is indexed with `refund_of` set, so a
+refund of a refund is rejected. Combining `intent` and `refund_of` is
+`INVALID_PAYLOAD`. Successful refunds emit a `refund` event with `refund_of`,
+`from`, `to`, `asset`, `amount`, and `remaining`. Only direct `transfer` and
+`transfer_from` records are indexed; batch items and escrow releases are not.
 
 ## JSON-RPC
 
@@ -270,11 +348,22 @@ Branch on `code`.
 | `WRONG_NETWORK` | Transaction or address for another network/chain | 400 |
 | `EXPIRED` | Past `expires_at` | 400 |
 | `BAD_NONCE` | Nonce is not exactly the account nonce | 400 |
+| `MEMPOOL_CONFLICT` | In-process mempool already has an equal/higher-priority transaction at this signer/nonce | 409 |
+| `IDEMPOTENCY_CONFLICT` | Key reused with different signed bytes in the same scope | 409 |
+| `IDEMPOTENCY_FULL` | No free or expired idempotency cache slot | 503 |
 | `FEE_TOO_LOW` | Required fee above `max_fee` | 400 |
 | `NO_FEE_ROUTE` | No route or empty `fee_swap` pool for the fee asset | 400 |
 | `INSUFFICIENT_FUNDS` | Balance too low, including pool underfunding | 400 |
 | `UNKNOWN_ASSET` | Asset not registered | 404 |
 | `ASSET_EXISTS` | Asset ID already registered | 400 |
+| `INTENT_NOT_FOUND` | Intent does not exist | 404 for GET; 400 for transfer submission |
+| `INTENT_PAID` | Intent already paid; query it for the original transaction hash | 400 |
+| `INTENT_EXPIRED` | Block time is past the intent expiry | 400 |
+| `INTENT_EXISTS` | Payee/reference already registered | 400 |
+| `INTENT_MISMATCH` | Recipient, asset, or amount differs from the intent | 400 |
+| `REFUND_NOT_FOUND` | `refund_of` does not name an indexed transfer | 400 |
+| `REFUND_MISMATCH` | Wrong payer/asset destination, or refunding a refund | 400 |
+| `REFUND_EXCEEDED` | Refund is larger than the remaining original amount | 400 |
 | `UNAUTHORIZED` | Wrong issuer/arbiter/owner for the action | 403 |
 | `SUPPLY_LIMIT` | Fixed-supply or cap exceeded | 400 |
 | `ESCROW_NOT_FOUND` | Unknown escrow ID | 404 |
@@ -286,7 +375,7 @@ Branch on `code`.
 
 Non-ledger API errors: `INVALID_ARGUMENT` (400), `BODY_TOO_LARGE` (413),
 `FORBIDDEN` (403, missing scope), `RATE_LIMITED` (429), `NOT_FOUND` (404,
-disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND` (404), `PRUNED` (410, block
+disabled faucet), `TX_NOT_FOUND`/`BLOCK_NOT_FOUND`/`TRANSFER_NOT_FOUND` (404), `PRUNED` (410, block
 outside `--keep-blocks`), `UNSUPPORTED` (500).
 
 ## Mempool and nonce rules
@@ -299,10 +388,13 @@ on every `check_tx`; proposal building keeps the same nonce rule.
 - Block selection only includes the exact next nonce per signer, in order.
 - A higher-priority transaction with the same signer and nonce replaces the
   mempool entry.
+- A different transaction with equal or lower priority at that nonce is
+  rejected with `MEMPOOL_CONFLICT`, not reported as accepted.
 - Mempool limit: 10,000 transactions.
 
 ## Not implemented
 
-Idempotency keys, WebSocket, pagination cursors beyond `before`/`cursor`,
-OIDC/JWT, mTLS, message/channel APIs, contract APIs, and shielded APIs. They
-appear in the OpenSpec change, not in this server.
+Idempotency for writes other than REST transaction submission, WebSocket,
+pagination cursors beyond `before`/`cursor`, OIDC/JWT, mTLS, message/channel
+APIs, contract APIs, and shielded APIs. They appear in the OpenSpec change,
+not in this server.

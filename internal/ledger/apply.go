@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
@@ -20,6 +21,7 @@ const (
 	CodeWrongNetwork      Code = "WRONG_NETWORK"
 	CodeExpired           Code = "EXPIRED"
 	CodeBadNonce          Code = "BAD_NONCE"
+	CodeMempoolConflict   Code = "MEMPOOL_CONFLICT"
 	CodeFeeTooLow         Code = "FEE_TOO_LOW"
 	CodeNoFeeRoute        Code = "NO_FEE_ROUTE"
 	CodeInsufficientFunds Code = "INSUFFICIENT_FUNDS"
@@ -29,6 +31,14 @@ const (
 	CodeSupplyLimit       Code = "SUPPLY_LIMIT"
 	CodeEscrowNotFound    Code = "ESCROW_NOT_FOUND"
 	CodeEscrowClosed      Code = "ESCROW_CLOSED"
+	CodeIntentNotFound    Code = "INTENT_NOT_FOUND"
+	CodeIntentPaid        Code = "INTENT_PAID"
+	CodeIntentExpired     Code = "INTENT_EXPIRED"
+	CodeIntentExists      Code = "INTENT_EXISTS"
+	CodeIntentMismatch    Code = "INTENT_MISMATCH"
+	CodeRefundNotFound    Code = "REFUND_NOT_FOUND"
+	CodeRefundMismatch    Code = "REFUND_MISMATCH"
+	CodeRefundExceeded    Code = "REFUND_EXCEEDED"
 	CodeAllowanceExceeded Code = "ALLOWANCE_EXCEEDED"
 	CodeLimitExceeded     Code = "LIMIT_EXCEEDED"
 	CodeConservation      Code = "CONSERVATION_VIOLATION"
@@ -248,7 +258,9 @@ func div128(hi, lo, d uint64) (uint64, uint64) {
 func (s *State) execute(tx protocol.Tx, now uint64, r *Receipt) error {
 	switch tx.Type {
 	case protocol.TxTransfer:
-		return s.execTransfer(tx, r)
+		return s.execTransfer(tx, now, r)
+	case protocol.TxCreateIntent:
+		return s.execCreateIntent(tx, now, r)
 	case protocol.TxBatch:
 		return s.execBatch(tx, r)
 	case protocol.TxRegisterAsset:
@@ -287,7 +299,7 @@ func (s *State) requireAddress(addr string) error {
 	return protocol.ValidateAddress(addr, s.Network)
 }
 
-func (s *State) execTransfer(tx protocol.Tx, r *Receipt) error {
+func (s *State) execTransfer(tx protocol.Tx, now uint64, r *Receipt) error {
 	asset, err := payloadString(tx.Payload, "asset")
 	if err != nil {
 		return err
@@ -299,6 +311,29 @@ func (s *State) execTransfer(tx protocol.Tx, r *Receipt) error {
 	amount, err := payloadUint(tx.Payload, "amount")
 	if err != nil {
 		return err
+	}
+	refundOf := ""
+	if raw, ok := tx.Payload["refund_of"]; ok {
+		hash, ok := raw.(string)
+		if !ok || !protocol.ValidTxHash(hash) {
+			return txErr(CodeInvalidPayload, "refund_of must be a 64-character lowercase hex transaction hash")
+		}
+		refundOf = hash
+	}
+	var intent *protocol.Intent
+	if raw, ok := tx.Payload["intent"]; ok {
+		if refundOf != "" {
+			return txErr(CodeInvalidPayload, "use intent or refund_of, not both")
+		}
+		id, ok := raw.(string)
+		if !ok || id == "" {
+			return txErr(CodeInvalidPayload, "intent must be text")
+		}
+		in, err := s.checkIntent(id, to, asset, amount, now)
+		if err != nil {
+			return err
+		}
+		intent = &in
 	}
 	if plain, ok := tx.Payload["memo"]; ok {
 		text, ok := plain.(string)
@@ -327,7 +362,148 @@ func (s *State) execTransfer(tx protocol.Tx, r *Receipt) error {
 	if err := s.requireAddress(to); err != nil {
 		return err
 	}
-	return s.move(tx.Signer, to, asset, amount, r)
+	remaining := uint64(0)
+	if refundOf != "" {
+		remaining, err = s.checkRefund(tx, refundOf, to, asset, amount)
+		if err != nil {
+			return err
+		}
+	}
+	if err := s.move(tx.Signer, to, asset, amount, r); err != nil {
+		return err
+	}
+	if err := s.putTransfer(r.Hash, protocol.Transfer{
+		From: tx.Signer, To: to, Asset: asset, Amount: amount, RefundOf: refundOf,
+	}); err != nil {
+		return err
+	}
+	if refundOf != "" {
+		s.setUint(fmt.Sprintf(kRefunded, refundOf), s.Refunded(refundOf)+amount)
+		r.Events = append(r.Events, Event{Type: "refund", Attrs: map[string]string{
+			"refund_of": refundOf, "from": tx.Signer, "to": to, "asset": asset,
+			"amount": fmt.Sprint(amount), "remaining": fmt.Sprint(remaining),
+		}})
+	}
+	if intent != nil {
+		intent.Status = protocol.IntentPaid
+		intent.Payer, intent.TxHash, intent.PaidAt = tx.Signer, r.Hash, now
+		if err := s.putIntent(*intent); err != nil {
+			return err
+		}
+		r.Events = append(r.Events, Event{Type: "intent_paid", Attrs: map[string]string{
+			"id": intent.ID, "reference": intent.Reference, "payer": tx.Signer,
+		}})
+	}
+	return nil
+}
+
+func (s *State) execCreateIntent(tx protocol.Tx, now uint64, r *Receipt) error {
+	reference, err := payloadString(tx.Payload, "reference")
+	if err != nil {
+		return err
+	}
+	if !protocol.ValidIntentReference(reference) {
+		return txErr(CodeInvalidPayload, "reference must be 1-64 letters, digits, _ or -")
+	}
+	asset, err := payloadString(tx.Payload, "asset")
+	if err != nil {
+		return err
+	}
+	amount, err := payloadUint(tx.Payload, "amount")
+	if err != nil {
+		return err
+	}
+	if amount == 0 {
+		return txErr(CodeInvalidPayload, "amount must be positive")
+	}
+	if err := s.requireAsset(asset); err != nil {
+		return err
+	}
+	var expiresAt uint64
+	if raw, ok := tx.Payload["expires_at"]; ok {
+		expiresAt, ok = raw.(uint64)
+		if !ok {
+			return txErr(CodeInvalidPayload, "expires_at must be unsigned")
+		}
+		if expiresAt <= now {
+			return txErr(CodeInvalidPayload, "expires_at must be in the future")
+		}
+	}
+	var memo string
+	if raw, ok := tx.Payload["memo"]; ok {
+		memo, ok = raw.(string)
+		if !ok || len(memo) > s.Params.MaxMemoBytes || strings.ContainsAny(memo, "\x00\r\n") {
+			return txErr(CodeInvalidPayload, "intent memo must fit a payment URI (max 256 bytes; no NUL, CR, or LF)")
+		}
+	}
+	id := protocol.IntentID(s.Network, tx.Signer, reference)
+	if _, exists, err := s.Intent(id); err != nil {
+		return err
+	} else if exists {
+		return txErr(CodeIntentExists, "intent %s already exists", id)
+	}
+	in := protocol.Intent{
+		ID: id, Payee: tx.Signer, Reference: reference, Asset: asset, Amount: amount,
+		ExpiresAt: expiresAt, Memo: memo, Status: protocol.IntentOpen, CreatedAt: now,
+	}
+	if err := s.putIntent(in); err != nil {
+		return err
+	}
+	r.Events = append(r.Events, Event{Type: "intent_created", Attrs: map[string]string{
+		"id": id, "reference": reference, "payee": tx.Signer, "asset": asset,
+		"amount": fmt.Sprint(amount),
+	}})
+	return nil
+}
+
+func (s *State) checkIntent(id, payee, asset string, amount, now uint64) (protocol.Intent, error) {
+	in, ok, err := s.Intent(id)
+	if err != nil {
+		return in, err
+	}
+	if !ok {
+		return in, txErr(CodeIntentNotFound, "intent %s", id)
+	}
+	if in.Status == protocol.IntentPaid {
+		return in, txErr(CodeIntentPaid, "intent %s already paid", id)
+	}
+	if in.ExpiresAt != 0 && now > in.ExpiresAt {
+		return in, txErr(CodeIntentExpired, "intent %s expired at %d", id, in.ExpiresAt)
+	}
+	if in.Payee != payee || in.Asset != asset || in.Amount != amount {
+		return in, txErr(CodeIntentMismatch, "payment does not match intent %s", id)
+	}
+	return in, nil
+}
+
+// checkRefund validates a refund against the original transfer index and
+// returns the amount still refundable after this refund.
+func (s *State) checkRefund(tx protocol.Tx, refundOf, to, asset string, amount uint64) (uint64, error) {
+	original, ok, err := s.Transfer(refundOf)
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, txErr(CodeRefundNotFound, "original transfer %s", refundOf)
+	}
+	if original.RefundOf != "" {
+		return 0, txErr(CodeRefundMismatch, "cannot refund a refund")
+	}
+	if tx.Signer != original.To {
+		return 0, txErr(CodeUnauthorized, "only the original payee may refund")
+	}
+	if to != original.From || asset != original.Asset {
+		return 0, txErr(CodeRefundMismatch, "refund must return %s to %s", original.Asset, original.From)
+	}
+	refunded := s.Refunded(refundOf)
+	if refunded > original.Amount {
+		return 0, txErr(CodeRefundExceeded, "refund total exceeds original %d", original.Amount)
+	}
+	remaining := original.Amount - refunded
+	if amount > remaining {
+		return 0, txErr(CodeRefundExceeded, "refund %d exceeds remaining %d", amount, remaining)
+	}
+	return remaining - amount, nil
 }
 
 func (s *State) move(from, to, asset string, amount uint64, r *Receipt) error {
@@ -647,6 +823,11 @@ func (s *State) execTransferFrom(tx protocol.Tx, now uint64, r *Receipt) error {
 		return txErr(CodeAllowanceExceeded, "allowance expired")
 	}
 	if err := s.move(owner, to, asset, amount, r); err != nil {
+		return err
+	}
+	if err := s.putTransfer(r.Hash, protocol.Transfer{
+		From: owner, To: to, Asset: asset, Amount: amount,
+	}); err != nil {
 		return err
 	}
 	s.setUint(fmt.Sprintf(kAllowance, owner, tx.Signer, asset), remaining-amount)

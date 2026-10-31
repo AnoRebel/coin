@@ -20,6 +20,7 @@ var (
 	ErrURI    = errors.New("payment uri")
 	reAmount  = regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$`)
 	reScheme  = regexp.MustCompile(`^[a-z]+$`)
+	reIntent  = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	execHints = []string{"<script", "<iframe", "javascript:", "data:text/html", "onerror=", "<svg"}
 )
 
@@ -31,6 +32,7 @@ type Payment struct {
 	Asset    string
 	Amount   string
 	Memo     string
+	Intent   string
 	Expires  uint64
 	Warnings []string
 }
@@ -67,7 +69,7 @@ func ParseAt(raw string, now uint64) (Payment, error) {
 	if err != nil {
 		return Payment{}, fmt.Errorf("%w: query", ErrURI)
 	}
-	allowed := map[string]bool{"network": true, "asset": true, "amount": true, "memo": true, "expires": true}
+	allowed := map[string]bool{"network": true, "asset": true, "amount": true, "memo": true, "expires": true, "intent": true}
 	for key, list := range values {
 		if !allowed[key] {
 			return Payment{}, fmt.Errorf("%w: unknown field %q", ErrURI, key)
@@ -79,6 +81,10 @@ func ParseAt(raw string, now uint64) (Payment, error) {
 	p := Payment{
 		Scheme: scheme, Network: values.Get("network"), To: to,
 		Asset: values.Get("asset"), Amount: values.Get("amount"), Memo: values.Get("memo"),
+		Intent: values.Get("intent"),
+	}
+	if _, present := values["intent"]; present && !reIntent.MatchString(p.Intent) {
+		return Payment{}, fmt.Errorf("%w: intent", ErrURI)
 	}
 	if p.Network == "" {
 		return Payment{}, fmt.Errorf("%w: network required", ErrURI)
@@ -163,12 +169,21 @@ func (p Payment) CheckAmount(amount string) error {
 	return nil
 }
 
+// CheckIntent rejects an explicit intent that conflicts with the URI.
+func (p Payment) CheckIntent(intent string) error {
+	if intent != "" && intent != p.Intent {
+		return fmt.Errorf("%w: uri intent %s conflicts with %s", ErrURI, p.Intent, intent)
+	}
+	return nil
+}
+
 // String renders a canonical URI with fields in deterministic order.
 func (p Payment) String() string {
 	values := url.Values{}
 	for key, value := range map[string]string{
 		"network": p.Network, "asset": p.Asset, "amount": p.Amount,
 		"memo": p.Memo, "expires": strconv.FormatUint(p.Expires, 10),
+		"intent": p.Intent,
 	} {
 		if value != "" && value != "0" {
 			values.Set(key, value)
@@ -181,6 +196,9 @@ func (p Payment) String() string {
 func (p Payment) Summary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "network: %s\nrecipient: %s\nasset: %s\namount: %s\n", p.Network, p.To, p.Asset, p.Amount)
+	if p.Intent != "" {
+		fmt.Fprintf(&b, "intent: %s\n", p.Intent)
+	}
 	if p.Memo != "" {
 		fmt.Fprintf(&b, "memo: %q\n", p.Memo)
 	}

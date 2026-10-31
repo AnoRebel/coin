@@ -26,10 +26,12 @@ TX_TRANSFER_FROM = "transfer_from"
 TX_REVOKE_ALLOWANCE = "revoke_allowance"
 TX_MINT = "mint"
 TX_BURN = "burn"
+TX_CREATE_INTENT = "create_intent"
 
 TX_TYPES = {
     TX_TRANSFER, TX_BATCH, TX_REGISTER_ASSET, TX_CREATE_ESCROW, TX_RELEASE_ESCROW,
     TX_REFUND_ESCROW, TX_APPROVE, TX_TRANSFER_FROM, TX_REVOKE_ALLOWANCE, TX_MINT, TX_BURN,
+    TX_CREATE_INTENT,
 }
 
 ESCROW_OPEN = "open"
@@ -184,6 +186,82 @@ class Escrow:
             id=_text(m, "id"), payer=_text(m, "payer"), beneficiary=_text(m, "beneficiary"),
             arbiter=_text(m, "arbiter"), asset=_text(m, "asset"), amount=_uint(m, "amount"),
             timeout=_uint(m, "timeout"), status=_text(m, "status"), created_at=_uint(m, "created_at"),
+        )
+
+
+def intent_id(network: str, payee: str, reference: str) -> str:
+    return hashlib.sha256(f"arne-intent-v1\0{network}\0{payee}\0{reference}".encode()).digest()[:16].hex()
+
+
+def valid_intent_reference(reference: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9_-]{1,64}", reference) is not None
+
+
+def valid_tx_hash(tx_hash: str) -> bool:
+    return re.fullmatch(r"[0-9a-f]{64}", tx_hash) is not None
+
+
+INTENT_OPEN = "open"
+INTENT_PAID = "paid"
+
+
+@dataclass
+class Intent:
+    id: str
+    payee: str
+    reference: str
+    asset: str
+    amount: int
+    expires_at: int
+    status: str
+    created_at: int
+    memo: str = ""
+    payer: str = ""
+    tx_hash: str = ""
+    paid_at: int = 0
+
+    def to_cbor(self) -> dict[str, Any]:
+        result = {
+            "id": self.id, "payee": self.payee, "reference": self.reference,
+            "asset": self.asset, "amount": self.amount, "expires_at": self.expires_at,
+            "status": self.status, "created_at": self.created_at,
+        }
+        for key in ("memo", "payer", "tx_hash", "paid_at"):
+            if value := getattr(self, key):
+                result[key] = value
+        return result
+
+    @classmethod
+    def from_cbor(cls, m: Mapping[str, Any]) -> Intent:
+        fields = {key: _text(m, key) for key in ("id", "payee", "reference", "asset", "status")}
+        fields.update({key: _uint(m, key) for key in ("amount", "expires_at", "created_at")})
+        fields.update({key: _text(m, key) for key in ("memo", "payer", "tx_hash") if key in m})
+        if "paid_at" in m:
+            fields["paid_at"] = _uint(m, "paid_at")
+        return cls(**fields)
+
+
+@dataclass
+class Transfer:
+    """Consensus index entry for a finalized transfer."""
+
+    sender: str
+    to: str
+    asset: str
+    amount: int
+    refund_of: str = ""
+
+    def to_cbor(self) -> dict[str, Any]:
+        result = {"from": self.sender, "to": self.to, "asset": self.asset, "amount": self.amount}
+        if self.refund_of:
+            result["refund_of"] = self.refund_of
+        return result
+
+    @classmethod
+    def from_cbor(cls, m: Mapping[str, Any]) -> Transfer:
+        return cls(
+            sender=_text(m, "from"), to=_text(m, "to"), asset=_text(m, "asset"),
+            amount=_uint(m, "amount"), refund_of=_text(m, "refund_of") if "refund_of" in m else "",
         )
 
 

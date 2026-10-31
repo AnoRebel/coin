@@ -43,6 +43,9 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
 - Tampered envelopes: signature verification before execution.
 - Integer/float confusion: integer-only ledger amounts and canonical CBOR.
 - Non-atomic transfers: journaled rollback; batches are all-or-nothing.
+- Refund fraud/over-refund: refunds are signed by the original recipient,
+  return the original asset to the original payer, and are capped by the
+  cumulative on-chain `refunded` total; refund-of-refund is rejected.
 - Supply inflation: conservation check after every transaction and block; a
   violation halts the node.
 - Storage corruption: checksum on every record.
@@ -74,6 +77,15 @@ Constant-time comparison and zeroization are not comprehensively audited; Go and
   signing, and memos are rendered as inert text with a warning on markup. A URI
   never overrides an explicit amount, recipient, or network; conflicts are
   refused.
+- Intent links are resolved against the API's declared network before signing;
+  recipient, asset, and amount must match the stored intent. The ledger repeats
+  those checks and atomically marks a request paid, independently of the HTTP
+  retry cache. Intent references, memos, and payment metadata are public.
+- Transaction-submit idempotency uses a credential/network/signer/key scope
+  and hashes the exact signed bytes. Authorization precedes lookup, rejected
+  submissions do not reserve keys, and cache capacity is bounded. The cache is
+  process-local with 24-hour retention: retain signed bytes and receipts in
+  your integration, and reconcile after restart or expiry before re-signing.
 - Webhook deliveries are signed with Ed25519 over the timestamp and body.
   Receivers must verify `X-Arne-Signature`, reject timestamps outside five
   minutes, and deduplicate `X-Arne-Delivery`; otherwise a captured delivery can

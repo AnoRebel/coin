@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import time
 
 import pytest
@@ -105,6 +106,196 @@ def test_submit_rejects_garbage(client: TestClient) -> None:
     assert client.post("/v1/transactions", content=b"\xa0").status_code == 400
     assert client.post("/v1/transactions", content=b"").status_code == 400
     assert client.post("/v1/transactions", json={"tx": "!!!"}).status_code == 400
+
+
+def test_intent_query(client: TestClient, setup) -> None:
+    node, keys = setup
+    key = keys["funder"]
+    missing = client.get("/v1/intents/" + "0" * 32)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "INTENT_NOT_FOUND"
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="create_intent",
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=10_000,
+        payload={"asset": "arce:devnet", "amount": 42, "reference": "invoice_42"},
+    )
+    tx.sign(key)
+    submitted = client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()))
+    assert submitted.status_code == 202, submitted.text
+    node.produce_block(now + 1)
+    intent_id = types.intent_id(NETWORK, key.address, "invoice_42")
+    response = client.get("/v1/intents/" + intent_id)
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": intent_id, "payee": key.address, "reference": "invoice_42", "asset": "arce:devnet",
+        "amount": 42, "expires_at": 0, "status": "open", "created_at": now + 1,
+    }
+
+
+def test_transfer_query(client: TestClient, setup) -> None:
+    node, keys = setup
+    key = keys["funder"]
+    missing = client.get("/v1/transfers/" + "0" * 64)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "TRANSFER_NOT_FOUND"
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type=types.TX_TRANSFER,
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=10_000,
+        payload={"asset": "arce:devnet", "to": key.address, "amount": 42},
+    )
+    tx.sign(key)
+    submitted = client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()))
+    assert submitted.status_code == 202, submitted.text
+    node.produce_block(now + 1)
+    assert client.get(f"/v1/transfers/{tx.hash()}").json() == {
+        "hash": tx.hash(), "from": key.address, "to": key.address, "asset": "arce:devnet",
+        "amount": 42, "refund_of": "", "refunded": 0, "refundable": 42,
+    }
+
+
+def test_submit_idempotency(client: TestClient, setup) -> None:
+    node, keys = setup
+    key = keys["funder"]
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="transfer",
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=1000,
+        payload={"asset": "arce:devnet", "to": key.address, "amount": 42},
+    )
+    tx.sign(key)
+    raw = cbor.encode(tx.to_cbor())
+    headers = {"Idempotency-Key": "invoice-42"}
+    first = client.post("/v1/transactions", content=raw, headers=headers)
+    assert first.status_code == 202
+    retry = client.post("/v1/transactions", json={"tx": base64.b64encode(raw).decode()}, headers=headers)
+    assert retry.status_code == 202 and retry.json() == first.json()
+    node.produce_block(now + 1)
+    finalized = client.post("/v1/transactions", content=raw, headers=headers)
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["hash"] == tx.hash()
+    assert finalized.json()["receipt"] == node.receipt(tx.hash()).to_dict()
+    tx.nonce = 1
+    tx.signatures.clear()
+    tx.sign(key)
+    conflict = client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()), headers=headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+@pytest.mark.parametrize("key", ["", "has space", "x" * 129, "bad,key"])
+def test_invalid_idempotency_key(client: TestClient, key: str) -> None:
+    result = client.post("/v1/transactions", content=b"\xa0", headers={"Idempotency-Key": key})
+    assert result.status_code == 400
+    assert result.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_duplicate_idempotency_headers(client: TestClient) -> None:
+    result = client.post("/v1/transactions", content=b"\xa0",
+                         headers=[("Idempotency-Key", "one"), ("Idempotency-Key", "two")])
+    assert result.status_code == 400
+    assert result.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_keyed_invalid_transaction_does_not_reserve_key(client: TestClient, setup) -> None:
+    headers = {"Idempotency-Key": "recoverable"}
+    result = client.post("/v1/transactions", content=b"\xa0", headers=headers)
+    assert result.status_code == 400
+    assert result.json()["error"]["code"] == "INVALID_SCHEMA"
+    _, keys = setup
+    key = keys["funder"]
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="transfer",
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=1000,
+        payload={"asset": "arce:devnet", "to": key.address, "amount": 42},
+    )
+    tx.sign(key)
+    assert client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()), headers=headers).status_code == 202
+
+
+def test_idempotency_auth_scope(setup) -> None:
+    node, keys = setup
+    key = keys["funder"]
+    client = TestClient(create_app(node, ApiConfig(api_keys={"one": ["write"], "two": ["write"]})))
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="transfer",
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=1000,
+        payload={"asset": "arce:devnet", "to": key.address, "amount": 42},
+    )
+    tx.sign(key)
+    raw = cbor.encode(tx.to_cbor())
+    headers = {"Idempotency-Key": "shared", "Authorization": "Bearer one"}
+    assert client.post("/v1/transactions", content=raw, headers=headers).status_code == 202
+    node.produce_block(now + 1)
+    assert client.post("/v1/transactions", content=raw, headers={"Idempotency-Key": "shared"}).status_code == 401
+    headers["Authorization"] = "Bearer two"
+    # Another principal must not retrieve the first principal's cached receipt.
+    assert client.post("/v1/transactions", content=raw, headers=headers).status_code == 400
+    headers["Authorization"] = "Bearer one"
+    assert client.post("/v1/transactions", content=raw, headers=headers).status_code == 200
+
+
+def test_mempool_conflict_does_not_reserve_key(client, setup) -> None:
+    node, keys = setup
+    key = keys["funder"]
+    now = int(time.time())
+    tx = types.Tx(version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="transfer",
+                  signer=key.address, nonce=0, created_at=now, expires_at=now+3600,
+                  fee_asset="arce:devnet", max_fee=1000,
+                  payload={"asset": "arce:devnet", "to": key.address, "amount": 42})
+    tx.sign(key)
+    assert client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()), headers={"Idempotency-Key": "first"}).status_code == 202
+    tx.payload["amount"] = 43
+    tx.signatures.clear()
+    tx.sign(key)
+    rejected = client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()), headers={"Idempotency-Key": "second"})
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["error"]["code"] == "MEMPOOL_CONFLICT"
+    node.produce_block(now+1)
+    tx.nonce = 1
+    tx.signatures.clear()
+    tx.sign(key)
+    assert client.post("/v1/transactions", content=cbor.encode(tx.to_cbor()), headers={"Idempotency-Key": "second"}).status_code == 202
+
+
+def test_idempotency_expiry_and_capacity(setup, monkeypatch) -> None:
+    from arne import api
+
+    node, keys = setup
+    key = keys["funder"]
+    client = TestClient(create_app(node))
+    monkeypatch.setattr(api, "IDEMPOTENCY_LIMIT", 1)
+    monkeypatch.setattr(api, "IDEMPOTENCY_TTL", -1)
+    now = int(time.time())
+
+    def raw(nonce: int) -> bytes:
+        tx = types.Tx(
+            version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type="transfer",
+            signer=key.address, nonce=nonce, created_at=now, expires_at=now + 3600,
+            fee_asset="arce:devnet", max_fee=1000,
+            payload={"asset": "arce:devnet", "to": key.address, "amount": 42},
+        )
+        tx.sign(key)
+        return cbor.encode(tx.to_cbor())
+
+    headers = {"Idempotency-Key": "expiring"}
+    assert client.post("/v1/transactions", content=raw(0), headers=headers).status_code == 202
+    node.produce_block(now + 1)
+    monkeypatch.setattr(api, "IDEMPOTENCY_TTL", 24 * 3600)
+    assert client.post("/v1/transactions", content=raw(1), headers=headers).status_code == 202
+    result = client.post("/v1/transactions", content=raw(2), headers={"Idempotency-Key": "new-key"})
+    assert result.status_code == 503
+    assert result.json()["error"]["code"] == "IDEMPOTENCY_FULL"
+    # Existing retries must still work when full, without eviction.
+    assert client.post("/v1/transactions", content=raw(1), headers=headers).status_code == 202
 
 
 def test_json_rpc(client: TestClient, setup) -> None:

@@ -123,18 +123,108 @@ arned uri parse --uri 'arce:arce-devnet1...?amount=12.5&asset=arce%3Adevnet&netw
 arned pay --uri '<uri>' --yes
 ```
 
-Parsing is strict: only `network`, `asset`, `amount`, `memo`, and `expires` are
+Parsing is strict: only `network`, `asset`, `amount`, `memo`, `expires`, and `intent` are
 accepted, each at most once. The scheme must be lowercase `arce` or `arne`, the
 recipient must be valid for the URI's network, the asset must be a canonical
 asset ID, and the amount must be a plain positive decimal with no exponent or
 leading zeros. Expired URIs and fragments are rejected.
 
 `pay --uri` prints the network, recipient, asset, amount, memo, and expiry, then
-stops unless `--yes` is also passed. If you also pass `--amount`, `--to`, or a
-different `--network`, the payment is refused rather than guessing which value
+stops unless `--yes` is also passed. Conflicting explicit `--amount`, `--to`,
+`--asset`, or `--network` values are refused rather than guessing which value
 you meant. Memos from URIs are shown as inert text; markup such as `<script>` is
 warning-tagged and never executed. `--memo-to` still applies if you want to seal
 the memo.
+
+An optional `intent` is a 32-character lowercase hex payment-intent ID. Both
+CLIs resolve it on the declared network, compare the link's recipient, asset,
+and amount with the stored request, and preserve the ID in the signed transfer.
+You can also pass `--intent <id>` to `pay`, `preview`, or `uri build`; an explicit
+ID conflicting with the URI is rejected.
+
+### Payment intents
+
+Create a request as the payee, then share its link or PNG QR code:
+
+```sh
+arned intent create --mnemonic "<payee mnemonic>" --asset arce:devnet \
+  --amount 12.5 --reference invoice-42 --memo "invoice 42" --wait
+# Copy the printed intent ID into these commands:
+arned intent show --id <intent-id>
+arned intent link --id <intent-id> --qr invoice-42.png
+```
+
+`intent create` charges the usual transaction fee. References must contain
+1–64 ASCII letters, digits, `_`, or `-` and cannot be reused by that payee on
+the same network. Add `--expires <unix-seconds>` for an expiry; omit it for no
+expiry. The optional memo is public, at most 256 UTF-8 bytes, and cannot contain
+NUL, carriage returns, or newlines.
+Request expiry is separate from transaction validity: the wallet caps a
+payment's signed transaction at one hour (or the earlier request/link expiry),
+so a long-lived request remains payable without signing a long-lived transfer.
+
+Pay without manually copying the request's amount and recipient:
+
+```sh
+arned preview --mnemonic "<payer mnemonic>" --intent <intent-id> --json
+arned pay --mnemonic "<payer mnemonic>" --intent <intent-id> --yes --wait
+arned pay --mnemonic "<payer mnemonic>" --uri '<payment-link>' --yes --wait
+```
+
+The wallet checks that the API serves the declared network and shows the
+resolved request before confirmation. Explicit recipient, asset, or amount
+values must agree with the request. The ledger independently enforces expiry
+and exact matching, records the payment transaction hash, and rejects a second
+payment without moving value. `intent show` includes that hash after payment.
+Simulation and failed payments leave the request open.
+
+Python provides the same commands through `uv run arne`; use `--url` or
+`ARNE_API` to select its node. Both implementations generate the same canonical
+link and encode it locally in the QR image. `--qr` refuses to overwrite an
+existing file. No mnemonic or payment link is sent to a QR-generation service.
+
+Integrations can use `Idempotency-Key` on transaction submission to retrieve
+the original result when retrying the **same signed bytes**. This is not a way
+to rerun a wallet command with a new nonce or timestamp; see the
+[integration guide](integration-guide.md#3-idempotency-and-retries) for cache
+retention and restart limits.
+
+### Refunds
+
+A refund is a new `transfer` signed by the original recipient and linked to
+the original transaction hash. History stays immutable: the original payment
+and its transfer record are never edited.
+
+```sh
+# Original recipient refunds part or all of a payment.
+arned pay --mnemonic "<original recipient mnemonic>" \
+  --refund-of <original-tx-hash> --amount 5 --wait
+# Omit --amount to return everything still refundable.
+arned preview --mnemonic "<original recipient mnemonic>" --refund-of <hash>
+```
+
+The wallet reads `GET /v1/transfers/{hash}` and fills the destination with the
+original payer, the original asset, and the remaining refundable amount.
+Explicit `--to`, `--asset`, or `--amount` values must agree with that record.
+
+The ledger enforces the same rules independently:
+
+- only the original recipient may sign the refund;
+- value returns to the original payer, in the original asset;
+- the sum of refunds may not exceed the original amount;
+- a refund of a refund is rejected;
+- `intent` and `refund_of` cannot be combined in one transfer.
+
+Refunds pay the usual transaction fee from the refund signer's balance. An
+original recipient who holds only the received amount cannot return the last
+units until the wallet has a small fee balance; fund it first or refund
+slightly less.
+
+Refunds are ordinary transfers for fees, nonces, and receipts. Each successful
+refund emits a `refund` event carrying `refund_of`, `from`, `to`, `asset`,
+`amount`, and the `remaining` refundable amount. Batch items and escrow
+releases are not indexed for `refund_of`; refund those only through the batch
+or escrow flow that produced them.
 
 ### Preview before signing
 

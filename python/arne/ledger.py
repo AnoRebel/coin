@@ -19,6 +19,7 @@ BAD_SIGNATURE = "BAD_SIGNATURE"
 WRONG_NETWORK = "WRONG_NETWORK"
 EXPIRED = "EXPIRED"
 BAD_NONCE = "BAD_NONCE"
+MEMPOOL_CONFLICT = "MEMPOOL_CONFLICT"
 FEE_TOO_LOW = "FEE_TOO_LOW"
 NO_FEE_ROUTE = "NO_FEE_ROUTE"
 INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS"
@@ -28,6 +29,14 @@ UNAUTHORIZED = "UNAUTHORIZED"
 SUPPLY_LIMIT = "SUPPLY_LIMIT"
 ESCROW_NOT_FOUND = "ESCROW_NOT_FOUND"
 ESCROW_CLOSED = "ESCROW_CLOSED"
+INTENT_NOT_FOUND = "INTENT_NOT_FOUND"
+INTENT_PAID = "INTENT_PAID"
+INTENT_EXPIRED = "INTENT_EXPIRED"
+INTENT_EXISTS = "INTENT_EXISTS"
+INTENT_MISMATCH = "INTENT_MISMATCH"
+REFUND_NOT_FOUND = "REFUND_NOT_FOUND"
+REFUND_MISMATCH = "REFUND_MISMATCH"
+REFUND_EXCEEDED = "REFUND_EXCEEDED"
 ALLOWANCE_EXCEEDED = "ALLOWANCE_EXCEEDED"
 LIMIT_EXCEEDED = "LIMIT_EXCEEDED"
 CONSERVATION = "CONSERVATION_VIOLATION"
@@ -95,6 +104,9 @@ K_ASSET = "asset/%s"
 K_SUPPLY = "supply/%s"
 K_BURNED = "burned/%s"
 K_ESCROW = "escrow/%s"
+K_INTENT = "intent/%s"
+K_TRANSFER = "transfer/%s"
+K_REFUNDED = "refunded/%s"
 K_ESCROW_AMT = "escrow_held/%s"
 K_ALLOWANCE = "allowance/%s/%s/%s"
 K_ALLOW_EXP = "allowance_expiry/%s/%s/%s"
@@ -312,6 +324,23 @@ class State:
     def _put_escrow(self, escrow: types.Escrow) -> None:
         self._set(K_ESCROW % escrow.id, cbor.encode(escrow.to_cbor()))
 
+    def intent(self, intent_id: str) -> types.Intent | None:
+        raw = self._get(K_INTENT % intent_id)
+        return types.Intent.from_cbor(cbor.decode(raw)) if raw is not None else None
+
+    def _put_intent(self, intent: types.Intent) -> None:
+        self._set(K_INTENT % intent.id, cbor.encode(intent.to_cbor()))
+
+    def transfer(self, tx_hash: str) -> types.Transfer | None:
+        raw = self._get(K_TRANSFER % tx_hash)
+        return types.Transfer.from_cbor(cbor.decode_map(raw)) if raw is not None else None
+
+    def _put_transfer(self, tx_hash: str, transfer: types.Transfer) -> None:
+        self._set(K_TRANSFER % tx_hash, cbor.encode(transfer.to_cbor()))
+
+    def refunded(self, tx_hash: str) -> int:
+        return self._get_uint(K_REFUNDED % tx_hash)
+
     def allowance(self, owner: str, spender: str, asset: str) -> int:
         return self._get_uint(K_ALLOWANCE % (owner, spender, asset))
 
@@ -484,7 +513,8 @@ class State:
 
     def _execute(self, tx: Tx, now: int, receipt: Receipt) -> None:
         handler = {
-            types.TX_TRANSFER: self._exec_transfer,
+            types.TX_TRANSFER: lambda t, r: self._exec_transfer(t, now, r),
+            types.TX_CREATE_INTENT: lambda t, r: self._exec_create_intent(t, now, r),
             types.TX_BATCH: self._exec_batch,
             types.TX_REGISTER_ASSET: lambda t, r: self._exec_register_asset(t, now, r),
             types.TX_CREATE_ESCROW: lambda t, r: self._exec_create_escrow(t, now, r),
@@ -515,10 +545,22 @@ class State:
         self._add_balance(to, asset, amount)
         self._event(receipt, "transfer", **{"from": sender, "to": to, "asset": asset, "amount": amount})
 
-    def _exec_transfer(self, tx: Tx, receipt: Receipt) -> None:
+    def _exec_transfer(self, tx: Tx, now: int, receipt: Receipt) -> None:
         asset = _payload_str(tx.payload, "asset")
         to = _payload_str(tx.payload, "to")
         amount = _payload_uint(tx.payload, "amount")
+        refund_of = ""
+        if "refund_of" in tx.payload:
+            refund_of = _payload_str(tx.payload, "refund_of")
+            if not types.valid_tx_hash(refund_of):
+                raise _err(INVALID_PAYLOAD,
+                           "refund_of must be a 64-character lowercase hex transaction hash")
+        intent = None
+        if "intent" in tx.payload:
+            if refund_of:
+                raise _err(INVALID_PAYLOAD, "use intent or refund_of, not both")
+            intent_id = _payload_str(tx.payload, "intent")
+            intent = self._check_intent(intent_id, to, asset, amount, now)
         if "memo" in tx.payload:
             text = tx.payload["memo"]
             if not isinstance(text, str) or len(text.encode()) > self.params.max_memo_bytes:
@@ -537,7 +579,81 @@ class State:
             raise _err(INVALID_PAYLOAD, "amount must be positive")
         self._require_asset(asset)
         self._require_address(to)
+        remaining = 0
+        if refund_of:
+            remaining = self._check_refund(tx, refund_of, to, asset, amount)
         self._move(tx.signer, to, asset, amount, receipt)
+        self._put_transfer(receipt.hash, types.Transfer(
+            sender=tx.signer, to=to, asset=asset, amount=amount, refund_of=refund_of,
+        ))
+        if refund_of:
+            self._set_uint(K_REFUNDED % refund_of, self.refunded(refund_of) + amount)
+            self._event(receipt, "refund", refund_of=refund_of, **{
+                "from": tx.signer, "to": to, "asset": asset, "amount": amount, "remaining": remaining,
+            })
+        if intent is not None:
+            intent.status = types.INTENT_PAID
+            intent.payer, intent.tx_hash, intent.paid_at = tx.signer, receipt.hash, now
+            self._put_intent(intent)
+            self._event(receipt, "intent_paid", id=intent.id, reference=intent.reference, payer=tx.signer)
+
+    def _exec_create_intent(self, tx: Tx, now: int, receipt: Receipt) -> None:
+        reference = _payload_str(tx.payload, "reference")
+        if not types.valid_intent_reference(reference):
+            raise _err(INVALID_PAYLOAD, "reference must be 1-64 letters, digits, _ or -")
+        asset = _payload_str(tx.payload, "asset")
+        amount = _payload_uint(tx.payload, "amount")
+        if amount == 0:
+            raise _err(INVALID_PAYLOAD, "amount must be positive")
+        self._require_asset(asset)
+        expires_at = 0
+        if "expires_at" in tx.payload:
+            expires_at = _payload_uint(tx.payload, "expires_at")
+            if expires_at <= now:
+                raise _err(INVALID_PAYLOAD, "expires_at must be in the future")
+        memo = tx.payload.get("memo", "")
+        if (not isinstance(memo, str) or len(memo.encode()) > self.params.max_memo_bytes
+                or any(c in memo for c in "\x00\r\n")):
+            raise _err(INVALID_PAYLOAD, "intent memo must fit a payment URI (max 256 bytes; no NUL, CR, or LF)")
+        intent_id = types.intent_id(self.network, tx.signer, reference)
+        if self.intent(intent_id) is not None:
+            raise _err(INTENT_EXISTS, f"intent {intent_id} already exists")
+        self._put_intent(types.Intent(
+            id=intent_id, payee=tx.signer, reference=reference, asset=asset, amount=amount,
+            expires_at=expires_at, memo=memo, status=types.INTENT_OPEN, created_at=now,
+        ))
+        self._event(receipt, "intent_created", id=intent_id, reference=reference,
+                    payee=tx.signer, asset=asset, amount=amount)
+
+    def _check_intent(self, intent_id: str, payee: str, asset: str, amount: int, now: int) -> types.Intent:
+        intent = self.intent(intent_id)
+        if intent is None:
+            raise _err(INTENT_NOT_FOUND, f"intent {intent_id}")
+        if intent.status == types.INTENT_PAID:
+            raise _err(INTENT_PAID, f"intent {intent_id} already paid")
+        if intent.expires_at and now > intent.expires_at:
+            raise _err(INTENT_EXPIRED, f"intent {intent_id} expired at {intent.expires_at}")
+        if (intent.payee, intent.asset, intent.amount) != (payee, asset, amount):
+            raise _err(INTENT_MISMATCH, f"payment does not match intent {intent_id}")
+        return intent
+
+    def _check_refund(self, tx: Tx, refund_of: str, to: str, asset: str, amount: int) -> int:
+        original = self.transfer(refund_of)
+        if original is None:
+            raise _err(REFUND_NOT_FOUND, f"original transfer {refund_of}")
+        if original.refund_of:
+            raise _err(REFUND_MISMATCH, "cannot refund a refund")
+        if tx.signer != original.to:
+            raise _err(UNAUTHORIZED, "only the original payee may refund")
+        if (to, asset) != (original.sender, original.asset):
+            raise _err(REFUND_MISMATCH, f"refund must return {original.asset} to {original.sender}")
+        refunded = self.refunded(refund_of)
+        if refunded > original.amount:
+            raise _err(REFUND_EXCEEDED, f"refund total exceeds original {original.amount}")
+        remaining = original.amount - refunded
+        if amount > remaining:
+            raise _err(REFUND_EXCEEDED, f"refund {amount} exceeds remaining {remaining}")
+        return remaining - amount
 
     def _exec_batch(self, tx: Tx, receipt: Receipt) -> None:
         items = tx.payload.get("items")
@@ -690,6 +806,7 @@ class State:
         if expires != 0 and now > expires:
             raise _err(ALLOWANCE_EXCEEDED, "allowance expired")
         self._move(owner, to, asset, amount, receipt)
+        self._put_transfer(receipt.hash, types.Transfer(sender=owner, to=to, asset=asset, amount=amount))
         self._set_uint(K_ALLOWANCE % (owner, tx.signer, asset), remaining - amount)
 
     def _exec_mint(self, tx: Tx, receipt: Receipt) -> None:

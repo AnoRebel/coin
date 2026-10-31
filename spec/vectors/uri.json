@@ -2,6 +2,19 @@
   "now": 1700000000,
   "valid": [
     {
+      "name": "intent",
+      "uri": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=12.5&intent=0123456789abcdef0123456789abcdef",
+      "network": "arne:devnet",
+      "to": "arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t",
+      "asset": "arce:devnet",
+      "amount": "12.5",
+      "memo": "",
+      "expires": 0,
+      "intent": "0123456789abcdef0123456789abcdef",
+      "warnings": [],
+      "canonical": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?amount=12.5&asset=arce%3Adevnet&intent=0123456789abcdef0123456789abcdef&network=arne%3Adevnet"
+    },
+    {
       "name": "full",
       "uri": "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=12.5&memo=invoice+42&expires=1700003600",
       "network": "arne:devnet",
@@ -53,6 +66,14 @@
     }
   ],
   "invalid": [
+    {
+      "name": "empty-intent",
+      "uri": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&intent="
+    },
+    {
+      "name": "uppercase-intent",
+      "uri": "arne:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1&intent=0123456789ABCDEF0123456789abcdef"
+    },
     {
       "name": "uppercase-scheme",
       "uri": "ARCE:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=1"

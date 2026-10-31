@@ -3,6 +3,7 @@ package paymenturi
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -16,6 +17,7 @@ type vector struct {
 		Asset     string   `json:"asset"`
 		Amount    string   `json:"amount"`
 		Memo      string   `json:"memo"`
+		Intent    string   `json:"intent"`
 		Expires   uint64   `json:"expires"`
 		Warnings  []string `json:"warnings"`
 		Canonical string   `json:"canonical"`
@@ -47,7 +49,7 @@ func TestVectors(t *testing.T) {
 			t.Fatalf("%s: %v", c.Name, err)
 		}
 		if p.Network != c.Network || p.To != c.To || p.Asset != c.Asset ||
-			p.Amount != c.Amount || p.Memo != c.Memo || p.Expires != c.Expires {
+			p.Amount != c.Amount || p.Memo != c.Memo || p.Expires != c.Expires || p.Intent != c.Intent {
 			t.Fatalf("%s: %+v", c.Name, p)
 		}
 		if len(p.Warnings) != len(c.Warnings) {
@@ -93,3 +95,25 @@ func TestConflicts(t *testing.T) {
 }
 
 const fixedURI = "arce:arce-devnet1qxqew42ve7ed8503377ypzfnchqqtphmkux5ye4t?network=arne%3Adevnet&asset=arce%3Adevnet&amount=12.5"
+
+func TestIntentURI(t *testing.T) {
+	id := "0123456789abcdef0123456789abcdef"
+	p, err := Parse(fixedURI + "&intent=" + id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p.String(), "&intent="+id) || !strings.Contains(p.Summary(), id) {
+		t.Fatal("intent lost from canonical URI or summary")
+	}
+	if err := p.CheckIntent(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CheckIntent("ffffffffffffffffffffffffffffffff"); err == nil {
+		t.Fatal("intent conflict accepted")
+	}
+	for _, bad := range []string{"", "ABCDEF0123456789abcdef0123456789ab", "short", id + "&intent=" + id} {
+		if _, err := Parse(fixedURI + "&intent=" + bad); err == nil {
+			t.Fatalf("accepted intent %q", bad)
+		}
+	}
+}
