@@ -91,3 +91,19 @@ def test_validation() -> None:
     assert not registry.verify("missing", b"m", b"s")
     with pytest.raises(bls.InvalidKey):
         registry.verify_aggregate([], b"m", b"s")
+
+
+def test_errors_do_not_leak_secrets() -> None:
+    secret = bytes([0xAB]) * 32
+    cases = [
+        lambda: bls.sign(secret, b""),
+        lambda: bls.public_key_of(bytes(32)),
+        lambda: bls.public_key_of(b"short"),
+        lambda: bls.sign(b"short", b"m"),
+    ]
+    for case in cases:
+        with pytest.raises(bls.BLSError) as excinfo:
+            case()
+        message = str(excinfo.value)
+        assert secret.hex() not in message
+        assert secret.decode("latin-1") not in message

@@ -3,6 +3,7 @@ package memo
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/anorebel/anorebelcoin/internal/protocol"
@@ -79,5 +80,27 @@ func TestSealLimits(t *testing.T) {
 	}
 	if err := Validate(short); err == nil {
 		t.Fatal("short ciphertext accepted")
+	}
+}
+
+func TestErrorsDoNotLeakKeyOrPlaintext(t *testing.T) {
+	recipient, err := PublicKey(bytes.Repeat([]byte{0x11}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := RandomSeal(recipient, []byte("top-secret-memo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := bytes.Repeat([]byte{0x22}, 32)
+	_, err = Open(seed, sealed)
+	if !errors.Is(err, ErrOpen) {
+		t.Fatalf("open = %v", err)
+	}
+	if strings.Contains(err.Error(), string(seed)) || strings.Contains(err.Error(), "top-secret") {
+		t.Fatalf("error leaked key or plaintext: %v", err)
+	}
+	if err := Validate([]byte("malformed-memo")); err == nil || strings.Contains(err.Error(), "malformed-memo") {
+		t.Fatalf("validate = %v", err)
 	}
 }

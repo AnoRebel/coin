@@ -35,6 +35,7 @@ make test
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
 | `internal/crypto/bls` | BLS12-381 signatures with proof-of-possession registry |
 | `internal/crypto/suites` | Signature-suite lifecycle: active, deprecated, disabled |
+| `internal/crypto/redact` | Secret wrapper that redacts formatting, logs, and JSON |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -446,6 +447,33 @@ _ = reg.VerifyAggregate([]string{"validator-1", "validator-2"}, blockHash, aggre
 `shortcut:` this is the signature layer only; the node still uses CometBFT's
 validator keys. Wire it into the validator lifecycle before claiming BLS
 consensus.
+
+## Secret redaction
+
+`internal/crypto/redact` (mirrored by `python/arne/redact.py`) wraps key material
+so it cannot leak through formatting or logs:
+
+```go
+key := redact.New(secretBytes)
+fmt.Println(key)                 // [REDACTED]
+slog.Info("sign", "key", key)    // "key":"[REDACTED]"
+json.Marshal(key)                // error: redact: refusing to serialize secret material
+_ = key.EqualBytes(candidate)    // crypto/subtle constant-time compare
+key.Zero()                       // overwrite in place
+```
+
+- `String`, `GoString`, `LogValue`, and the Python `__repr__`/`__str__`/
+  `__format__` all return `[REDACTED]`; `Bytes()` returns a copy.
+- JSON encoding fails instead of writing a placeholder, so a secret cannot be
+  persisted by accident.
+- `Equal` and `EqualBytes` use constant-time comparison; length differences
+  return false.
+- Tests in `internal/crypto/redact`, `internal/crypto/bls`, `internal/memo`, and
+  the Python equivalents assert that errors and logs do not contain seeds,
+  secrets, or memo plaintext.
+
+`shortcut:` the wrapper is opt-in; not every key path uses it yet. Prefer it for
+any new code that logs or serializes key material.
 
 ## Signature suites
 

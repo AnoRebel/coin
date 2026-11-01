@@ -54,3 +54,17 @@ def test_memo_vector() -> None:
         nonce=bytes.fromhex(data["nonce"]),
     ) == sealed
 
+
+
+def test_errors_do_not_leak_key_or_plaintext() -> None:
+    recipient = memo.public_key(bytes([0x11]) * 32)
+    sealed = memo.seal(recipient, b"top-secret-memo")
+    seed = bytes([0x22]) * 32
+    with pytest.raises(memo.MemoError) as excinfo:
+        memo.open_memo(seed, sealed)
+    message = str(excinfo.value)
+    assert seed.hex() not in message
+    assert "top-secret" not in message
+    with pytest.raises(memo.MemoError) as excinfo:
+        memo.validate(b"malformed-memo")
+    assert "malformed-memo" not in str(excinfo.value)

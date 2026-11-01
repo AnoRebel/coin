@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -203,5 +204,27 @@ func TestValidation(t *testing.T) {
 	}
 	if err := registry.VerifyAggregate(nil, []byte("m"), []byte("s")); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("empty validators: %v", err)
+	}
+}
+
+func TestErrorsDoNotLeakSecrets(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = 0xab
+	}
+	encoded := hex.EncodeToString(secret)
+	cases := []error{
+		func() error { _, err := Sign(secret, nil); return err }(),
+		func() error { _, err := PublicKeyOf(make([]byte, 32)); return err }(),
+		func() error { _, err := PublicKeyOf([]byte("short")); return err }(),
+		func() error { _, err := Sign([]byte("short"), []byte("m")); return err }(),
+	}
+	for i, err := range cases {
+		if err == nil {
+			t.Fatalf("case %d: expected an error", i)
+		}
+		if strings.Contains(err.Error(), encoded) || strings.Contains(err.Error(), string(secret)) {
+			t.Fatalf("case %d leaked the secret: %v", i, err)
+		}
 	}
 }
