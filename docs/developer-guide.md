@@ -34,6 +34,7 @@ make test
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
 | `internal/crypto/bls` | BLS12-381 signatures with proof-of-possession registry |
+| `internal/crypto/suites` | Signature-suite lifecycle: active, deprecated, disabled |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -445,6 +446,34 @@ _ = reg.VerifyAggregate([]string{"validator-1", "validator-2"}, blockHash, aggre
 `shortcut:` this is the signature layer only; the node still uses CometBFT's
 validator keys. Wire it into the validator lifecycle before claiming BLS
 consensus.
+
+## Signature suites
+
+`internal/crypto/suites` (mirrored by `python/arne/suites.py`) gates account
+registration and verification by suite lifecycle:
+
+```go
+r, _ := suites.New([]suites.Suite{
+    {ID: "ed25519", Algorithm: "ed25519", Status: suites.Active, Verify: ed25519Verify},
+    {ID: "ed25519-v1", Algorithm: "ed25519", Status: suites.Deprecated, Verify: ed25519Verify},
+    {ID: "rsa-legacy", Algorithm: "rsa", Status: suites.Disabled},
+})
+_ = r.CanRegister("ed25519")      // ok
+_ = r.Verify("ed25519-v1", …)     // ok: history still verifies
+_ = r.CanRegister("ed25519-v1")   // ErrDeprecated
+_ = r.Verify("rsa-legacy", …)     // ErrDisabled
+```
+
+- An `active` suite can register and verify. A `deprecated` suite verifies
+  existing signatures but refuses new accounts. A `disabled` suite never
+  verifies, even for history.
+- Unknown IDs fail with `ErrUnknown`; a missing verifier on a non-disabled suite
+  is rejected at construction.
+- `spec/vectors/suites.json` pins the register/verify matrix and both suites
+  consume it.
+
+`shortcut:` the ledger still accepts only Ed25519 envelopes; the registry is the
+policy layer that a future multi-suite envelope will call.
 
 ## Transaction monitoring
 

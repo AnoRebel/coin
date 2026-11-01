@@ -1,0 +1,13 @@
+{
+  "suites": [
+    {"id": "ed25519", "algorithm": "ed25519", "status": "active"},
+    {"id": "ed25519-v1", "algorithm": "ed25519", "status": "deprecated"},
+    {"id": "rsa-legacy", "algorithm": "rsa", "status": "disabled"}
+  ],
+  "cases": [
+    {"suite": "ed25519", "register": true, "verify": true},
+    {"suite": "ed25519-v1", "register": false, "verify": true},
+    {"suite": "rsa-legacy", "register": false, "verify": false},
+    {"suite": "unknown", "register": false, "verify": false}
+  ]
+}
