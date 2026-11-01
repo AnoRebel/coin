@@ -31,6 +31,7 @@ make test
 | `internal/compliance/access` | Scoped, time-bounded auditor grants and access log |
 | `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
+| `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -369,6 +370,46 @@ res := m.Apply(now + 366*86400) // Deleted / Anonymized / Retained / Held / Tomb
 `shortcut:` retention is a library only and in memory; it is not wired to
 workspace audit logs, grant logs, webhooks, or idempotency caches. Persist
 records and the event log in your own store before relying on expiry.
+
+## Grant-scoped disclosure
+
+`internal/compliance/disclosure` (mirrored by `python/arne/disclosure.py`) is the
+only supported way to open sealed memos on someone else's behalf. There is no
+operator or manager key, and no method that turns a transfer hash into plaintext
+without a grant:
+
+```go
+m := disclosure.NewManager()
+_ = m.AddMemo("tx-hash", sealedMemo) // ciphertext only; never decrypted here
+
+g, _ := m.Grant(disclosure.Grant{
+    Kind: disclosure.User, Subject: "alice", Scope: []string{"tx-hash"},
+    From: 1790000000, Until: 1798000000, Purpose: "invoice review",
+    GrantedBy: "alice", GrantedAt: 1790000000,
+})
+plain, err := m.Open("alice", g.ID, "tx-hash", aliceSeed, 1790000100)
+```
+
+- `Open` checks, in order: the grant exists, the actor is its subject, the time
+  is inside `[From, Until)`, the transfer is in scope, the memo exists, and the
+  seed decrypts it. Any failure returns an error and a `denied` event; a grant
+  never substitutes for the recipient's key.
+- A grant is not a master key: it reaches only the transfers it names. There is
+  no bulk or wildcard open, and no API that lists plaintext.
+- `Kind: User` is a disclosure grant from the data owner: no approvers, no legal
+  process. `Kind: Exceptional` requires at least two distinct approvers and a
+  legal-process reference, and its grant event records scope, approvers, purpose,
+  and who granted it. Every open event repeats that context.
+- Grant IDs derive from `SHA-256("arne-disclosure-grant-v1" || 0 || kind || 0 ||
+  subject || 0 || purpose || 0 || from || 0 || until || 0 || sorted scope || 0 ||
+  sorted approvers)` (first 16 bytes). Both suites share
+  `spec/vectors/disclosure.json`.
+- The manager stores sealed memos only; it never stores seeds. Keep seeds in the
+  wallet or HSM and pass one per open.
+
+`shortcut:` this is the policy layer for disclosure, not the shielded pool: no
+shielded transfer type exists yet, so today it wraps sealed memos only. Wire it
+in when shielded transfers land, and keep the rule that no key opens them all.
 
 ## Auditor access grants
 

@@ -378,6 +378,16 @@ Two operator decisions matter:
 Enable only the profiles your deployment actually follows. Selecting a profile
 does not change consensus or the public ledger.
 
+Grant-scoped disclosure is the supported path for opening a sealed memo on
+someone else's behalf. A user grant names the transfers a viewer may open; an
+exceptional grant needs two approvers and a legal-process reference. Every grant,
+open, and denied open is logged with its scope and purpose. There is no operator
+key: without a grant the attempt fails, and a grant never reaches transfers
+outside its scope.
+
+`shortcut:` this policy layer currently wraps sealed memos; it is not yet
+attached to a shielded transfer type.
+
 Retention is available as a library that applies a per-class policy to off-chain
 personal data. Expired records are deleted or anonymized. A deletion leaves a
 tombstone holding the ledger reference and a content hash, so on-chain proofs

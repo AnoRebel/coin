@@ -123,7 +123,7 @@
 - [x] 11.6 Implement data retention, legal hold, deletion/anonymization, and ledger-integrity preservation; verify retention and hold
 - [x] 11.7 Implement FATF, MiCA, and ISO 20022 reference profiles; verify required-field validation and disclaimers
 - [ ] 11.8 Implement transaction-monitoring alerts and case dispositions without unauthorized auto-freeze; verify alert, disposition, and freeze policy
-- [ ] 11.9 Add tests proving no universal decryption path exists; verify ungranted access fails and exceptional access is logged
+- [x] 11.9 Add tests proving no universal decryption path exists; verify ungranted access fails and exceptional access is logged
 
 ## 12. Interoperability connectors
 

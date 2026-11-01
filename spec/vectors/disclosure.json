@@ -1,0 +1,32 @@
+{
+  "grant_id_cases": [
+    {
+      "kind": "user",
+      "subject": "alice",
+      "scope": [
+        "tx-b",
+        "tx-a"
+      ],
+      "from": 100,
+      "until": 200,
+      "purpose": "invoice review",
+      "approvers": [],
+      "id": "1c07a8665d75a2a735cac607746bb0f5"
+    },
+    {
+      "kind": "exceptional",
+      "subject": "analyst",
+      "scope": [
+        "tx-a"
+      ],
+      "from": 100,
+      "until": 500,
+      "purpose": "court order",
+      "approvers": [
+        "gc-2",
+        "gc-1"
+      ],
+      "id": "e36ecdb967b84702ea33d012ebf5a138"
+    }
+  ]
+}
