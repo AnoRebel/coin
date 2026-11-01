@@ -33,6 +33,7 @@ make test
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
+| `internal/crypto/bls` | BLS12-381 signatures with proof-of-possession registry |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -411,6 +412,39 @@ plain, err := m.Open("alice", g.ID, "tx-hash", aliceSeed, 1790000100)
 `shortcut:` this is the policy layer for disclosure, not the shielded pool: no
 shielded transfer type exists yet, so today it wraps sealed memos only. Wire it
 in when shielded transfers land, and keep the rule that no key opens them all.
+
+## Validator BLS keys
+
+`internal/crypto/bls` (mirrored by `python/arne/bls.py`) implements BLS12-381
+signatures with the proof-of-possession ciphersuite and a registry that refuses
+keys which have not proved possession:
+
+```go
+secret, _ := bls.SecretFromSeed(walletSeed)
+pub, _ := bls.PublicKeyOf(secret)
+pop, _ := bls.SignPoP(secret, "arce:devnet", "validator-1")
+
+reg, _ := bls.NewRegistry("arce:devnet")
+_ = reg.Register("validator-1", pub, pop)
+_ = reg.VerifyAggregate([]string{"validator-1", "validator-2"}, blockHash, aggregateSig)
+```
+
+- `SecretFromSeed` hashes the seed under `arne-bls-key-v1` and rehashes until the
+  digest is a valid scalar; both languages produce the same key.
+- A PoP signs `SHA-256("arne-bls-pop-v1" || 0 || network || 0 || validator || 0 ||
+  public_key)`, binding the key to one network and validator ID.
+- `Register` rejects a missing or invalid PoP (`ErrRogueKey`), a duplicate ID, and
+  an empty network. `VerifyAggregate` fails with `ErrNoPoP` if any ID is not
+  registered, so a rogue key cannot be slipped into an aggregate. The raw
+  `VerifyAggregate(pubs, …)` helper is curve math only; do not feed it keys from
+  untrusted parties.
+- `spec/vectors/bls.json` contains the rogue-key construction: the forged
+  aggregate passes raw math and is rejected by the registry. Both suites consume
+  it.
+
+`shortcut:` this is the signature layer only; the node still uses CometBFT's
+validator keys. Wire it into the validator lifecycle before claiming BLS
+consensus.
 
 ## Transaction monitoring
 

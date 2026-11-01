@@ -1,0 +1,40 @@
+{
+  "network": "arce:devnet",
+  "message": "block-1",
+  "validators": [
+    {
+      "id": "v1",
+      "seed": "validator-one",
+      "secret": "03732e3825ee3930126f60b0ddf90456d7c37fee15fa34142f33ff7382a4a551",
+      "public_key": "b29f203ff8c7c28a96bb4a235f8da6bf3ea0798d8d53f927c6d360050e02655720934e49fa78b0b0874f4725c7cac680",
+      "pop": "839f202065bea8308aa462e22698183f0727bdf567ab6e6d0b61ee64758e723669acadfa7cb3796357cb550759c0069809ef890171819ff669413c42441044787d20a316e8b6b7ade6c5f307d372b3e64b974d9b362e4f437a8e683c1d3d06eb"
+    },
+    {
+      "id": "v2",
+      "seed": "validator-two",
+      "secret": "0f3137736240e06bbbede22bc84023d73330235f7489d8c6e05c1856fcbf76a1",
+      "public_key": "b167b05c6c5d5caaf86857fdafe2e0ebecc3db2f45eea76a3fabbd6c1621668c5fbd0393facd9cb68fdec9d84eb328b0",
+      "pop": "b5264c5670eaf45fa771ee114c42c72abfbf94e16a035fdd3eabc2ff8bf05422c7384267be66859b984a32a773ed64a60faf2a83309da087983a0bf11b3ba9d62638811e5e59e1bb2d4b4acb40d2bb519d1a3ba12f9ecd97defe57b57f906dd4"
+    },
+    {
+      "id": "v3",
+      "seed": "validator-three",
+      "secret": "3cae6780cd10884619a54aed5e73e217ac59866876ed4a1b4db7e960a26354db",
+      "public_key": "91151ce602a5127fecfdf6202e373122c048b066ea027f11630357f978f42254131442fa4f88fd5019527232d79f9885",
+      "pop": "b0737c81b3e6e2edba5e4bdb951529d82e422ba8fe7d5394feaf970684b11f590b23efe0be07c0ba05ca7978166f91c41962dda3c68a4fbd18e74e328d905f6b7964906869b3bd4c683af1c6e40c9c882ecec5bb009618673f5ea2ac37e7490e"
+    }
+  ],
+  "aggregate": {
+    "validators": [
+      "v1",
+      "v2"
+    ],
+    "signature": "82e502a12f72c98a73dc6d60695bb4e24425336ac8a8fe14d37875f6aac614e2fc4ab3f3749103b5052051da9b227f86080d79c6580781bb5f3f27b43341726b29e5ce60139a3491456d07c47177243e400374094b65abc584bd8bca3f697013"
+  },
+  "rogue": {
+    "victim": "v1",
+    "public_key": "951cffe294a3acf73fe5bcc6c2ee624227b79a042bedfe9d12d9ecd0fccc03007bcd81a109323f70cb5e01e27bcd7ff9",
+    "forged_signature": "8652a370a2d201af9c5ec6a0550844e5d2704c816bc1904a7a562547fd5ce3c61afa0b703f38b1b4dab571e5f684736901c66b584db6b3b56cf84b6fe35c0dd9d6f41363329ac9cdb1de9ec9f9d38a3b79f0bfb61b452badad46640c1a4e0dfb",
+    "forged_aggregate_valid": true
+  }
+}
