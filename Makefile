@@ -3,7 +3,7 @@ UV ?= uv
 BIN := bin/arned
 PKG := ./...
 
-.PHONY: all build dev devnet test test-go test-py conformance lint fmt generate clean
+.PHONY: all build dev devnet test test-go test-py test-crypto crypto conformance lint fmt generate clean
 
 all: lint test
 
@@ -26,6 +26,17 @@ test-go:
 test-py:
 	$(UV) run pytest tests -q
 
+# Shared Rust core, C ABI, and the Go/Python bindings.
+crypto:
+	cd crypto/core && cargo build --release
+
+test-crypto: crypto
+	cd crypto/core && cargo test --release
+	cd crypto/core && cc c_smoke.c target/release/libarne_crypto.a -lpthread -ldl -lm -o target/c_smoke
+	cd crypto/core && ./target/c_smoke
+	$(GO) test -tags cryptocore ./internal/crypto/core/
+	$(UV) run pytest tests/test_core.py -q
+
 # Cross-language conformance only.
 conformance:
 	$(GO) test ./tests -run TestVectors -v
@@ -44,5 +55,5 @@ generate:
 	$(GO) run ./cmd/genvectors
 
 clean:
-	rm -rf bin tmp .arne-devnet .pytest_cache
+	rm -rf bin tmp .arne-devnet .pytest_cache crypto/core/target
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

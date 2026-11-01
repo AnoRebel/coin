@@ -1,0 +1,20 @@
+[package]
+name = "arne-crypto"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "arne_crypto"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+blake3 = "1"
+blst = "0.3.17"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+ml-dsa = "0.1.2"
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json = "1"

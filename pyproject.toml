@@ -7,6 +7,7 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "cbor2>=6.1.5",
+    "cffi>=2.0.0",
     "cryptography>=50.0.2",
     "dilithium-py>=1.0.0",
     "fastapi>=0.162.0",

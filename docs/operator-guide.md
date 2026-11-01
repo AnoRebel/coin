@@ -19,6 +19,10 @@ uv sync --no-dev
 uv run arne --version
 ```
 
+The shared Rust crypto core is optional for normal operation. Build and test it
+with `make test-crypto`; it needs a Rust toolchain and a C compiler. Without the
+`cryptocore` Go build tag the node uses the pure-Go crypto packages.
+
 ## Run
 
 Go:

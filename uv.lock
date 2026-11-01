@@ -43,6 +43,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cbor2" },
+    { name = "cffi" },
     { name = "cryptography" },
     { name = "dilithium-py" },
     { name = "fastapi" },
@@ -62,6 +63,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cbor2", specifier = ">=6.1.5" },
+    { name = "cffi", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "dilithium-py", specifier = ">=1.0.0" },
     { name = "fastapi", specifier = ">=0.162.0" },

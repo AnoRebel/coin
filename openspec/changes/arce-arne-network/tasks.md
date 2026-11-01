@@ -22,8 +22,8 @@
 
 ## 3. Cryptography core
 
-- [ ] 3.1 Implement the shared Rust crypto core with Ed25519, BLS12-381, ML-DSA, and SHA-256/BLAKE3 bindings and a C ABI; verify `cargo test` and a C smoke test pass
-- [ ] 3.2 Add Go cgo bindings and Python cffi bindings to the crypto core; verify identical outputs for every primitive vector
+- [x] 3.1 Implement the shared Rust crypto core with Ed25519, BLS12-381, ML-DSA, and SHA-256/BLAKE3 bindings and a C ABI; verify `cargo test` and a C smoke test pass
+- [x] 3.2 Add Go cgo bindings and Python cffi bindings to the crypto core; verify identical outputs for every primitive vector
 - [x] 3.3 Implement canonical CBOR signing, domain separation, network/chain binding, and replay rejection; verify cross-network and cross-purpose vectors fail
 - [x] 3.4 Implement BIP-39 and SLIP-0010 Ed25519 derivation with the ARNE path; verify the same mnemonic yields identical keys and addresses in Go and Python
 - [x] 3.5 Implement BLS proof-of-possession registration and aggregate verification; verify rogue-key and missing-PoP vectors are rejected

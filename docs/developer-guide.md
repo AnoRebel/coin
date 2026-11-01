@@ -37,6 +37,8 @@ make test
 | `internal/crypto/suites` | Signature-suite lifecycle: active, deprecated, disabled |
 | `internal/crypto/redact` | Secret wrapper that redacts formatting, logs, and JSON |
 | `internal/crypto/hybrid` | Hybrid Ed25519 + ML-DSA-65 registration and signatures |
+| `internal/crypto/core` | cgo bindings to the shared Rust crypto core |
+| `crypto/core` | Rust crypto core and its C ABI |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -530,6 +532,37 @@ err = hybrid.Verify(key, message, sig)
 `shortcut:` this is a library only; accounts and transaction envelopes still
 carry Ed25519. Do not describe an account as hybrid until the envelope and
 account registration call these functions.
+
+## Shared Rust crypto core
+
+`crypto/core` is the single implementation of SHA-256, BLAKE3, Ed25519,
+BLS12-381, and ML-DSA-65 behind a C ABI (`crypto/core/arne_crypto.h`). Go reaches
+it through `internal/crypto/core`; Python through `python/arne/core.py` (cffi).
+
+```sh
+make test-crypto   # cargo test, C smoke test, Go bindings, Python bindings
+```
+
+```go
+sum, _ := core.SHA256([]byte("abc"))
+seed := make([]byte, core.Ed25519SeedLen)
+sig, _ := core.Ed25519Sign(seed, message)
+ok, _ := core.Ed25519Verify(publicKey, message, sig)
+```
+
+- The Go bindings live behind the `cryptocore` build tag, so `go build ./...`
+  works on a machine without Rust. `make crypto` builds the static library first.
+- `spec/vectors/core.json` holds known SHA-256/BLAKE3/Ed25519 vectors; the BLS and
+  ML-DSA vectors are the existing `bls.json` and `hybrid.json`. Rust, Go, and
+  Python all assert the same bytes, including the deterministic ML-DSA signature.
+- The C smoke test compiles `c_smoke.c` against the static library and exercises
+  every primitive, so a broken ABI fails before the language bindings do.
+- Python raises `CoreUnavailable` when the library is absent; its tests skip
+  instead of silently passing.
+
+`shortcut:` the node still uses the pure-Go and pure-Python crypto packages for
+transactions. The core is ready to replace them but is not wired into the ledger
+or consensus paths.
 
 ## Transaction monitoring
 
