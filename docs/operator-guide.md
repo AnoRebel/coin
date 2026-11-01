@@ -378,6 +378,17 @@ Two operator decisions matter:
 Enable only the profiles your deployment actually follows. Selecting a profile
 does not change consensus or the public ledger.
 
+Retention is available as a library that applies a per-class policy to off-chain
+personal data. Expired records are deleted or anonymized. A deletion leaves a
+tombstone holding the ledger reference and a content hash, so on-chain proofs
+stay verifiable; keep those tombstones. A legal hold suspends deletion and
+anonymization until it is released and the policy is applied again. On-chain
+records are never touched.
+
+`shortcut:` retention is not wired into this node's logs or caches yet. Do not
+claim automated data expiry until your own storage calls it and the event log is
+persisted.
+
 Sanctions screening is available as a provider-agnostic library with a local,
 versioned list provider. Its contract is fail-closed: a provider outage denies
 settlement, and a potential match is a hold for human review, never an automatic

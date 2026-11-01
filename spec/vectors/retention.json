@@ -1,0 +1,139 @@
+{
+  "policies": [
+    {
+      "class": "kyc",
+      "days": 365,
+      "action": "delete"
+    },
+    {
+      "class": "support",
+      "days": 30,
+      "action": "anonymize",
+      "anonymize_fields": [
+        "email",
+        "name"
+      ]
+    },
+    {
+      "class": "logs",
+      "days": 1,
+      "action": "delete"
+    }
+  ],
+  "records": [
+    {
+      "id": "r-old-kyc",
+      "class": "kyc",
+      "created_at": 1000000,
+      "ledger_ref": "tx-old-kyc",
+      "fields": {
+        "name": "Alice",
+        "doc": "passport-scan"
+      }
+    },
+    {
+      "id": "r-new-kyc",
+      "class": "kyc",
+      "created_at": 999999000,
+      "ledger_ref": "tx-new-kyc",
+      "fields": {
+        "name": "Bob"
+      }
+    },
+    {
+      "id": "r-old-support",
+      "class": "support",
+      "created_at": 1000000,
+      "ledger_ref": "tx-support",
+      "fields": {
+        "email": "a@example.test",
+        "name": "Alice",
+        "ticket": "T-1"
+      }
+    },
+    {
+      "id": "r-held",
+      "class": "logs",
+      "created_at": 1000000,
+      "fields": {
+        "message": "dispute"
+      }
+    },
+    {
+      "id": "r-no-policy",
+      "class": "other",
+      "created_at": 1000000,
+      "fields": {
+        "note": "keep"
+      }
+    }
+  ],
+  "holds": [
+    {
+      "record": "r-held",
+      "reason": "litigation hold 2026-04",
+      "placed_by": "legal",
+      "placed_at": 500
+    }
+  ],
+  "now": 1000000000,
+  "expect": {
+    "deleted": [
+      "r-old-kyc"
+    ],
+    "anonymized": [
+      "r-old-support"
+    ],
+    "retained": [
+      "r-new-kyc",
+      "r-no-policy"
+    ],
+    "held": [
+      "r-held"
+    ],
+    "tombstone": {
+      "record": "r-old-kyc",
+      "class": "kyc",
+      "ledger_ref": "tx-old-kyc",
+      "action": "delete",
+      "deleted_at": 1000000000,
+      "content_hash": "93f6c58ebdf8813f92ceacc56639f991b4ceac6d79058d933a51bce281e39e45"
+    },
+    "anonymized_fields": {
+      "email": "",
+      "name": "",
+      "ticket": "T-1"
+    },
+    "events": {
+      "delete": {
+        "action": "delete",
+        "result": "deleted"
+      },
+      "anonymize": {
+        "action": "anonymize",
+        "result": "anonymized"
+      },
+      "held": {
+        "action": "retain",
+        "result": "held"
+      },
+      "no_policy": {
+        "action": "retain",
+        "result": "retained"
+      },
+      "within": {
+        "action": "retain",
+        "result": "retained"
+      }
+    }
+  },
+  "hold_id_cases": [
+    {
+      "record": "r1",
+      "reason": "case",
+      "placed_by": "legal",
+      "placed_at": 2000,
+      "id": "5e45aa91aff558c2518fa5389ad5f31b"
+    }
+  ]
+}

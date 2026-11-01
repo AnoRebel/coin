@@ -30,6 +30,7 @@ make test
 | `internal/compliance/profile` | FATF, MiCA, and ISO 20022 reference profiles |
 | `internal/compliance/access` | Scoped, time-bounded auditor grants and access log |
 | `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
+| `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -332,6 +333,42 @@ d := screener.Screen(ctx, sanctions.Subject{Address: "arce-devnet1…"})
 `shortcut:` screening is a library only; settlement does not call it yet. Wire
 it into regulated asset transfers together with the policy engine before
 claiming screening coverage.
+
+## Data retention and legal holds
+
+`internal/compliance/retention` (mirrored by `python/arne/retention.py`) applies
+one policy per off-chain data class:
+
+```go
+m, _ := retention.NewManager([]retention.Policy{
+    {Class: "kyc", Days: 365, Action: retention.Delete},
+    {Class: "support", Days: 30, Action: retention.Anonymize, AnonymizeFields: []string{"email", "name"}},
+})
+_ = m.Add(retention.Record{ID: "r1", Class: "kyc", CreatedAt: now, LedgerRef: "tx-hash"})
+res := m.Apply(now + 366*86400) // Deleted / Anonymized / Retained / Held / Tombstones
+```
+
+- `Apply` is idempotent per record: a deleted record is gone, an anonymized one
+  stays with the configured fields cleared, and both are logged.
+- Deletion writes a `Tombstone` with the record's `LedgerRef` and a content hash
+  over the deleted fields. Keep the tombstone: it is what keeps an on-chain hash
+  or proof verifiable after the personal data is gone.
+- Content hash: `SHA-256("arne-retention-record-v1" || 0 || id || 0 || class ||
+  0 || created_at || 0 || ledger_ref || sorted fields)`.
+- On-chain records are rejected (`ErrOnChain`); retention never rewrites the
+  ledger. A record with no policy is retained and logged as such.
+- A legal hold suspends both deletion and anonymization for its record. Hold IDs
+  derive from `SHA-256("arne-hold-v1" || 0 || record || 0 || reason || 0 ||
+  placed_by || 0 || placed_at)` (first 16 bytes) when omitted. Release, then run
+  `Apply` again to expire the record.
+- Every apply, hold, and release appends a sequenced event; read them with
+  `Events(after, limit)`.
+- Both suites read `spec/vectors/retention.json`, which pins the tombstone hash
+  and hold ID across languages.
+
+`shortcut:` retention is a library only and in memory; it is not wired to
+workspace audit logs, grant logs, webhooks, or idempotency caches. Persist
+records and the event log in your own store before relying on expiry.
 
 ## Auditor access grants
 
