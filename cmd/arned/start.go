@@ -32,22 +32,23 @@ import (
 
 func startCmd() *cobra.Command {
 	var (
-		home           string
-		network        string
-		mnemonic       string
-		apiAddr        string
-		rpcAddr        string
-		p2pAddr        string
-		dataDir        string
-		interval       time.Duration
-		ephemeral      bool
-		apiKeySpecs    []string
-		allowedOrigins []string
-		rateLimit      int
-		workspacePath  string
-		keepBlocks     uint64
-		webhookURLs    []string
-		webhookKey     string
+		home            string
+		network         string
+		mnemonic        string
+		apiAddr         string
+		rpcAddr         string
+		p2pAddr         string
+		dataDir         string
+		interval        time.Duration
+		ephemeral       bool
+		apiKeySpecs     []string
+		allowedOrigins  []string
+		rateLimit       int
+		workspacePath   string
+		auditGrantsPath string
+		keepBlocks      uint64
+		webhookURLs     []string
+		webhookKey      string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -178,9 +179,13 @@ func startCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			grants, err := loadGrants(auditGrantsPath)
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
 				Devnet: devnet, RateLimit: rateLimit,
-				APIKeys: apiKeys, Workspace: ws, AllowedOrigins: allowedOrigins,
+				APIKeys: apiKeys, Workspace: ws, AuditGrants: grants, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
 				if err := srv.Start(apiAddr); err != nil && !errors.Is(err, io.EOF) {
@@ -217,6 +222,7 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
 	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
+	cmd.Flags().StringVar(&auditGrantsPath, "audit-grants", "", "auditor grants file (requires --workspace)")
 	return cmd
 }
 

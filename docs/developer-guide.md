@@ -28,6 +28,7 @@ make test
 | `internal/webhook` | Signed webhook delivery, retries, replay checks |
 | `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
 | `internal/compliance/profile` | FATF, MiCA, and ISO 20022 reference profiles |
+| `internal/compliance/access` | Scoped, time-bounded auditor grants and access log |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -295,6 +296,36 @@ owner. The API wraps payment submit/read and workspace routes with
 `shortcut:` the audit log is held in memory as well as appended to disk; stream
 it when audit volume makes that costly. Membership storage is a JSON file, not
 an external IAM system.
+
+## Auditor access grants
+
+`internal/compliance/access` (mirrored by `python/arne/access.py`) restricts
+auditors to named assets and a half-open window:
+
+```go
+r, _ := access.Load("grants.json")   // empty path keeps grants in memory
+g, err := r.Grant(access.Grant{
+    Auditor: "dave", Assets: []string{"usd:devnet"},
+    From: 1790000000, Until: 1798000000, Purpose: "Q1 audit",
+})
+_, err = r.Check("dave", "usd:devnet", now) // ErrExpired / ErrOutOfScope / ErrNoGrant
+```
+
+- `Grant` normalizes assets (trim, dedupe, sort) and derives the ID from
+  `SHA-256("arne-grant-v1" || 0 || auditor || 0 || purpose || 0 || from || 0 || until || 0 || assets)`,
+  truncated to 16 bytes. Identical grants collide by design (`ErrExists`).
+- `Check` picks the first covering grant by ID, treats `at < From` as
+  `not-yet-active` and `at >= Until` as `expired`, and logs every outcome with
+  the grant ID and asset. There is no sweeper: expiry is evaluated at check time.
+- Grants persist to the given file atomically with mode `0600`; the log appends
+  to `<path>.log.jsonl`. `Load` tolerates a missing file and replays the log.
+- The API auto-creates an in-memory registry whenever a workspace is configured,
+  so an auditor with no grant is denied. Owners and admins are not scoped.
+- Both suites read `spec/vectors/audit-grants.json`; add a case for any change
+  to matching or expiry.
+
+`shortcut:` grants are local to one node and not on-chain yet; replicate the
+grants file across API nodes until governance-signed grants land.
 
 ## Jurisdiction policy engine
 

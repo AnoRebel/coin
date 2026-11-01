@@ -460,6 +460,18 @@ Privileged attempts, including denials, are appended to
 `<workspace-file>.audit.jsonl` with actor, action, target, time, and result. The
 last owner cannot be removed or demoted.
 
+Auditors do not see payment records by default. An owner grants an asset and a
+time window:
+
+```sh
+curl -X POST -H "Authorization: Bearer key-alice" \
+  -d '{"auditor":"dave","assets":["usd:devnet"],"from":1790000000,"until":1798000000,"purpose":"Q1 audit"}' \
+  http://127.0.0.1:8080/v1/audit/grants
+```
+
+Reads outside that window or asset fail with `AUDIT_SCOPE`, and the attempt is
+logged. Access stops at `until` without any manual cleanup.
+
 ## 12. Recovery and key safety
 
 - Restore with the mnemonic and the same network ID and account index.

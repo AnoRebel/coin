@@ -119,7 +119,7 @@
 - [ ] 11.2 Implement Travel Rule/IVMS101 collection and authenticated exchange above threshold; verify qualifying, below-threshold, and unavailable-counterparty cases
 - [ ] 11.3 Implement provider-agnostic sanctions screening with list versions, potential-match holds, and fail-closed behavior; verify clear, match, and outage
 - [ ] 11.4 Implement W3C VC 2.0 KYC/accreditation verification with selective disclosure and no raw PII on-chain; verify jurisdiction, expiry, and revocation
-- [ ] 11.5 Implement scoped, time-bounded auditor access with automatic expiry and access logging; verify scope and expiry
+- [x] 11.5 Implement scoped, time-bounded auditor access with automatic expiry and access logging; verify scope and expiry
 - [ ] 11.6 Implement data retention, legal hold, deletion/anonymization, and ledger-integrity preservation; verify retention and hold
 - [x] 11.7 Implement FATF, MiCA, and ISO 20022 reference profiles; verify required-field validation and disclaimers
 - [ ] 11.8 Implement transaction-monitoring alerts and case dispositions without unauthorized auto-freeze; verify alert, disposition, and freeze policy

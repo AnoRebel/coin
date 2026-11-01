@@ -1,0 +1,113 @@
+{
+  "grants": [
+    {
+      "id": "11111111111111111111111111111111",
+      "auditor": "dave",
+      "assets": [
+        "usd:devnet"
+      ],
+      "from": 1000,
+      "until": 2000,
+      "purpose": "Q1 audit of usd:devnet"
+    },
+    {
+      "id": "22222222222222222222222222222222",
+      "auditor": "erin",
+      "assets": [
+        "usd:devnet",
+        "eur:devnet"
+      ],
+      "from": 3000,
+      "until": 5000,
+      "purpose": "legal request 42"
+    }
+  ],
+  "cases": [
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 1000,
+      "result": "allowed",
+      "grant": "11111111111111111111111111111111"
+    },
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 1999,
+      "result": "allowed",
+      "grant": "11111111111111111111111111111111"
+    },
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 2000,
+      "result": "expired",
+      "grant": "11111111111111111111111111111111"
+    },
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 999,
+      "result": "not-yet-active",
+      "grant": "11111111111111111111111111111111"
+    },
+    {
+      "auditor": "dave",
+      "asset": "eur:devnet",
+      "at": 1500,
+      "result": "out-of-scope"
+    },
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 3000,
+      "result": "expired",
+      "grant": "11111111111111111111111111111111"
+    },
+    {
+      "auditor": "erin",
+      "asset": "eur:devnet",
+      "at": 4000,
+      "result": "allowed",
+      "grant": "22222222222222222222222222222222"
+    },
+    {
+      "auditor": "erin",
+      "asset": "usd:devnet",
+      "at": 4000,
+      "result": "allowed",
+      "grant": "22222222222222222222222222222222"
+    },
+    {
+      "auditor": "erin",
+      "asset": "gbp:devnet",
+      "at": 4000,
+      "result": "out-of-scope"
+    },
+    {
+      "auditor": "frank",
+      "asset": "usd:devnet",
+      "at": 1500,
+      "result": "no-grant"
+    },
+    {
+      "auditor": "dave",
+      "asset": "usd:devnet",
+      "at": 0,
+      "result": "not-yet-active",
+      "grant": "11111111111111111111111111111111"
+    }
+  ],
+  "id_cases": [
+    {
+      "auditor": "dave",
+      "assets": [
+        "usd:devnet"
+      ],
+      "from": 100,
+      "until": 200,
+      "purpose": "audit",
+      "id": "62be2c5fb24b575b5cc9bd5227f1d216"
+    }
+  ]
+}

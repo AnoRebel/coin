@@ -16,6 +16,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/anorebel/anorebelcoin/internal/compliance/access"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	"github.com/anorebel/anorebelcoin/internal/node"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
@@ -27,6 +28,7 @@ import (
 type Config struct {
 	APIKeys        map[string][]string // key -> scopes ("read","write","admin")
 	Workspace      *workspace.Workspace
+	AuditGrants    *access.Registry // scoped auditor grants; nil disables scoping
 	AllowedOrigins []string
 	RateLimit      int // requests per second per IP; 0 disables
 	Devnet         bool
@@ -42,6 +44,9 @@ type Server struct {
 
 // New builds an Echo server.
 func New(n *node.Node, cfg Config) *echo.Echo {
+	if cfg.Workspace != nil && cfg.AuditGrants == nil {
+		cfg.AuditGrants = access.New("")
+	}
 	s := &Server{node: n, cfg: cfg}
 	if cfg.RateLimit > 0 {
 		s.lim = newLimiter(cfg.RateLimit, cfg.RateLimit*2)
@@ -89,6 +94,10 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.PUT("/v1/workspace/members/:id", s.setWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
 	e.DELETE("/v1/workspace/members/:id", s.deleteWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
 	e.GET("/v1/workspace/audit", s.getWorkspaceAudit, s.workspaceAction(workspace.ActionAuditRead))
+	e.GET("/v1/audit/grants", s.listGrants, s.workspaceAction(workspace.ActionAuditRead))
+	e.POST("/v1/audit/grants", s.createGrant, s.workspaceAction(workspace.ActionSettings))
+	e.DELETE("/v1/audit/grants/:id", s.revokeGrant, s.workspaceAction(workspace.ActionSettings))
+	e.GET("/v1/audit/grants/log", s.getGrantLog, s.workspaceAction(workspace.ActionSettings))
 	e.POST("/rpc", s.rpc)
 	return e
 }
@@ -272,6 +281,115 @@ func workspaceError(err error) error {
 	}
 }
 
+// auditScope restricts auditors to grants covering the record's asset. Owners,
+// admins, and members are not scoped here.
+func (s *Server) auditScope(c *echo.Context, asset string) error {
+	if s.cfg.Workspace == nil || s.cfg.AuditGrants == nil {
+		return nil
+	}
+	actor, ok := c.Get("actor").(string)
+	if !ok {
+		return nil
+	}
+	role, _ := s.cfg.Workspace.RoleOf(actor)
+	if role != workspace.RoleAuditor {
+		return nil
+	}
+	if _, err := s.cfg.AuditGrants.Check(actor, asset, time.Now().Unix()); err != nil {
+		return apiErr(http.StatusForbidden, "AUDIT_SCOPE", err.Error())
+	}
+	return nil
+}
+
+func (s *Server) grants(c *echo.Context) (*access.Registry, error) {
+	if s.cfg.AuditGrants == nil || s.cfg.Workspace == nil {
+		return nil, apiErr(http.StatusNotFound, "NOT_FOUND", "audit grants are not configured")
+	}
+	return s.cfg.AuditGrants, nil
+}
+
+func (s *Server) listGrants(c *echo.Context) error {
+	r, err := s.grants(c)
+	if err != nil {
+		return err
+	}
+	actor, _ := c.Get("actor").(string)
+	role, _ := s.cfg.Workspace.RoleOf(actor)
+	if role == workspace.RoleAuditor {
+		return c.JSON(http.StatusOK, map[string]any{"items": r.List(actor)})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": r.List("")})
+}
+
+func (s *Server) createGrant(c *echo.Context) error {
+	r, err := s.grants(c)
+	if err != nil {
+		return err
+	}
+	body, err := readBody(c)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Auditor string   `json:"auditor"`
+		Assets  []string `json:"assets"`
+		From    int64    `json:"from"`
+		Until   int64    `json:"until"`
+		Purpose string   `json:"purpose"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "body must be {auditor, assets, from, until, purpose}")
+	}
+	g, err := r.Grant(access.Grant{
+		Auditor: in.Auditor, Assets: in.Assets, From: in.From, Until: in.Until, Purpose: in.Purpose,
+	})
+	if err != nil {
+		if errors.Is(err, access.ErrExists) {
+			return apiErr(http.StatusConflict, "GRANT_EXISTS", err.Error())
+		}
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+	}
+	return c.JSON(http.StatusCreated, g)
+}
+
+func (s *Server) revokeGrant(c *echo.Context) error {
+	r, err := s.grants(c)
+	if err != nil {
+		return err
+	}
+	if err := r.Revoke(c.Param("id")); err != nil {
+		if errors.Is(err, access.ErrUnknown) {
+			return apiErr(http.StatusNotFound, "NOT_FOUND", "grant not found")
+		}
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) getGrantLog(c *echo.Context) error {
+	r, err := s.grants(c)
+	if err != nil {
+		return err
+	}
+	var after uint64
+	if raw := c.QueryParam("after"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "after must be a sequence number")
+		}
+		after = v
+	}
+	limit := 100
+	if raw := c.QueryParam("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "limit must be positive")
+		}
+		limit = v
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": r.Events(after, limit)})
+}
+
 // --- read handlers ---
 
 func (s *Server) health(c *echo.Context) error {
@@ -399,6 +517,9 @@ func (s *Server) getEscrow(c *echo.Context) error {
 	if !ok {
 		return apiErr(http.StatusNotFound, "ESCROW_NOT_FOUND", "escrow not found")
 	}
+	if err := s.auditScope(c, e.Asset); err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, e)
 }
 
@@ -409,6 +530,9 @@ func (s *Server) getIntent(c *echo.Context) error {
 	}
 	if !ok {
 		return apiErr(http.StatusNotFound, "INTENT_NOT_FOUND", "intent not found")
+	}
+	if err := s.auditScope(c, in.Asset); err != nil {
+		return err
 	}
 	return c.JSON(http.StatusOK, in)
 }
@@ -421,6 +545,9 @@ func (s *Server) getSubscription(c *echo.Context) error {
 	if !ok {
 		return apiErr(http.StatusNotFound, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
 	}
+	if err := s.auditScope(c, sub.Asset); err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, sub)
 }
 
@@ -432,6 +559,9 @@ func (s *Server) getTransfer(c *echo.Context) error {
 	}
 	if !ok {
 		return apiErr(http.StatusNotFound, "TRANSFER_NOT_FOUND", "transfer not found")
+	}
+	if err := s.auditScope(c, t.Asset); err != nil {
+		return err
 	}
 	refunded := s.node.Refunded(hash)
 	return c.JSON(http.StatusOK, map[string]any{

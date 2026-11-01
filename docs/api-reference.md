@@ -71,6 +71,43 @@ Audit entry:
 too. Only an owner may change or remove an owner; the last owner cannot be
 removed or demoted (`409 LAST_OWNER`).
 
+### Auditor access grants
+
+When a workspace is configured, auditors are restricted to the assets and time
+window granted to them. Other roles are not scoped here. Grants are stored in
+`--audit-grants <file>`; without that flag they live in memory and are lost on
+restart. Every check, allowed or denied, is appended to `<file>.log.jsonl`.
+
+| Method | Path | Permission | Description |
+| --- | --- | --- | --- |
+| GET | `/v1/audit/grants` | `audit.read` | Auditors see their own grants; others see all |
+| POST | `/v1/audit/grants` | `settings.manage` | Create a grant; owner only |
+| DELETE | `/v1/audit/grants/{id}` | `settings.manage` | Revoke a grant; `204` |
+| GET | `/v1/audit/grants/log?after=N&limit=M` | `settings.manage` | Access log; owner only |
+
+Create body:
+
+```json
+{"auditor":"dave","assets":["usd:devnet"],"from":1790000000,"until":1798000000,"purpose":"Q1 audit"}
+```
+
+`from`/`until` are unix seconds and the window is half-open: `from <= t < until`.
+`assets` is 1–32 asset IDs, deduplicated and sorted. `purpose` is required (1–256
+characters). The grant ID is deterministic: the first 16 bytes of
+`SHA-256("arne-grant-v1" || 0 || auditor || 0 || purpose || 0 || from || 0 || until || 0 || sorted-assets)`.
+Recreating an identical grant returns `409 GRANT_EXISTS`.
+
+Access log entry:
+
+```json
+{"seq":4,"time":1793441500,"auditor":"dave","action":"access",
+ "grant":"62be2c5fb24b575b5cc9bd5227f1d216","asset":"usd:devnet","result":"allowed"}
+```
+
+`result` is `allowed`, `no-grant`, `expired`, `not-yet-active`, or
+`out-of-scope`; lifecycle events use `action` `grant`/`revoke`. An auditor read
+outside scope returns `403 AUDIT_SCOPE` and is logged.
+
 ### Assets
 
 | Method | Path | Description |
@@ -469,9 +506,11 @@ Branch on `code`.
 | `CONSERVATION_VIOLATION` | Supply invariant broken (node halts) | 400 |
 | `INVARIANT_VIOLATION` | Internal/state invariant broken (node halts) | 400 |
 | `LAST_OWNER` | Cannot remove or demote the last workspace owner | 409 |
+| `AUDIT_SCOPE` | Auditor read outside the asset or window of an active grant | 403 |
+| `GRANT_EXISTS` | An identical auditor grant already exists | 409 |
 
 Non-ledger API errors: `INVALID_ARGUMENT` (400), `BODY_TOO_LARGE` (413),
-`FORBIDDEN` (403, missing scope or workspace permission), `RATE_LIMITED` (429),
+`FORBIDDEN` (403, missing scope or workspace permission), `AUDIT_SCOPE` (403), `RATE_LIMITED` (429),
 `NOT_FOUND` (404, disabled faucet or unconfigured workspace),
 `TX_NOT_FOUND`/`BLOCK_NOT_FOUND`/`TRANSFER_NOT_FOUND` (404), `PRUNED` (410, block
 outside `--keep-blocks`), `UNSUPPORTED` (500).

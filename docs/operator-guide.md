@@ -169,6 +169,25 @@ change or remove an owner, and the last owner cannot be demoted or removed.
 Membership changes are written back atomically; audit entries include actor,
 action, target, time, and result.
 
+Auditors are scoped to explicit grants. Start with `--audit-grants <file>`
+(requires `--workspace`) and create a grant per audit engagement:
+
+```sh
+curl -X POST -H "Authorization: Bearer key-alice" \
+  -d '{"auditor":"dave","assets":["usd:devnet"],"from":1790000000,"until":1798000000,"purpose":"Q1 audit"}' \
+  http://127.0.0.1:8080/v1/audit/grants
+```
+
+- The window is half-open (`from <= now < until`); after `until` reads fail
+  automatically with `403 AUDIT_SCOPE`, so no cleanup job is needed.
+- Grants are per asset. An auditor with no grant can read no payment records.
+- Only an owner may create or revoke grants; only an owner can read the access
+  log at `/v1/audit/grants/log`.
+- Every allowed and denied check is appended to `<file>.log.jsonl`. Without
+  `--audit-grants`, grants are in memory and disappear on restart.
+- Grants are local to this node, not on-chain. Multi-node deployments need the
+  same file (or a later on-chain grant feature) on each API node.
+
 Example proxy contract: forward `Authorization`, set `X-Forwarded-For` only from
 trusted proxies, and do not cache `/v1/events`.
 

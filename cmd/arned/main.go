@@ -26,6 +26,7 @@ import (
 
 	"github.com/anorebel/anorebelcoin/internal/api"
 	"github.com/anorebel/anorebelcoin/internal/backup"
+	"github.com/anorebel/anorebelcoin/internal/compliance/access"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	arnememo "github.com/anorebel/anorebelcoin/internal/memo"
 	"github.com/anorebel/anorebelcoin/internal/node"
@@ -107,19 +108,20 @@ func webhookCmd() *cobra.Command {
 
 func devnetCmd() *cobra.Command {
 	var (
-		network        string
-		addr           string
-		dataDir        string
-		mnemonic       string
-		interval       time.Duration
-		noPersist      bool
-		apiKeySpecs    []string
-		allowedOrigins []string
-		rateLimit      int
-		keepBlocks     uint64
-		webhookURLs    []string
-		webhookKey     string
-		workspacePath  string
+		network         string
+		addr            string
+		dataDir         string
+		mnemonic        string
+		interval        time.Duration
+		noPersist       bool
+		apiKeySpecs     []string
+		allowedOrigins  []string
+		rateLimit       int
+		keepBlocks      uint64
+		webhookURLs     []string
+		webhookKey      string
+		workspacePath   string
+		auditGrantsPath string
 	)
 	cmd := &cobra.Command{
 		Use:   "devnet",
@@ -193,9 +195,13 @@ func devnetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			grants, err := loadGrants(auditGrantsPath)
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
 				Devnet: true, RateLimit: rateLimit,
-				APIKeys: apiKeys, Workspace: ws, AllowedOrigins: allowedOrigins,
+				APIKeys: apiKeys, Workspace: ws, AuditGrants: grants, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
 				if err := srv.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -245,7 +251,21 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
 	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
+	cmd.Flags().StringVar(&auditGrantsPath, "audit-grants", "", "auditor grants file (requires --workspace)")
 	return cmd
+}
+
+// loadGrants loads an optional auditor grants file. The sibling
+// "<path>.log.jsonl" receives the access log.
+func loadGrants(path string) (*access.Registry, error) {
+	if path == "" {
+		return nil, nil
+	}
+	r, err := access.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("audit grants: %w", err)
+	}
+	return r, nil
 }
 
 // loadWorkspace loads an optional workspace roles file. The sibling

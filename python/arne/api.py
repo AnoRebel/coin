@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import cbor, ledger, types
+from . import access, cbor, ledger, types
 from . import workspace as ws
 from .node import Node
 
@@ -46,6 +46,7 @@ class ApiConfig:
     rate_limit: int = 0  # requests per second per IP; 0 disables
     devnet: bool = False
     workspace: ws.Workspace | None = None
+    audit_grants: access.Registry | None = None
 
 
 def error_response(status: int, code: str, message: str) -> JSONResponse:
@@ -239,6 +240,24 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
             return ApiError(409, "LAST_OWNER", str(exc))
         return ApiError(400, "INVALID_ARGUMENT", str(exc))
 
+    if config.workspace is not None and config.audit_grants is None:
+        config.audit_grants = access.Registry()
+
+    def require_audit_scope(request: Request, actor: str | None, asset: str) -> None:
+        if config.workspace is None or config.audit_grants is None or actor is None:
+            return
+        if config.workspace.role_of(actor) != ws.AUDITOR:
+            return
+        try:
+            config.audit_grants.check(actor, asset, int(time.time()))
+        except access.AccessError as exc:
+            raise ApiError(403, "AUDIT_SCOPE", str(exc)) from exc
+
+    def grants_or_404() -> access.Registry:
+        if config.audit_grants is None or config.workspace is None:
+            raise ApiError(404, "NOT_FOUND", "audit grants are not configured")
+        return config.audit_grants
+
     def rate_check(request: Request) -> None:
         if limiter is not None:
             client = request.client.host if request.client else "unknown"
@@ -312,21 +331,23 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
 
     @app.get("/v1/intents/{intent_id}")
     def get_intent(intent_id: str, request: Request) -> dict[str, Any]:
-        require_ws(request, ws.PAYMENT_READ, intent_id)
+        actor = require_ws(request, ws.PAYMENT_READ, intent_id)
         with node._lock:
             intent = node.state.intent(intent_id)
         if intent is None:
             raise ApiError(404, "INTENT_NOT_FOUND", "intent not found")
+        require_audit_scope(request, actor, intent.asset)
         return intent.to_cbor()
 
     @app.get("/v1/transfers/{tx_hash}")
     def get_transfer(tx_hash: str, request: Request) -> dict[str, Any]:
-        require_ws(request, ws.PAYMENT_READ, tx_hash)
+        actor = require_ws(request, ws.PAYMENT_READ, tx_hash)
         with node._lock:
             transfer = node.state.transfer(tx_hash)
             refunded = node.state.refunded(tx_hash) if transfer is not None else 0
         if transfer is None:
             raise ApiError(404, "TRANSFER_NOT_FOUND", "transfer not found")
+        require_audit_scope(request, actor, transfer.asset)
         return {
             "hash": tx_hash, "from": transfer.sender, "to": transfer.to,
             "asset": transfer.asset, "amount": transfer.amount,
@@ -336,19 +357,21 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
 
     @app.get("/v1/subscriptions/{sub_id}")
     def get_subscription(sub_id: str, request: Request) -> dict[str, Any]:
-        require_ws(request, ws.PAYMENT_READ, sub_id)
+        actor = require_ws(request, ws.PAYMENT_READ, sub_id)
         with node._lock:
             subscription = node.state.subscription(sub_id)
         if subscription is None:
             raise ApiError(404, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
+        require_audit_scope(request, actor, subscription.asset)
         return subscription.to_cbor()
 
     @app.get("/v1/escrows/{escrow_id}")
     def get_escrow(escrow_id: str, request: Request) -> dict[str, Any]:
-        require_ws(request, ws.PAYMENT_READ, escrow_id)
+        actor = require_ws(request, ws.PAYMENT_READ, escrow_id)
         escrow = node.state.escrow(escrow_id)
         if escrow is None:
             raise ApiError(404, ledger.ESCROW_NOT_FOUND, "escrow not found")
+        require_audit_scope(request, actor, escrow.asset)
         return escrow.to_cbor()
 
     @app.get("/v1/allowances/{owner}/{spender}/{asset_id}")
@@ -516,6 +539,55 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
     def get_workspace_audit(request: Request, after: int = 0, limit: int = 100) -> dict[str, Any]:
         require_ws(request, ws.AUDIT_READ)
         return {"items": config.workspace.entries(after, limit)}
+
+    # --- auditor grants ---
+
+    @app.get("/v1/audit/grants")
+    def list_grants(request: Request) -> dict[str, Any]:
+        actor = require_ws(request, ws.AUDIT_READ)
+        registry = grants_or_404()
+        if actor is not None and config.workspace.role_of(actor) == ws.AUDITOR:
+            return {"items": registry.list(actor)}
+        return {"items": registry.list()}
+
+    @app.post("/v1/audit/grants", status_code=201)
+    async def create_grant(request: Request) -> JSONResponse:
+        require_ws(request, ws.SETTINGS)
+        registry = grants_or_404()
+        try:
+            payload = json.loads(await _read_body(request))
+        except json.JSONDecodeError as exc:
+            raise ApiError(400, "INVALID_ARGUMENT", "body must be JSON") from exc
+        if not isinstance(payload, dict):
+            raise ApiError(400, "INVALID_ARGUMENT", "body must be an object")
+        try:
+            grant = registry.grant(access.Grant(
+                auditor=payload.get("auditor", ""),
+                assets=list(payload.get("assets", [])),
+                from_ts=int(payload.get("from", 0)),
+                until=int(payload.get("until", 0)),
+                purpose=payload.get("purpose", ""),
+            ))
+        except access.GrantExists as exc:
+            raise ApiError(409, "GRANT_EXISTS", str(exc)) from exc
+        except (access.InvalidGrant, TypeError, ValueError) as exc:
+            raise ApiError(400, "INVALID_ARGUMENT", str(exc)) from exc
+        return JSONResponse(grant.to_dict(), status_code=201)
+
+    @app.delete("/v1/audit/grants/{grant_id}", status_code=204)
+    def revoke_grant(grant_id: str, request: Request) -> Response:
+        require_ws(request, ws.SETTINGS)
+        registry = grants_or_404()
+        try:
+            registry.revoke(grant_id)
+        except access.UnknownGrant as exc:
+            raise ApiError(404, "NOT_FOUND", "grant not found") from exc
+        return Response(status_code=204)
+
+    @app.get("/v1/audit/grants/log")
+    def get_grant_log(request: Request, after: int = 0, limit: int = 100) -> dict[str, Any]:
+        require_ws(request, ws.SETTINGS)
+        return {"items": grants_or_404().events(after, limit)}
 
     # --- JSON-RPC 2.0 ---
 

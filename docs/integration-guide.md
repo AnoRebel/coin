@@ -254,6 +254,11 @@ member changed. Use a key per person or service; do not share the owner key with
 integrations. Audit entries are available at `/v1/workspace/audit` for owners,
 admins, and auditors, with `after`/`limit` pagination.
 
+An auditor key additionally needs a grant covering the record's asset and the
+current time (`POST /v1/audit/grants`, owner only). Without one, payment reads
+return `403 AUDIT_SCOPE`. Handle that code as "not in scope", not as a retryable
+error.
+
 ## 10. Webhooks and connectors
 
 Signed webhooks are implemented. Enable them on the node with `--webhook <url>`
