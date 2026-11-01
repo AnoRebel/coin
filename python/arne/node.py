@@ -342,8 +342,13 @@ class Node:
                 h: tx for h, tx in self.mempool.items() if h not in applied
             }
             try:
-                self.store.save_block(block)
-                self.store.save_state(block.height, self.state.snapshot())
+                snapshot = self.state.snapshot()
+                commit = getattr(self.store, "save_commit", None)
+                if commit is not None:
+                    commit(block, snapshot)
+                else:
+                    self.store.save_block(block)
+                    self.store.save_state(block.height, snapshot)
             except OSError as exc:
                 self.halted = f"storage failure: {exc}"
                 raise

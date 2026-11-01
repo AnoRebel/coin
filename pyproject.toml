@@ -14,6 +14,7 @@ dependencies = [
     "httpx>=0.28.1",
     "py-ecc>=8.0.0",
     "pydantic>=2.14.1",
+    "rocksdict>=0.3",
     "segno>=1.6.6",
     "uvicorn>=0.54.0",
 ]

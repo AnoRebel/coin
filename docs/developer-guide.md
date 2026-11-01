@@ -45,6 +45,7 @@ make test
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
 | `python/arne` | Full parity node (same module split) |
+| `python/arne/rocksstore.py` | RocksDB store with the Go key schema and atomic commits |
 | `spec/vectors` | Cross-language conformance anchors |
 | `tests` | Go vector tests, Python vector/ledger/API tests |
 | `openspec/changes/arce-arne-network` | Requirements, design, task tracker |

@@ -114,8 +114,13 @@ startup error. Back up both `data/` and `app/` while stopped.
 - Go: Pebble at `--data-dir`. Blocks are keyed `b<height>`, plus `meta/last` and
   `state/current`. Each record is SHA-256 checksummed. Block + state snapshot
   are written in one atomic batch.
-- Python: `blocks/<height>.json` and a checksummed `state.json` under
+- Python file store: `blocks/<height>.json` and a checksummed `state.json` under
   `--data-dir`. Use one process per directory; there is no lock.
+- Python RocksDB: `--store rocksdb` uses the same keys as Go (`b<height>`,
+  `meta/last`, `state/current`, `meta/schema`) with the same checksummed record
+  format. A commit writes the block, height, and state in one synced batch, so a
+  crash cannot expose a block without its state. RocksDB itself takes the
+  directory lock.
 
 A node reopens at the last committed height. A corrupt record is a hard error;
 do not "fix" it by deleting a checksum. Restore from backup.

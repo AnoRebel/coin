@@ -107,6 +107,15 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def open_store(args: argparse.Namespace):
+    if args.ephemeral:
+        return MemoryStore()
+    if getattr(args, "store", "file") == "rocksdb":
+        from .rocksstore import RocksStore
+        return RocksStore(args.data_dir)
+    return FileStore(args.data_dir)
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     network = args.network
     chain = types.chain_id(network)
@@ -117,7 +126,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         generated = True
     funder = keypair_from_mnemonic(mnemonic, "", 0, 0, 0, network)
     faucet = keypair_from_mnemonic(mnemonic, "", 0, 0, 1, network)
-    store = MemoryStore() if args.ephemeral else FileStore(args.data_dir)
+    store = open_store(args)
     seed = None
     if args.webhook:
         try:
@@ -669,6 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--mnemonic", default="")
     serve.add_argument("--block-interval", type=float, default=2.0)
     serve.add_argument("--ephemeral", action="store_true")
+    serve.add_argument("--store", choices=["file", "rocksdb"], default="file")
     serve.add_argument("--log-level", default="info")
     serve.add_argument("--api-key", action="append", default=[], help="key=read,write[,admin]")
     serve.add_argument("--allow-origin", action="append", default=[], help="CORS origin")
@@ -686,6 +696,7 @@ def build_parser() -> argparse.ArgumentParser:
     devnet.add_argument("--mnemonic", default="")
     devnet.add_argument("--block-interval", type=float, default=2.0)
     devnet.add_argument("--ephemeral", action="store_true")
+    devnet.add_argument("--store", choices=["file", "rocksdb"], default="file")
     devnet.add_argument("--log-level", default="info")
     devnet.add_argument("--api-key", action="append", default=[], help="key=read,write[,admin]")
     devnet.add_argument("--allow-origin", action="append", default=[], help="CORS origin")
