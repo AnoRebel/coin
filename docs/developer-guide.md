@@ -32,6 +32,7 @@ make test
 | `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
+| `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -410,6 +411,43 @@ plain, err := m.Open("alice", g.ID, "tx-hash", aliceSeed, 1790000100)
 `shortcut:` this is the policy layer for disclosure, not the shielded pool: no
 shielded transfer type exists yet, so today it wraps sealed memos only. Wire it
 in when shielded transfers land, and keep the rule that no key opens them all.
+
+## Transaction monitoring
+
+`internal/compliance/monitoring` (mirrored by `python/arne/monitoring.py`) turns
+rules into alerts and records what an analyst decided:
+
+```go
+m, _ := monitoring.NewMonitor([]monitoring.Rule{
+    {ID: "large", Type: monitoring.Threshold, Amount: 10_000, Severity: monitoring.High, Enabled: true},
+    {ID: "burst", Type: monitoring.Velocity, Count: 3, Window: 3600, Severity: monitoring.High,
+        Freeze: true, Enabled: true},
+}, []string{"burst"}) // only "burst" may freeze
+
+alerts, _ := m.Evaluate(monitoring.Transaction{
+    ID: "tx-hash", From: "arce1…", Asset: "usd:devnet", Amount: 12_000, At: now,
+})
+_, _ = m.Dispose(alerts[0].ID, monitoring.Report, "SAR filed", "ana", now)
+```
+
+- Threshold rules fire at or above `Amount`; velocity rules fire when a sender
+  reaches `Count` transfers inside `Window` seconds (half-open window, current
+  transfer included). `Asset` empty means any asset.
+- `Evaluate` is idempotent per transaction ID and keeps per-sender history in
+  memory. Alerts carry a deterministic ID:
+  `SHA-256("arne-alert-v1" || 0 || rule || 0 || tx)` first 16 bytes.
+- A rule with `Freeze: true` applies a freeze only if its ID is listed in the
+  freeze policy passed to `NewMonitor`. Otherwise the alert is escalated with
+  `Escalated: true` and `FreezeApplied: false`. No rule freezes funds by itself.
+- `Dispose` closes an open alert with `no_action`, `escalate`, or `report`, and
+  requires both a reason and a reviewer. A closed alert cannot be reopened, so
+  the disposition trail stays append-only.
+- Both suites read `spec/vectors/monitoring.json`, which pins alert IDs and the
+  freeze/escalate split.
+
+`shortcut:` monitoring is a library only; the node does not evaluate transfers
+or apply freezes. Wire it in with the policy engine and persist alerts before
+treating it as case management.
 
 ## Auditor access grants
 

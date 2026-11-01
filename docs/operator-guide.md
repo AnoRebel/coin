@@ -378,6 +378,14 @@ Two operator decisions matter:
 Enable only the profiles your deployment actually follows. Selecting a profile
 does not change consensus or the public ledger.
 
+Transaction monitoring is available as a library with threshold and velocity
+rules, deterministic alert IDs, and analyst dispositions (`no_action`,
+`escalate`, `report`) that require a reason and reviewer. A rule that asks for a
+freeze only gets one when its ID is in the freeze policy; every other request is
+escalated for a human, never applied automatically. The node does not evaluate
+transfers or freeze funds yet, so treat this as the decision layer, not case
+management.
+
 Grant-scoped disclosure is the supported path for opening a sealed memo on
 someone else's behalf. A user grant names the transfers a viewer may open; an
 exceptional grant needs two approvers and a legal-process reference. Every grant,

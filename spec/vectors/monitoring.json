@@ -1,0 +1,127 @@
+{
+  "freeze_authorized": [
+    "velocity-burst"
+  ],
+  "rules": [
+    {
+      "id": "large",
+      "type": "threshold",
+      "amount": 10000,
+      "severity": "high",
+      "enabled": true
+    },
+    {
+      "id": "usd-watch",
+      "type": "threshold",
+      "asset": "usd:devnet",
+      "amount": 5000,
+      "severity": "medium",
+      "enabled": true
+    },
+    {
+      "id": "velocity-burst",
+      "type": "velocity",
+      "count": 3,
+      "window": 3600,
+      "severity": "high",
+      "freeze": true,
+      "enabled": true
+    },
+    {
+      "id": "large-freeze",
+      "type": "threshold",
+      "amount": 20000,
+      "severity": "high",
+      "freeze": true,
+      "enabled": true
+    },
+    {
+      "id": "disabled",
+      "type": "threshold",
+      "amount": 1,
+      "severity": "low",
+      "enabled": false
+    }
+  ],
+  "transactions": [
+    {
+      "id": "t1",
+      "from": "alice",
+      "asset": "usd:devnet",
+      "amount": 5000,
+      "at": 1000
+    },
+    {
+      "id": "t2",
+      "from": "alice",
+      "asset": "usd:devnet",
+      "amount": 6000,
+      "at": 1100
+    },
+    {
+      "id": "t3",
+      "from": "alice",
+      "asset": "usd:devnet",
+      "amount": 7000,
+      "at": 1200
+    },
+    {
+      "id": "t4",
+      "from": "bob",
+      "asset": "usd:devnet",
+      "amount": 25000,
+      "at": 1300
+    }
+  ],
+  "expect_alerts": [
+    {
+      "id": "2e6b12ad951f1c6a557dec790d433c39",
+      "rule": "usd-watch",
+      "tx_id": "t1"
+    },
+    {
+      "id": "32759d4172255b7992d07a6cf5749ef3",
+      "rule": "usd-watch",
+      "tx_id": "t2"
+    },
+    {
+      "id": "34989c14221aad417b15825698eb15bd",
+      "rule": "usd-watch",
+      "tx_id": "t3"
+    },
+    {
+      "id": "a0c7b602719532cb08d12a4a6bee052f",
+      "rule": "velocity-burst",
+      "tx_id": "t3"
+    },
+    {
+      "id": "53527b44879ab110dd9850b0a231ac00",
+      "rule": "large",
+      "tx_id": "t4"
+    },
+    {
+      "id": "0705c11b1261d18d57640ba252655bb4",
+      "rule": "usd-watch",
+      "tx_id": "t4"
+    },
+    {
+      "id": "efc9abe4b8f3d262af6d1683dc40f467",
+      "rule": "large-freeze",
+      "tx_id": "t4"
+    }
+  ],
+  "expect_freeze": {
+    "velocity-burst/t3": true,
+    "large-freeze/t4": false
+  },
+  "expect_escalated": [
+    "large-freeze/t4"
+  ],
+  "disposition": {
+    "alert": "2e6b12ad951f1c6a557dec790d433c39",
+    "action": "report",
+    "reason": "SAR filed",
+    "reviewer": "ana",
+    "at": 2000
+  }
+}
