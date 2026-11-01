@@ -27,7 +27,7 @@
 - [x] 3.3 Implement canonical CBOR signing, domain separation, network/chain binding, and replay rejection; verify cross-network and cross-purpose vectors fail
 - [x] 3.4 Implement BIP-39 and SLIP-0010 Ed25519 derivation with the ARNE path; verify the same mnemonic yields identical keys and addresses in Go and Python
 - [x] 3.5 Implement BLS proof-of-possession registration and aggregate verification; verify rogue-key and missing-PoP vectors are rejected
-- [ ] 3.6 Implement hybrid Ed25519+ML-DSA registration and verification; verify downgrade and partial-signature vectors fail
+- [x] 3.6 Implement hybrid Ed25519+ML-DSA registration and verification; verify downgrade and partial-signature vectors fail
 - [x] 3.7 Implement the signature-suite registry with active/deprecated/disabled states; verify deprecated suites verify history and reject new accounts
 - [x] 3.8 Add constant-time and secret-redaction tests; verify no key material appears in logs or errors
 

@@ -413,6 +413,16 @@ settlement, and a potential match is a hold for human review, never an automatic
 freeze. Screening is not wired into settlement yet, so do not describe a node as
 sanctions-screened until that integration and its operational runbook exist.
 
+## Hybrid account keys
+
+A hybrid account holds an Ed25519 key and an ML-DSA-65 key. Verification requires
+both, so you cannot downgrade an account by dropping one signature or one key:
+doing so fails as a partial signature. Back up both keys together; losing the
+ML-DSA key locks the account just as losing the Ed25519 key would.
+
+`shortcut:` the node does not create hybrid accounts yet. This applies when your
+integration calls the hybrid library directly.
+
 ## Missing before production
 
 Do not describe this node as production-ready until these exist:

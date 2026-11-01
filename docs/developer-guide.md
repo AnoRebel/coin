@@ -36,6 +36,7 @@ make test
 | `internal/crypto/bls` | BLS12-381 signatures with proof-of-possession registry |
 | `internal/crypto/suites` | Signature-suite lifecycle: active, deprecated, disabled |
 | `internal/crypto/redact` | Secret wrapper that redacts formatting, logs, and JSON |
+| `internal/crypto/hybrid` | Hybrid Ed25519 + ML-DSA-65 registration and signatures |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -502,6 +503,33 @@ _ = r.Verify("rsa-legacy", …)     // ErrDisabled
 
 `shortcut:` the ledger still accepts only Ed25519 envelopes; the registry is the
 policy layer that a future multi-suite envelope will call.
+
+## Hybrid signatures
+
+`internal/crypto/hybrid` (mirrored by `python/arne/hybrid.py`) pairs Ed25519 with
+ML-DSA-65 so an account survives the day a large quantum computer can break
+Ed25519:
+
+```go
+err := hybrid.Register(hybrid.Key{Ed25519: edPub, MLDSA: mlPub})
+sig, err := hybrid.Sign(edPriv, mlPriv, message)
+err = hybrid.Verify(key, message, sig)
+```
+
+- Registration needs both public keys; a key with one algorithm is rejected with
+  `ErrInvalid`.
+- `Sign` is deterministic in both languages: Ed25519 is deterministic and ML-DSA
+  runs in its deterministic mode, so the same seed and message reproduce the
+  same envelope. `spec/vectors/hybrid.json` is consumed by both test suites.
+- `Verify` requires both components. A signature with one component stripped is
+  `ErrPartial`; a corrupted or mismatched component is `ErrVerify`. There is no
+  code path that falls back to Ed25519 alone.
+- ML-DSA signs under the `arne-hybrid-v1` context, which keeps these signatures
+  from being replayed in another protocol.
+
+`shortcut:` this is a library only; accounts and transaction envelopes still
+carry Ed25519. Do not describe an account as hybrid until the envelope and
+account registration call these functions.
 
 ## Transaction monitoring
 

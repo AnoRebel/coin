@@ -44,6 +44,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cbor2" },
     { name = "cryptography" },
+    { name = "dilithium-py" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "py-ecc" },
@@ -62,6 +63,7 @@ dev = [
 requires-dist = [
     { name = "cbor2", specifier = ">=6.1.5" },
     { name = "cryptography", specifier = ">=50.0.2" },
+    { name = "dilithium-py", specifier = ">=1.0.0" },
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "py-ecc", specifier = ">=8.0.0" },
@@ -507,6 +509,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/26/cc/8cc70e6f7c73ded5a6dbc1b6fa3171dee6e7c305fe4053f19d28ddd4061d/cytoolz-1.2.0-pp312-pypy312_pp80-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:558889d8cc6c6c9da71c4c3219d8ce83f0b64346e5a9822454ddb5410312e82e", size = 1121530, upload-time = "2026-10-08T19:06:54.266Z" },
     { url = "https://files.pythonhosted.org/packages/b0/cf/8c22768aa0531892c3951f74ac7fe4263e97c294c530eca1f4fb817b9bd0/cytoolz-1.2.0-pp312-pypy312_pp80-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f0e9b425255b228e1e960ac053b9355b2d41c33e4c24a3065aec689dc83648ed", size = 1094286, upload-time = "2026-10-08T19:06:56.341Z" },
     { url = "https://files.pythonhosted.org/packages/dd/a2/64cf3993faf8f4758cd2f29402614b93e175aa17ab0df16958ad1300ddae/cytoolz-1.2.0-pp312-pypy312_pp80-win_amd64.whl", hash = "sha256:994c39a0fc47498927beedf7b50aa45f3a16ad2d2fe4358cf06c2e77874eded3", size = 1123974, upload-time = "2026-10-08T19:06:58.47Z" },
+]
+
+[[package]]
+name = "dilithium-py"
+version = "1.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/b0/3ab29e2bede7d10ae1534ee64d40d2cd42910000aebd2118a56165f11521/dilithium_py-1.5.1.tar.gz", hash = "sha256:b86b734445d1dddf41179e901f82c92412a9c22cdec98075790de8882f0bf2c1", size = 6743317, upload-time = "2026-10-13T13:40:12.29Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/a2/2b9d0ce0ae5354145664e10252bb87488592bbbfb58e2c8883ce35231b6c/dilithium_py-1.5.1-py3-none-any.whl", hash = "sha256:21ab0cbd56e959d22b9dca59bd8af0e2a6f73703b14ad71d483ecf70438c73d7", size = 39908, upload-time = "2026-10-13T13:40:10.419Z" },
 ]
 
 [[package]]
