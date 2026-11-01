@@ -378,6 +378,12 @@ Two operator decisions matter:
 Enable only the profiles your deployment actually follows. Selecting a profile
 does not change consensus or the public ledger.
 
+Sanctions screening is available as a provider-agnostic library with a local,
+versioned list provider. Its contract is fail-closed: a provider outage denies
+settlement, and a potential match is a hold for human review, never an automatic
+freeze. Screening is not wired into settlement yet, so do not describe a node as
+sanctions-screened until that integration and its operational runbook exist.
+
 ## Missing before production
 
 Do not describe this node as production-ready until these exist:

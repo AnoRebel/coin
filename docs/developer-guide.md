@@ -29,6 +29,7 @@ make test
 | `internal/compliance/policy` | Deterministic versioned jurisdiction policy engine |
 | `internal/compliance/profile` | FATF, MiCA, and ISO 20022 reference profiles |
 | `internal/compliance/access` | Scoped, time-bounded auditor grants and access log |
+| `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
@@ -296,6 +297,41 @@ owner. The API wraps payment submit/read and workspace routes with
 `shortcut:` the audit log is held in memory as well as appended to disk; stream
 it when audit volume makes that costly. Membership storage is a JSON file, not
 an external IAM system.
+
+## Sanctions screening
+
+`internal/compliance/sanctions` (mirrored by `python/arne/sanctions.py`) wraps a
+provider and turns its answer into a settlement decision:
+
+```go
+provider, _ := sanctions.NewListProvider(sanctions.List{
+    Name: "ofac-demo", Version: "2026-10-01", UpdatedAt: now,
+    Entries: []sanctions.Entry{{ID: "e1", Address: "arce-devnet1…"}},
+})
+screener, _ := sanctions.New(provider)
+d := screener.Screen(ctx, sanctions.Subject{Address: "arce-devnet1…"})
+// d.Outcome: allow | hold | deny; d.Provider, d.ListVersion, d.Matches, d.Score
+```
+
+- `clear` -> `allow`; `potential_match` -> `hold` with `RequiresReview: true`;
+  any provider error or unknown result -> `deny` with result `unavailable`.
+  Screening never returns an error, so a caller cannot settle by ignoring one.
+- A potential match is a review hold, never an automatic freeze. Do not turn
+  `hold` into a balance lock without a policy that authorizes it.
+- The decision records the provider, list version, matched entry IDs, and score.
+  Persist the decision with the transfer; the list itself can change later.
+- `ListProvider` matches addresses case-insensitively and names/aliases after
+  lowercasing and collapsing whitespace. Exact normalized match only; near
+  names are `clear`, so pair this with a fuzzy provider if you need one.
+- Entry IDs are derived from the normalized address and name when omitted:
+  first 8 bytes of `SHA-256("arne-sanctions-entry-v1" || 0 || address || 0 || name)`.
+  Keep explicit IDs for list entries that must stay stable across edits.
+- `UnavailableProvider` is an explicit fail-closed provider for tests or a
+  disabled deployment. Both suites read `spec/vectors/sanctions.json`.
+
+`shortcut:` screening is a library only; settlement does not call it yet. Wire
+it into regulated asset transfers together with the policy engine before
+claiming screening coverage.
 
 ## Auditor access grants
 

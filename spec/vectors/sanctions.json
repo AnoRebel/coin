@@ -1,0 +1,155 @@
+{
+  "list": {
+    "name": "demo-ofac",
+    "version": "2026-10-01",
+    "updated_at": 1790000000,
+    "entries": [
+      {
+        "id": "addr-1",
+        "address": "arce-devnet1sanctionedaddress"
+      },
+      {
+        "id": "addr-2",
+        "address": "arce-devnet1blockedaddress"
+      },
+      {
+        "id": "name-1",
+        "name": "Ivan Petrov",
+        "aliases": [
+          "I. Petrov"
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "clear-address",
+      "subject": {
+        "address": "arce-devnet1clean"
+      },
+      "outcome": "allow",
+      "result": "clear"
+    },
+    {
+      "name": "address-match-case-and-space",
+      "subject": {
+        "address": "  ARCE-DEVNET1SANCTIONEDADDRESS "
+      },
+      "outcome": "hold",
+      "result": "potential_match",
+      "matches": [
+        "addr-1"
+      ],
+      "score": 100
+    },
+    {
+      "name": "name-normalized",
+      "subject": {
+        "name": "  ivan   PETROV "
+      },
+      "outcome": "hold",
+      "result": "potential_match",
+      "matches": [
+        "name-1"
+      ],
+      "score": 80
+    },
+    {
+      "name": "alias-normalized",
+      "subject": {
+        "name": "I.   PETROV"
+      },
+      "outcome": "hold",
+      "result": "potential_match",
+      "matches": [
+        "name-1"
+      ],
+      "score": 80
+    },
+    {
+      "name": "near-name-is-clear",
+      "subject": {
+        "name": "Ivan Petrovsky"
+      },
+      "outcome": "allow",
+      "result": "clear"
+    },
+    {
+      "name": "empty-subject-is-clear",
+      "subject": {},
+      "outcome": "allow",
+      "result": "clear"
+    },
+    {
+      "name": "provider-outage-fails-closed",
+      "subject": {
+        "address": "arce-devnet1clean"
+      },
+      "provider_error": true,
+      "outcome": "deny",
+      "result": "unavailable"
+    }
+  ],
+  "invalid_lists": [
+    {
+      "name": "",
+      "version": "v1",
+      "entries": [
+        {
+          "id": "a",
+          "address": "x"
+        }
+      ]
+    },
+    {
+      "name": "l",
+      "version": "",
+      "entries": [
+        {
+          "id": "a",
+          "address": "x"
+        }
+      ]
+    },
+    {
+      "name": "l",
+      "version": "v1",
+      "entries": []
+    },
+    {
+      "name": "l",
+      "version": "v1",
+      "entries": [
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "name": "l",
+      "version": "v1",
+      "entries": [
+        {
+          "id": "a",
+          "address": "x"
+        },
+        {
+          "id": "a",
+          "name": "y"
+        }
+      ]
+    }
+  ],
+  "id_cases": [
+    {
+      "address": " ABC ",
+      "name": "",
+      "id": "f913d43c36fa1dd5"
+    },
+    {
+      "address": "",
+      "name": "Jane   Doe",
+      "id": "56707a9403e4765a"
+    }
+  ]
+}
