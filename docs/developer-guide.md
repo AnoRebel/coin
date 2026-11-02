@@ -43,6 +43,7 @@ make test
 | `internal/indexer` | Optional Postgres read model with reorg-safe, idempotent writes |
 | `internal/staking` | Validator lifecycle, stake, delegation, and epoch-boundary set changes |
 | `internal/slashing` | Equivocation verification, downtime penalties, and reporter rewards |
+| `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -352,6 +353,26 @@ do not accept downtime evidence from an untrusted caller.
 below-threshold cases in both implementations. `shortcut:` penalties are
 computed but not moved in the ledger, and the engine is not yet fed by
 CometBFT evidence.
+
+## Light client
+
+`internal/lightclient` (mirrored by `python/arne/lightclient.py`) verifies a
+commit certificate against a trusted validator set. Every signature is checked
+over `Message` (network, height, round, block hash, state root, next validator
+root). Unknown and duplicate signers are rejected, and the signed power must
+exceed two-thirds of the trusted total. A certificate at or below the trusted
+height is rejected as outdated.
+
+Validator-set roots are sparse Merkle roots over `validator/<id>` entries whose
+values bind the BLS public key and power. `Prove` and `VerifyMember` give an
+inclusion proof for one validator; `Advance` accepts a next set only when its
+root matches the certificate and its height is exactly one greater. State
+inclusion reuses `internal/smt` against the certificate's state root.
+
+`spec/vectors/lightclient.json` covers a valid certificate, insufficient
+quorum, an outdated set, a forged signature, an unknown signer, and a duplicate
+signer. `shortcut:` the node does not yet produce these certificates; CometBFT
+finality is still the live source of truth.
 
 ## Workspace roles and audit
 
