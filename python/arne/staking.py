@@ -237,6 +237,45 @@ def voting_power(state: State, validator: str) -> int:
     return state.powers.get(validator, 0)
 
 
+@dataclass(frozen=True)
+class Penalty:
+    total: int
+    delegators: dict[str, int]
+
+
+def penalize(state: State, validator: str, bps: int, at: int) -> Penalty:
+    """Remove a percentage of bonded stake and unbonding stake.
+
+    Does not change the validator status; the slashing policy jails separately.
+    """
+    v = state.validators.get(validator)
+    if v is None:
+        _fail("unknown", f"validator {validator}")
+    if v.status == UNBONDED:
+        _fail("status", "validator is unbonded")
+    if not 0 < bps <= 10_000:
+        _fail("invalid", "slash bps must be in 1..10000")
+    _touch(state, at)
+    cuts: dict[str, int] = {}
+    total = 0
+    for delegator, amount in state.delegations.get(validator, {}).items():
+        cut = amount * bps // 10_000
+        state.delegations[validator][delegator] = amount - cut
+        if delegator == validator:
+            v.self_bond -= cut
+        cuts[delegator] = cuts.get(delegator, 0) + cut
+        total += cut
+    for i, u in enumerate(state.unbonding):
+        if u.validator != validator:
+            continue
+        cut = u.amount * bps // 10_000
+        state.unbonding[i] = UnbondingEntry(u.validator, u.delegator, u.amount - cut, u.release)
+        cuts[u.delegator] = cuts.get(u.delegator, 0) + cut
+        total += cut
+    return Penalty(total=total, delegators=cuts)
+
+
+
 def snapshot(state: State) -> dict:
     """Return the deterministic shape used by the shared vectors."""
     views = []

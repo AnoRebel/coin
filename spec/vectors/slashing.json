@@ -1,0 +1,266 @@
+{
+  "network": "arce:devnet",
+  "staking_params": {
+    "min_self_bond": 500,
+    "min_stake": 1000,
+    "max_power_bps": 0,
+    "epoch_blocks": 10,
+    "unbonding_blocks": 20
+  },
+  "slashing_params": {
+    "window_blocks": 100,
+    "jail_blocks": 50,
+    "double_sign_bps": 1000,
+    "downtime_bps": 500,
+    "reporter_bps": 1000,
+    "downtime_threshold_bps": 5000,
+    "downtime_min_blocks": 10
+  },
+  "cases": [
+    {
+      "name": "double_sign",
+      "setup": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 2000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "register",
+          "validator": "v2",
+          "self_bond": 2000,
+          "commission_bps": 100,
+          "at": 2
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10
+        }
+      ],
+      "steps": [
+        {
+          "op": "double_sign",
+          "validator": "v1",
+          "a": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-a",
+            "signature": "8ef64565d7e355247030bc89bd427d76e519d0ae730f6eeda52b025e0bd5e84278d084676557cdbf8156f9331f27e24608834467f96bcaed50bc12e9e8903c55adc5c6dc89cdb4177efec4c86e649e1718f85ae1f0308abbd4f037d1233bc6e0"
+          },
+          "b": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-b",
+            "signature": "a3aca40cc90a0cc658afae5b27ba4797e370da47de0014bc959bb50ace87118a7ed1be759710110cbe49d3b88234178110ff245c931f17fc25cb9f0bf8b2e6fd744ba79e8da5d46c2800325d690b45371596e9ee8f858b7436c3b641631aa8ea"
+          },
+          "at": 12,
+          "expect": {
+            "result": {
+              "kind": "double_sign",
+              "slashed": 200,
+              "reporter": 20,
+              "treasury": 180,
+              "jail_until": 62,
+              "delegators": {
+                "v1": 200
+              }
+            },
+            "validator": {
+              "status": "jailed",
+              "self_bond": 1800,
+              "stake": 1800,
+              "voting_power": 2000
+            }
+          }
+        },
+        {
+          "op": "double_sign",
+          "validator": "v1",
+          "a": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-a",
+            "signature": "8ef64565d7e355247030bc89bd427d76e519d0ae730f6eeda52b025e0bd5e84278d084676557cdbf8156f9331f27e24608834467f96bcaed50bc12e9e8903c55adc5c6dc89cdb4177efec4c86e649e1718f85ae1f0308abbd4f037d1233bc6e0"
+          },
+          "b": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-b",
+            "signature": "a3aca40cc90a0cc658afae5b27ba4797e370da47de0014bc959bb50ace87118a7ed1be759710110cbe49d3b88234178110ff245c931f17fc25cb9f0bf8b2e6fd744ba79e8da5d46c2800325d690b45371596e9ee8f858b7436c3b641631aa8ea"
+          },
+          "at": 13,
+          "expect": {
+            "error": "duplicate"
+          }
+        },
+        {
+          "op": "double_sign",
+          "validator": "v1",
+          "a": {
+            "height": 12,
+            "round": 1,
+            "block_hash": "block-c",
+            "signature": "b0e33a9e8326090d33ac9f98b79002632ca69de989662252131cbf84a7155a9a24b0de70b53824927e5e19ff5e8112e81437042ba5de328d0457ee08014d297e48e41b6a8114f047caa20502e408bd598af0dacd2bd05dd6acdd97ce56081e55"
+          },
+          "b": {
+            "height": 12,
+            "round": 1,
+            "block_hash": "block-d",
+            "signature": "a35af34f1a4b5d614a1c38a8c0bd83dca56440267d1204b35c516fa3442a1961996acab312bd355eaedfb0bf6415eb490c152aaf608c3cb7f9b21634bdc34a49af02aa55b786d470f3caded59f813acded1801c15fd0327d2dcd7d5094febbf3"
+          },
+          "at": 14,
+          "expect": {
+            "error": "forged"
+          }
+        },
+        {
+          "op": "double_sign",
+          "validator": "v1",
+          "a": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-a",
+            "signature": "8ef64565d7e355247030bc89bd427d76e519d0ae730f6eeda52b025e0bd5e84278d084676557cdbf8156f9331f27e24608834467f96bcaed50bc12e9e8903c55adc5c6dc89cdb4177efec4c86e649e1718f85ae1f0308abbd4f037d1233bc6e0"
+          },
+          "b": {
+            "height": 11,
+            "round": 2,
+            "block_hash": "block-b",
+            "signature": "85f3297e39cadea123c89cf2de6bc85ba94e97b747637acbea163c51bdd220056ea20b4c8530f08672f4a253db42a45215ac897dfb233be042ad2ab57b7b83ab8c002f028956594ce0e167e81b5e85e60497722c2c1f486af1105e52b75188c2"
+          },
+          "at": 14,
+          "expect": {
+            "error": "invalid"
+          }
+        },
+        {
+          "op": "double_sign",
+          "validator": "v2",
+          "a": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-a",
+            "signature": "96882a35f892dab24f6a55804a0fe10adfe4cf17330ec958a8442a32d497af61ff9f3adeacfdc62e75a07c961253e5c104f6d0408fb2d55a22cf1eee0b11716627d27e303087115b8cf34459be193e6dd93c730baa3974ef3509455f57da6154"
+          },
+          "b": {
+            "height": 11,
+            "round": 1,
+            "block_hash": "block-b",
+            "signature": "a22ea7b44457dee94c1d52f1f1d74f080ab0e18d37c71042723cf9bb02a7d2f6a2fc4bfe8292dbb470d44e0806fe5e6311f88309e1cfa72362577eca640a1ac7a41174928957a51ce990dbb8b323c83726d5c8034d00f67642fb0fc66a137d46"
+          },
+          "at": 200,
+          "expect": {
+            "error": "stale"
+          }
+        }
+      ]
+    },
+    {
+      "name": "downtime",
+      "setup": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 2000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10
+        }
+      ],
+      "steps": [
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 20,
+          "to": 29,
+          "missed": 6,
+          "total": 10,
+          "at": 30,
+          "expect": {
+            "result": {
+              "kind": "downtime",
+              "slashed": 100,
+              "reporter": 10,
+              "treasury": 90,
+              "jail_until": 80,
+              "delegators": {
+                "v1": 100
+              }
+            },
+            "validator": {
+              "status": "jailed",
+              "self_bond": 1900,
+              "stake": 1900,
+              "voting_power": 2000
+            }
+          }
+        },
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 20,
+          "to": 29,
+          "missed": 6,
+          "total": 10,
+          "at": 31,
+          "expect": {
+            "error": "duplicate"
+          }
+        },
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 40,
+          "to": 49,
+          "missed": 1,
+          "total": 10,
+          "at": 50,
+          "expect": {
+            "error": "insufficient"
+          }
+        },
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 60,
+          "to": 69,
+          "missed": 6,
+          "total": 9,
+          "at": 70,
+          "expect": {
+            "error": "forged"
+          }
+        },
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 80,
+          "to": 89,
+          "missed": 6,
+          "total": 10,
+          "at": 200,
+          "expect": {
+            "error": "stale"
+          }
+        },
+        {
+          "op": "downtime",
+          "validator": "v1",
+          "from": 100,
+          "to": 104,
+          "missed": 4,
+          "total": 5,
+          "at": 110,
+          "expect": {
+            "error": "insufficient"
+          }
+        }
+      ]
+    }
+  ]
+}

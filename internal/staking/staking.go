@@ -357,6 +357,52 @@ type ValidatorView struct {
 	CommissionBps uint32 `json:"commission_bps"`
 }
 
+// Penalty is the stake removed by a slash, per delegator.
+type Penalty struct {
+	Total      uint64            `json:"total"`
+	Delegators map[string]uint64 `json:"delegators"`
+}
+
+// Penalize removes a percentage of all stake the validator controls, including
+// delegation withdrawals still in the unbonding queue. It does not change the
+// validator status; the slashing policy jails separately.
+func (s *State) Penalize(validator string, bps uint32, at uint64) (Penalty, error) {
+	v, ok := s.Validators[validator]
+	if !ok {
+		return Penalty{}, fmt.Errorf("%w: validator %s", ErrUnknown, validator)
+	}
+	if v.Status == Unbonded {
+		return Penalty{}, fmt.Errorf("%w: validator is unbonded", ErrStatus)
+	}
+	if bps == 0 || bps > 10_000 {
+		return Penalty{}, fmt.Errorf("%w: slash bps must be in 1..10000", ErrInvalid)
+	}
+	if err := s.touch(at); err != nil {
+		return Penalty{}, err
+	}
+	out := Penalty{Delegators: map[string]uint64{}}
+	for delegator, amount := range s.Delegations[validator] {
+		cut := amount * uint64(bps) / 10_000
+		s.Delegations[validator][delegator] = amount - cut
+		if delegator == validator {
+			v.SelfBond -= cut
+		}
+		out.Delegators[delegator] += cut
+		out.Total += cut
+	}
+	for i := range s.Unbonding {
+		u := &s.Unbonding[i]
+		if u.Validator != validator {
+			continue
+		}
+		cut := u.Amount * uint64(bps) / 10_000
+		u.Amount -= cut
+		out.Delegators[u.Delegator] += cut
+		out.Total += cut
+	}
+	return out, nil
+}
+
 // Snapshot is the state shape used by conformance vectors.
 type Snapshot struct {
 	Epoch      uint64           `json:"epoch"`

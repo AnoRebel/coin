@@ -42,6 +42,7 @@ make test
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/indexer` | Optional Postgres read model with reorg-safe, idempotent writes |
 | `internal/staking` | Validator lifecycle, stake, delegation, and epoch-boundary set changes |
+| `internal/slashing` | Equivocation verification, downtime penalties, and reporter rewards |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -327,6 +328,30 @@ unbonding, and rejection cases. Keys and PoPs come from `spec/vectors/bls.json`.
 `shortcut:` the package tracks stake accounting, not ledger balances, and the
 node still gives CometBFT a static validator set. Wire `AdvanceEpoch` into
 `FinalizeBlock` validator updates before treating on-chain staking as live.
+
+## Slashing
+
+`internal/slashing` (mirrored by `python/arne/slashing.py`) accepts evidence,
+applies the penalty through `staking.Penalize`, and jails the validator. Every
+penalty is split into a reporter share and a treasury remainder.
+
+Double-sign evidence contains two signed votes at the same height and round
+with different block hashes. Both signatures are checked against the
+validator's registered BLS key over `VoteMessage`, so changing a hash, height,
+round, or signer invalidates the evidence. Evidence must arrive within
+`window_blocks` of the equivocation height; stale, duplicated, malformed, and
+forged evidence is rejected before any stake changes.
+
+Downtime evidence is structural: a complete window with `total` equal to its
+span, a missed share at or above `downtime_threshold_bps`, and a window of at
+least `downtime_min_blocks`. The consensus adapter must derive `missed` from
+finalized commit data; the library cannot prove an absence from signatures, so
+do not accept downtime evidence from an untrusted caller.
+
+`spec/vectors/slashing.json` covers valid, stale, duplicate, forged, and
+below-threshold cases in both implementations. `shortcut:` penalties are
+computed but not moved in the ledger, and the engine is not yet fed by
+CometBFT evidence.
 
 ## Workspace roles and audit
 
