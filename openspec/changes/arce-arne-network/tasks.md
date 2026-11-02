@@ -63,7 +63,7 @@
 - [x] 6.4 Implement validator lifecycle (`pending`, `active`, `jailed`, `unbonding`, `unbonded`), staking, delegation, and epoch changes; verify transition vectors
 - [x] 6.5 Implement slashing for double-sign and downtime with evidence windows and reporter rewards; verify valid, stale, and forged evidence
 - [x] 6.6 Implement commit certificates, validator-set proofs, and light-client verification; verify insufficient-quorum rejection
-- [ ] 6.7 Implement public and consortium validator admission; verify public join, consortium approval, and unapproved rejection
+- [x] 6.7 Implement public and consortium validator admission; verify public join, consortium approval, and unapproved rejection
 - [x] 6.8 Implement node halt on state-root divergence and consensus-critical invariant violation; verify the halt path with an injected divergence
 - [ ] 6.9 Add a two-node and a Go+Python mixed devnet; verify both finalize the same chain
 

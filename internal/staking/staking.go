@@ -79,6 +79,9 @@ type State struct {
 	Unbonding   []UnbondingEntry             `json:"unbonding"`
 	Powers      map[string]uint64            `json:"powers"` // settled at the last epoch
 	Active      []string                     `json:"active"`
+	// Admission, when non-nil, restricts activation to addresses mapped true.
+	// Public networks leave it nil; consortium networks fill it from approvals.
+	Admission map[string]bool `json:"admission,omitempty"`
 }
 
 // New returns an empty staking state. Params are validated before use.
@@ -320,10 +323,19 @@ func (s *State) AdvanceEpoch(at uint64) error {
 }
 
 func (s *State) eligible(v *Validator) bool {
+	if s.Admission != nil && !s.Admission[v.Address] {
+		return false
+	}
 	if v.SelfBond < s.Params.MinSelfBond {
 		return false
 	}
 	return s.Stake(v.Address) >= s.Params.MinStake
+}
+
+// SetAdmission restricts activation to the allowed addresses. A nil map means
+// public admission.
+func (s *State) SetAdmission(allowed map[string]bool) {
+	s.Admission = allowed
 }
 
 func (s *State) touch(at uint64) error {

@@ -1,0 +1,55 @@
+{
+  "cases": [
+    {
+      "name": "public_join",
+      "policy": {"mode": "public", "approvers": [], "threshold": 0},
+      "steps": [
+        {"op": "allowed", "validator": "v1", "expect": {"allowed": true, "status": "public"}},
+        {"op": "approve", "validator": "v1", "approver": "a1", "at": 5, "expect": {"error": "wrong mode"}}
+      ]
+    },
+    {
+      "name": "consortium_approval",
+      "policy": {"mode": "consortium", "approvers": ["a3", "a1", "a2"], "threshold": 2},
+      "steps": [
+        {"op": "allowed", "validator": "v1", "expect": {"allowed": false, "status": "pending"}},
+        {
+          "op": "approve",
+          "validator": "v1",
+          "approver": "a1",
+          "at": 5,
+          "expect": {"status": "pending", "approvers": ["a1"], "height": 0, "allowed": false}
+        },
+        {
+          "op": "approve",
+          "validator": "v1",
+          "approver": "a1",
+          "at": 6,
+          "expect": {"error": "duplicate approval"}
+        },
+        {
+          "op": "approve",
+          "validator": "v1",
+          "approver": "outsider",
+          "at": 6,
+          "expect": {"error": "unauthorized approver"}
+        },
+        {
+          "op": "approve",
+          "validator": "v1",
+          "approver": "a2",
+          "at": 7,
+          "expect": {"status": "approved", "approvers": ["a1", "a2"], "height": 7, "allowed": true}
+        },
+        {
+          "op": "approve",
+          "validator": "v1",
+          "approver": "a3",
+          "at": 8,
+          "expect": {"error": "already approved"}
+        },
+        {"op": "allowed", "validator": "v2", "expect": {"allowed": false, "status": "pending"}}
+      ]
+    }
+  ]
+}

@@ -70,6 +70,7 @@ class State:
     unbonding: list[UnbondingEntry] = field(default_factory=list)
     powers: dict[str, int] = field(default_factory=dict)
     active: list[str] = field(default_factory=list)
+    admission: dict[str, bool] | None = None
 
 
 def new(network: str, params: Params) -> State:
@@ -218,9 +219,16 @@ def advance_epoch(state: State, at: int) -> None:
 
 
 def _eligible(state: State, v: Validator) -> bool:
+    if state.admission is not None and not state.admission.get(v.address, False):
+        return False
     if v.self_bond < state.params.min_self_bond:
         return False
     return stake(state, v.address) >= state.params.min_stake
+
+
+def set_admission(state: State, allowed: dict[str, bool] | None) -> None:
+    """Restrict activation to allowed addresses; None means public admission."""
+    state.admission = allowed
 
 
 def _touch(state: State, at: int) -> None:

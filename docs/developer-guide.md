@@ -44,6 +44,7 @@ make test
 | `internal/staking` | Validator lifecycle, stake, delegation, and epoch-boundary set changes |
 | `internal/slashing` | Equivocation verification, downtime penalties, and reporter rewards |
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
+| `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -373,6 +374,27 @@ inclusion reuses `internal/smt` against the certificate's state root.
 quorum, an outdated set, a forged signature, an unknown signer, and a duplicate
 signer. `shortcut:` the node does not yet produce these certificates; CometBFT
 finality is still the live source of truth.
+
+## Validator admission
+
+`internal/admission` (mirrored by `python/arne/admission.py`) implements the two
+network admission modes. Public mode admits any validator that passes staking
+registration; consortium mode requires distinct approvals from the policy's
+authorized approvers.
+
+`Approve` records the approver and stamps the height when the threshold is
+reached. Unknown approvers, duplicate approvals, and changes after approval are
+rejected. `Approved()` returns the map consumed by `staking.SetAdmission`; a
+nil map means public admission, and a non-nil map restricts activation to the
+listed addresses at the next epoch. That is how an unapproved consortium
+validator stays pending while an approved one enters the active set.
+
+`spec/vectors/admission.json` covers public join, a threshold-two consortium,
+duplicate and unauthorized approvals, and unapproved rejection. The Go and
+Python tests also drive the staking epoch to prove admission gates activation.
+
+`shortcut:` approval records live in this library, not in ledger state; submit
+them through a governance transaction before calling admission authoritative.
 
 ## Workspace roles and audit
 
