@@ -1,0 +1,413 @@
+{
+  "network": "arce:devnet",
+  "description": "Validator lifecycle, stake, delegation, and epoch conformance vectors. Keys and proofs come from bls.json.",
+  "cases": [
+    {
+      "name": "activation_and_mid_epoch_delegation",
+      "params": {
+        "min_self_bond": 500,
+        "min_stake": 1000,
+        "max_power_bps": 0,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 500,
+          "at": 1,
+          "expect": {
+            "epoch": 0,
+            "height": 1,
+            "active": [],
+            "validators": {
+              "v1": {"status": "pending", "self_bond": 1000, "delegated": 0, "stake": 1000, "voting_power": 0}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {
+            "epoch": 1,
+            "height": 10,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "active", "voting_power": 1000}
+            }
+          }
+        },
+        {
+          "op": "delegate",
+          "validator": "v1",
+          "delegator": "d1",
+          "amount": 500,
+          "at": 12,
+          "expect": {
+            "epoch": 1,
+            "height": 12,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "active", "self_bond": 1000, "delegated": 500, "stake": 1500, "voting_power": 1000}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 20,
+          "expect": {
+            "epoch": 2,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "active", "stake": 1500, "voting_power": 1500}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "voting_power_cap",
+      "params": {
+        "min_self_bond": 100,
+        "min_stake": 100,
+        "max_power_bps": 5000,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 9000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "register",
+          "validator": "v2",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 2
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {
+            "epoch": 1,
+            "active": ["v1", "v2"],
+            "validators": {
+              "v1": {"status": "active", "stake": 9000, "voting_power": 5000},
+              "v2": {"status": "active", "stake": 1000, "voting_power": 1000}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "self_bond_removal",
+      "params": {
+        "min_self_bond": 500,
+        "min_stake": 1000,
+        "max_power_bps": 0,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {"epoch": 1, "active": ["v1"]}
+        },
+        {
+          "op": "undelegate",
+          "validator": "v1",
+          "delegator": "v1",
+          "amount": 600,
+          "at": 12,
+          "expect": {
+            "epoch": 1,
+            "height": 12,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "active", "self_bond": 400, "stake": 400, "voting_power": 1000}
+            },
+            "unbonding": [
+              {"validator": "v1", "delegator": "v1", "amount": 600, "release": 32}
+            ]
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 20,
+          "expect": {
+            "epoch": 2,
+            "active": [],
+            "validators": {
+              "v1": {"status": "pending", "self_bond": 400, "stake": 400, "voting_power": 0}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "jail_and_unjail",
+      "params": {
+        "min_self_bond": 500,
+        "min_stake": 1000,
+        "max_power_bps": 0,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {"epoch": 1, "active": ["v1"]}
+        },
+        {
+          "op": "jail",
+          "validator": "v1",
+          "until": 20,
+          "at": 12,
+          "expect": {
+            "epoch": 1,
+            "height": 12,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "jailed", "voting_power": 1000}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 20,
+          "expect": {
+            "epoch": 2,
+            "active": [],
+            "validators": {
+              "v1": {"status": "jailed", "voting_power": 0}
+            }
+          }
+        },
+        {
+          "op": "unjail",
+          "validator": "v1",
+          "at": 20,
+          "expect": {
+            "epoch": 2,
+            "height": 20,
+            "validators": {
+              "v1": {"status": "pending", "voting_power": 0}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 30,
+          "expect": {
+            "epoch": 3,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "active", "voting_power": 1000}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unbonding_delay",
+      "params": {
+        "min_self_bond": 500,
+        "min_stake": 1000,
+        "max_power_bps": 0,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 1
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {"epoch": 1, "active": ["v1"]}
+        },
+        {
+          "op": "begin_unbonding",
+          "validator": "v1",
+          "at": 12,
+          "expect": {
+            "epoch": 1,
+            "height": 12,
+            "active": ["v1"],
+            "validators": {
+              "v1": {"status": "unbonding", "stake": 1000, "voting_power": 1000}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 20,
+          "expect": {
+            "epoch": 2,
+            "active": [],
+            "validators": {
+              "v1": {"status": "unbonding", "stake": 1000, "voting_power": 0}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 30,
+          "expect": {
+            "epoch": 3,
+            "active": [],
+            "validators": {
+              "v1": {"status": "unbonding", "stake": 1000, "voting_power": 0}
+            }
+          }
+        },
+        {
+          "op": "advance_epoch",
+          "at": 40,
+          "expect": {
+            "epoch": 4,
+            "active": [],
+            "validators": {
+              "v1": {"status": "unbonded", "self_bond": 0, "stake": 0, "voting_power": 0}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "rejections",
+      "params": {
+        "min_self_bond": 500,
+        "min_stake": 1000,
+        "max_power_bps": 0,
+        "epoch_blocks": 10,
+        "unbonding_blocks": 20
+      },
+      "steps": [
+        {
+          "op": "register",
+          "validator": "v1",
+          "key_from": "v2",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 1,
+          "expect": {"error": "pop", "height": 0}
+        },
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 1,
+          "expect": {"height": 1}
+        },
+        {
+          "op": "register",
+          "validator": "v1",
+          "self_bond": 1000,
+          "commission_bps": 100,
+          "at": 2,
+          "expect": {"error": "duplicate", "height": 1}
+        },
+        {
+          "op": "delegate",
+          "validator": "missing",
+          "delegator": "d1",
+          "amount": 10,
+          "at": 3,
+          "expect": {"error": "unknown", "height": 1}
+        },
+        {
+          "op": "delegate",
+          "validator": "v1",
+          "delegator": "d1",
+          "amount": 0,
+          "at": 4,
+          "expect": {"error": "invalid", "height": 1}
+        },
+        {
+          "op": "undelegate",
+          "validator": "v1",
+          "delegator": "d1",
+          "amount": 1,
+          "at": 5,
+          "expect": {"error": "insufficient", "height": 1}
+        },
+        {
+          "op": "advance_epoch",
+          "at": 11,
+          "expect": {"error": "epoch", "height": 1}
+        },
+        {
+          "op": "advance_epoch",
+          "at": 10,
+          "expect": {
+            "epoch": 1,
+            "height": 10,
+            "active": ["v1"],
+            "validators": {"v1": {"status": "active", "voting_power": 1000}}
+          }
+        },
+        {
+          "op": "begin_unbonding",
+          "validator": "missing",
+          "at": 11,
+          "expect": {"error": "unknown", "height": 10}
+        },
+        {
+          "op": "jail",
+          "validator": "v1",
+          "until": 2,
+          "at": 11,
+          "expect": {"error": "invalid", "height": 10}
+        },
+        {
+          "op": "unjail",
+          "validator": "v1",
+          "at": 11,
+          "expect": {"error": "status", "height": 10}
+        },
+        {
+          "op": "register",
+          "validator": "v2",
+          "self_bond": 1000,
+          "commission_bps": 10001,
+          "at": 12,
+          "expect": {"error": "commission", "height": 10}
+        },
+        {
+          "op": "unjail",
+          "validator": "v1",
+          "at": 13,
+          "expect": {"error": "status", "height": 10}
+        }
+      ]
+    }
+  ]
+}

@@ -41,6 +41,7 @@ make test
 | `crypto/core` | Rust crypto core and its C ABI |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/indexer` | Optional Postgres read model with reorg-safe, idempotent writes |
+| `internal/staking` | Validator lifecycle, stake, delegation, and epoch-boundary set changes |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -301,6 +302,31 @@ does not stop the node. The indexer is not consensus state; a lost or stale
 index is rebuilt from the node. `shortcut:` the read model stores block headers
 and transaction positions only; add receipts and balances when an explorer
 needs them.
+
+## Validator staking
+
+`internal/staking` (mirrored by `python/arne/staking.py`) is the deterministic
+staking state machine. A validator registers with an address, a BLS consensus
+key, a matching proof of possession, a commission, and at least the minimum
+self-bond. Registration verifies the PoP against the network and validator
+address, so the same rogue-key rule as `internal/crypto/bls` applies.
+
+`AdvanceEpoch` is the only place voting power changes. It requires the exact
+first height of the next epoch, releases completed unbonding entries, moves
+eligible pending validators to `active`, moves ineligible ones back to
+`pending`, and drops jailed, unbonding, and unbonded validators from the set.
+Voting power is the validator's bonded stake, capped at `max_power_bps` of the
+active set's total stake; the cap never increases anyone's power. Mid-epoch
+delegations and undelegations are visible immediately in `Stake` but not in
+`VotingPower` until the next epoch.
+
+`spec/vectors/staking.json` drives both implementations through activation,
+mid-epoch delegation, the voting-power cap, self-bond removal, jail/unjail,
+unbonding, and rejection cases. Keys and PoPs come from `spec/vectors/bls.json`.
+
+`shortcut:` the package tracks stake accounting, not ledger balances, and the
+node still gives CometBFT a static validator set. Wire `AdvanceEpoch` into
+`FinalizeBlock` validator updates before treating on-chain staking as live.
 
 ## Workspace roles and audit
 
