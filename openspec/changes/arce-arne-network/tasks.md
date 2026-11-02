@@ -51,7 +51,7 @@
 - [x] 5.3 Implement RocksDB storage for the Python node with the same key schema; verify Python state roots match Go
 - [x] 5.4 Implement full and incremental snapshots with manifests, checksums, and restore; verify tampered snapshots are rejected
 - [x] 5.5 Implement configurable pruning and archive mode; verify recent proofs work and pruned history returns a clear error
-- [ ] 5.6 Implement the optional Postgres indexer with idempotent, reorg-safe writes; verify catch-up, orphan removal, and node operation with the indexer down
+- [x] 5.6 Implement the optional Postgres indexer with idempotent, reorg-safe writes; verify catch-up, orphan removal, and node operation with the indexer down
 - [x] 5.7 Implement versioned, idempotent schema migrations with rollback documentation; verify forward, failed, and rollback paths
 - [x] 5.8 Implement encrypted backup and restore with integrity verification; verify wrong-key and corrupted-backup failures
 

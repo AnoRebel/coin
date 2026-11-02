@@ -306,6 +306,32 @@ Pruning only touches the app's Pebble store. CometBFT's own blockstore under
 or snapshot sync yet. Back up before changing `--keep-blocks`, because lowering
 the window is irreversible.
 
+## Optional Postgres indexer
+
+`--indexer-url postgres://…` (on `arned start` and `arned devnet`) mirrors
+committed blocks and transaction hashes into Postgres for explorers and
+reporting. The node creates these tables on first use:
+
+- `indexer_schema` — read-model version (currently 1).
+- `blocks(height primary key, hash, prev_root, state_root, tx_root, time, proposer)`.
+- `transactions(hash primary key, height references blocks, position)`.
+
+The indexer is never a consensus dependency:
+
+- `Submit` only signals a worker; block production never waits for Postgres.
+- Reapplying the same block is a no-op, so retries are safe.
+- A block whose predecessor state root no longer matches, or a different block
+  at the same height, deletes the orphaned suffix before writing the new chain.
+- If the database is down at startup or during a run, the node logs a warning
+  and keeps producing; the worker retries every 5 seconds.
+- `--keep-blocks` can prune blocks the indexer has not copied yet. In that case
+  the worker logs `indexer: source block is pruned` and the missing history
+  cannot be recovered; catch it up before lowering the window.
+
+Indexing is local to the node that runs it. Point one node per network at the
+database, or give each node its own schema/database, and never feed the same
+tables from two networks.
+
 ## Signed webhooks
 
 Enable delivery per endpoint with a stable signing key:

@@ -34,6 +34,14 @@ type Config struct {
 	Webhooks []string
 	// WebhookSeed is the 32-byte Ed25519 seed used to sign webhook bodies.
 	WebhookSeed []byte
+	// BlockSink receives committed blocks. Submit must not block; a nil sink
+	// disables indexing.
+	BlockSink BlockSink
+}
+
+// BlockSink is an optional, non-consensus consumer of committed blocks.
+type BlockSink interface {
+	Submit(ledger.Block)
 }
 
 // Event is a broadcast block notification.
@@ -230,6 +238,13 @@ func (n *Node) Root() []byte {
 	out := make([]byte, len(root))
 	copy(out, root[:])
 	return out
+}
+
+// SetBlockSink sets an optional, non-consensus consumer of committed blocks.
+func (n *Node) SetBlockSink(sink BlockSink) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.cfg.BlockSink = sink
 }
 
 // SetBroadcast routes submitted transactions to an external consensus engine.
@@ -454,12 +469,21 @@ func (n *Node) CommitBlock() error {
 		}
 	}
 	n.pending = nil
+	n.submitBlock(*b)
 	n.broadcast(Event{
 		Type: "block", Height: b.Height, Time: b.Time,
 		Hash: mustHash(*b), TxHashes: b.TxHashes,
 	})
 	n.dispatchReceipts(*b, b.Receipts)
 	return nil
+}
+
+// submitBlock hands a committed block to the optional index sink. Submit must
+// not block block production.
+func (n *Node) submitBlock(b ledger.Block) {
+	if n.cfg.BlockSink != nil {
+		n.cfg.BlockSink.Submit(b)
+	}
 }
 
 // ProduceBlock finalizes a block. It returns the block (possibly empty).
@@ -503,6 +527,7 @@ func (n *Node) ProduceBlock(now uint64) (ledger.Block, error) {
 			n.receipts[h] = receipts[i]
 		}
 	}
+	n.submitBlock(block)
 	n.broadcast(Event{
 		Type: "block", Height: block.Height, Time: block.Time,
 		Hash: mustHash(block), TxHashes: block.TxHashes,
@@ -598,6 +623,14 @@ func (n *Node) Block(height uint64) (ledger.Block, bool) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	b, ok := n.blocks[height]
+	return b, ok
+}
+
+// LastBlock returns the newest committed block.
+func (n *Node) LastBlock() (ledger.Block, bool) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	b, ok := n.blocks[n.state.Height()]
 	return b, ok
 }
 

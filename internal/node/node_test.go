@@ -132,6 +132,38 @@ func TestHaltOnStateRootDivergence(t *testing.T) {
 	}
 }
 
+type recordingSink struct{ blocks []ledger.Block }
+
+func (s *recordingSink) Submit(b ledger.Block) { s.blocks = append(s.blocks, b) }
+
+func TestBlockSinkReceivesCommittedBlocks(t *testing.T) {
+	now := uint64(1_700_000_001)
+	n, cfg, _ := testNode(t, storage.NewMemory())
+	sink := &recordingSink{}
+	n.SetBlockSink(sink)
+	produced, err := n.ProduceBlock(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.blocks) != 1 || sink.blocks[0].Height != produced.Height {
+		t.Fatalf("produced sink = %v", sink.blocks)
+	}
+	if last, ok := n.LastBlock(); !ok || last.Height != produced.Height {
+		t.Fatalf("last block = %v, %v", last.Height, ok)
+	}
+
+	committed, _, err := n.FinalizeTxs(nil, 2, now+1, cfg.Proposer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.CommitBlock(); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.blocks) != 2 || sink.blocks[1].Height != committed.Height {
+		t.Fatalf("committed sink = %v", sink.blocks)
+	}
+}
+
 func TestHaltOnConsensusInvariant(t *testing.T) {
 	n, _, _ := testNode(t, storage.NewMemory())
 	if _, _, err := n.FinalizeTxs(nil, 5, 1_700_000_001, ""); err == nil {

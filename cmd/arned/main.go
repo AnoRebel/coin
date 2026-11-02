@@ -120,6 +120,7 @@ func devnetCmd() *cobra.Command {
 		keepBlocks      uint64
 		webhookURLs     []string
 		webhookKey      string
+		indexerURL      string
 		workspacePath   string
 		auditGrantsPath string
 	)
@@ -177,6 +178,10 @@ func devnetCmd() *cobra.Command {
 				return err
 			}
 			defer n.CloseWebhooks()
+			if idx := startIndexer(indexerURL, n); idx != nil {
+				n.SetBlockSink(idx)
+				defer idx.Close()
+			}
 			if len(webhookURLs) > 0 {
 				fmt.Printf("webhooks: %d endpoint(s), signing key %s\n", len(webhookURLs), n.WebhookPublicKey())
 			}
@@ -250,6 +255,7 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().Uint64Var(&keepBlocks, "keep-blocks", 0, "keep only the newest N blocks (0 archives all)")
 	cmd.Flags().StringArrayVar(&webhookURLs, "webhook", nil, "webhook endpoint URL (repeatable)")
 	cmd.Flags().StringVar(&webhookKey, "webhook-key", "", "hex Ed25519 seed for signing webhooks")
+	cmd.Flags().StringVar(&indexerURL, "indexer-url", "", "Postgres URL for the optional read-model indexer")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
 	cmd.Flags().StringVar(&auditGrantsPath, "audit-grants", "", "auditor grants file (requires --workspace)")
 	return cmd

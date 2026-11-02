@@ -40,6 +40,7 @@ make test
 | `internal/crypto/core` | cgo bindings to the shared Rust crypto core |
 | `crypto/core` | Rust crypto core and its C ABI |
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
+| `internal/indexer` | Optional Postgres read model with reorg-safe, idempotent writes |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -288,6 +289,18 @@ nonexistent destination, writes into a temporary sibling store, migrates it to
 the current schema, and renames it into place. Incrementals require the full
 base for both verification and restore. `shortcut:` snapshots are built in
 memory; stream the state map if production block volume makes that costly.
+
+`internal/indexer` is an optional Postgres read model. `CatchUp` finds the
+indexed height, walks back over any stored block that no longer matches the
+node, applies blocks in order, and stops with `ErrPruned` when the node no
+longer has a needed block. `Postgres.Apply` deletes the orphaned suffix and
+upserts in one transaction, so retries are idempotent. `Async` serializes
+catch-up on a worker: `Submit` only signals it, a 5-second ticker retries after
+an outage, and schema creation is lazy, so a database that is down at startup
+does not stop the node. The indexer is not consensus state; a lost or stale
+index is rebuilt from the node. `shortcut:` the read model stores block headers
+and transaction positions only; add receipts and balances when an explorer
+needs them.
 
 ## Workspace roles and audit
 
