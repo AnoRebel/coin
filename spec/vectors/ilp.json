@@ -1,0 +1,306 @@
+{
+  "fulfillment": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "condition": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+  "asset": "arce:testnet/arce",
+  "quote": {
+    "id": "quote-1",
+    "expires_at": 200,
+    "debit": {
+      "asset": "arce:testnet/arce",
+      "value": 1500
+    },
+    "receive": {
+      "asset": "arce:testnet/arce",
+      "value": 1490
+    },
+    "fee": {
+      "asset": "arce:testnet/arce",
+      "value": 10
+    }
+  },
+  "prepare": {
+    "amount": 1500,
+    "expires_at": 200,
+    "destination": "g.arne.testnet.amina",
+    "data_hex": "68656c6c6f"
+  },
+  "grant": {
+    "access_token": "token-1",
+    "expires_at": 300,
+    "access": [
+      {
+        "type": "quote",
+        "actions": [
+          "create",
+          "read"
+        ]
+      },
+      {
+        "type": "incoming-payment",
+        "actions": [
+          "create"
+        ]
+      }
+    ]
+  },
+  "escrow": {
+    "id": "escrow-1",
+    "sender": "amina",
+    "receiver": "john",
+    "amount": {
+      "asset": "arce:testnet/arce",
+      "value": 1500
+    },
+    "expires_at": 200
+  },
+  "cases": [
+    {
+      "name": "quote_valid",
+      "kind": "quote",
+      "now": 100
+    },
+    {
+      "name": "quote_at_expiry",
+      "kind": "quote",
+      "now": 200,
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "prepare_valid",
+      "kind": "prepare",
+      "now": 100,
+      "expect": {
+        "fulfillment": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      }
+    },
+    {
+      "name": "prepare_expired",
+      "kind": "prepare",
+      "now": 200,
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "prepare_wrong_preimage",
+      "kind": "prepare",
+      "now": 100,
+      "preimage": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": {
+        "error": "condition does not match"
+      }
+    },
+    {
+      "name": "prepare_bad_destination",
+      "kind": "prepare",
+      "now": 100,
+      "destination": "g..usd",
+      "expect": {
+        "error": "invalid address"
+      }
+    },
+    {
+      "name": "grant_allows",
+      "kind": "grant",
+      "now": 100,
+      "check": [
+        "quote",
+        "create"
+      ]
+    },
+    {
+      "name": "grant_action_denied",
+      "kind": "grant",
+      "now": 100,
+      "check": [
+        "quote",
+        "delete"
+      ],
+      "expect": {
+        "error": "access denied"
+      }
+    },
+    {
+      "name": "grant_type_denied",
+      "kind": "grant",
+      "now": 100,
+      "check": [
+        "outgoing-payment",
+        "create"
+      ],
+      "expect": {
+        "error": "access denied"
+      }
+    },
+    {
+      "name": "grant_expired",
+      "kind": "grant",
+      "now": 300,
+      "check": [
+        "quote",
+        "read"
+      ],
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "claim_ok",
+      "kind": "claim",
+      "now": 100,
+      "expect": {
+        "status": "claimed"
+      }
+    },
+    {
+      "name": "claim_at_expiry",
+      "kind": "claim",
+      "now": 200,
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "claim_wrong_preimage",
+      "kind": "claim",
+      "now": 100,
+      "preimage": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": {
+        "error": "condition does not match"
+      }
+    },
+    {
+      "name": "claim_twice",
+      "kind": "claim_twice",
+      "now": 100,
+      "expect": {
+        "error": "wrong state"
+      }
+    },
+    {
+      "name": "refund_before_expiry",
+      "kind": "refund",
+      "now": 199,
+      "expect": {
+        "error": "not yet expired"
+      }
+    },
+    {
+      "name": "refund_at_expiry",
+      "kind": "refund",
+      "now": 200,
+      "expect": {
+        "status": "refunded"
+      }
+    },
+    {
+      "name": "refund_after_claim",
+      "kind": "refund_after_claim",
+      "now": 500,
+      "expect": {
+        "error": "wrong state"
+      }
+    },
+    {
+      "name": "stream_ok",
+      "kind": "stream",
+      "receipts": [
+        {
+          "sequence": 1,
+          "total_received": 500
+        },
+        {
+          "sequence": 2,
+          "total_received": 900
+        }
+      ],
+      "expect": {
+        "total": 900
+      }
+    },
+    {
+      "name": "stream_replay",
+      "kind": "stream",
+      "receipts": [
+        {
+          "sequence": 1,
+          "total_received": 500
+        },
+        {
+          "sequence": 1,
+          "total_received": 500
+        }
+      ],
+      "expect": {
+        "error": "replay"
+      }
+    },
+    {
+      "name": "stream_regression",
+      "kind": "stream",
+      "receipts": [
+        {
+          "sequence": 1,
+          "total_received": 500
+        },
+        {
+          "sequence": 2,
+          "total_received": 400
+        }
+      ],
+      "expect": {
+        "error": "total"
+      }
+    },
+    {
+      "name": "stream_foreign_id",
+      "kind": "stream",
+      "stream_id": "stream-1",
+      "receipts": [
+        {
+          "sequence": 1,
+          "total_received": 500
+        }
+      ],
+      "expect": {
+        "error": "stream"
+      },
+      "receipt_stream_id": "other-1"
+    },
+    {
+      "name": "reject_bad_code",
+      "kind": "reject",
+      "code": "X99",
+      "expect": {
+        "error": "invalid reject code"
+      }
+    },
+    {
+      "name": "reject_ok",
+      "kind": "reject",
+      "code": "F99",
+      "triggered_by": "g.arne.testnet.amina",
+      "message": "insufficient liquidity"
+    },
+    {
+      "name": "address_valid",
+      "kind": "address",
+      "address": "g.arne.testnet.amina"
+    },
+    {
+      "name": "address_trailing_dot",
+      "kind": "address",
+      "address": "g.arne.testnet."
+    },
+    {
+      "name": "address_single_segment",
+      "kind": "address",
+      "address": "amina",
+      "expect": {
+        "error": "needs two segments"
+      }
+    }
+  ]
+}

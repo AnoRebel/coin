@@ -35,6 +35,7 @@ make test
 | `internal/compliance/vc` | W3C VC 2.0/SD-JWT selective disclosure and revocation |
 | `internal/connector` | Connector handshake: versions, assets, health |
 | `internal/connector/iso20022` | pacs.008, pain.001, camt.053 mapping and validation |
+| `internal/connector/ilp` | ILPv4 prepare/fulfill, Open Payments quotes and grants, HTLC, STREAM |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -678,6 +679,54 @@ message type); both suites apply the same edit and expect the same error text.
 canonical asset backs a fiat currency, does not persist messages, and each
 message is single-transaction. Wire it to `internal/connector` asset mapping and
 a durable message log before claiming a live bank rail.
+
+## ILPv4 and Open Payments
+
+`internal/connector/ilp` (mirrored by `python/arne/ilp.py`) covers the settlement
+primitives for an ILP rail:
+
+```go
+condition, _ := ilp.Condition(fulfillment)   // SHA-256 of a 32-byte preimage
+prepare := ilp.Prepare{
+    Amount: 1500, ExpiresAt: now + 60, Condition: condition,
+    Destination: "g.arne.testnet.amina",
+}
+if err := prepare.Validate(now); err != nil { /* expired, bad address */ }
+revealed, err := prepare.Fulfill(now, fulfillment) // fails on a wrong preimage
+```
+
+- `ValidateAddress` enforces the ILP shape: at most 1023 bytes, at least two
+  segments, each 1..64 characters of `[A-Za-z0-9_~-]`, with one trailing dot
+  allowed for a prefix.
+- The execution condition is `SHA-256(fulfillment)` over exactly 32 bytes.
+  `Fulfill` re-checks the condition, so a relayer cannot substitute a preimage.
+- `Quote.Validate(now)` requires a positive debit and receive amount, an
+  optional positive fee, and `now < ExpiresAt`. `Grant.Check(now, kind, action)`
+  validates the token, access types (`incoming-payment`, `quote`,
+  `outgoing-payment`), actions, and expiry before answering.
+- `Escrow` is the HTLC. `Claim(now, fulfillment)` works only strictly before
+  expiry and only with the right preimage; `Refund(now)` works only at or after
+  expiry and only while held. A claim that lands before expiry always wins, and
+  a second claim or a refund after a claim is a state error.
+- `Stream.Apply(receipt)` accepts a STREAM receipt only when it advances the
+  sequence and does not reduce the cumulative total, so replayed or reordered
+  receipts are refused.
+
+Times are unix seconds in the model; an ILP adapter converts to and from ISO
+8601 at the wire boundary.
+
+`spec/vectors/ilp.json` pins one preimage and condition and drives 26 cases:
+quote valid and at expiry, prepare valid, expired, wrong preimage, bad
+destination, grant allowed and denied by action and type, grant expiry, claim
+success and at expiry, claim twice, wrong preimage, refund before/at expiry and
+after a claim, stream success, replay, regression and foreign stream, reject
+code validation, and address shapes.
+
+`shortcut:` this is a library, not a running connector: there is no transport,
+no peer routing, no liquidity account, and no persistence. Go's escrow is a
+mutable pointer; Python's is a frozen dataclass whose `claim`/`refund` return
+the new escrow. Wire it to a transport and a durable escrow table before moving
+real value.
 
 ## Data retention and legal holds
 
