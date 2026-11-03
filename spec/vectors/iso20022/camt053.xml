@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.13">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>ARNE-STMT-0001</MsgId>
+      <CreDtTm>2026-11-03T10:00:00Z</CreDtTm>
+      <NbOfTxs>2</NbOfTxs>
+    </GrpHdr>
+    <Stmt>
+      <Id>ARNE-STMT-0001</Id>
+      <Acct>
+        <Id>
+          <IBAN>DE89370400440532013000</IBAN>
+        </Id>
+        <Ccy>TZS</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="TZS">100.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="TZS">1600.50</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="TZS">1500.50</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-11-03</Dt>
+        </BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>ARNE-E2E-0001</EndToEndId>
+            </Refs>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Amina Hassan</Nm>
+              </Dbtr>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="TZS">0.50</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt>
+          <Dt>2026-11-03</Dt>
+        </BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr>
+                <Nm>Bank Fee</Nm>
+              </Cdtr>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

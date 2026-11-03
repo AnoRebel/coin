@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.13">
+  <FIToFICstmrCdtTrf>
+    <GrpHdr>
+      <MsgId>ARNE-MSG-0001</MsgId>
+      <CreDtTm>2026-11-03T10:00:00Z</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+    </GrpHdr>
+    <CdtTrfTxInf>
+      <PmtId>
+        <EndToEndId>ARNE-E2E-0001</EndToEndId>
+      </PmtId>
+      <IntrBkSttlmAmt Ccy="TZS">1500.50</IntrBkSttlmAmt>
+      <Dbtr>
+        <Nm>Amina Hassan</Nm>
+        <PstlAdr>
+          <Ctry>TZ</Ctry>
+        </PstlAdr>
+      </Dbtr>
+      <DbtrAcct>
+        <Id>
+          <IBAN>DE89370400440532013000</IBAN>
+        </Id>
+      </DbtrAcct>
+      <DbtrAgt>
+        <FinInstnId>
+          <BICFI>DEUTDEFF</BICFI>
+        </FinInstnId>
+      </DbtrAgt>
+      <Cdtr>
+        <Nm>John Mwangi</Nm>
+        <PstlAdr>
+          <Ctry>KE</Ctry>
+        </PstlAdr>
+      </Cdtr>
+      <CdtrAcct>
+        <Id>
+          <IBAN>DE89370400440532013001</IBAN>
+        </Id>
+      </CdtrAcct>
+      <CdtrAgt>
+        <FinInstnId>
+          <BICFI>DEUTDEFF500</BICFI>
+        </FinInstnId>
+      </CdtrAgt>
+      <RmtInf>
+        <Ustrd>invoice 42</Ustrd>
+      </RmtInf>
+    </CdtTrfTxInf>
+  </FIToFICstmrCdtTrf>
+</Document>

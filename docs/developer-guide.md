@@ -34,6 +34,7 @@ make test
 | `internal/compliance/travelrule` | IVMS101 Travel Rule collection and signed exchange |
 | `internal/compliance/vc` | W3C VC 2.0/SD-JWT selective disclosure and revocation |
 | `internal/connector` | Connector handshake: versions, assets, health |
+| `internal/connector/iso20022` | pacs.008, pain.001, camt.053 mapping and validation |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -620,6 +621,63 @@ and empty requests. Both suites read it.
 
 `shortcut:` this package negotiates only; there is no quote, transfer, or retry
 loop yet. Those arrive with the ISO 20022, ILP, and EVM adapters.
+
+## ISO 20022 mapping
+
+`internal/connector/iso20022` (mirrored by `python/arne/iso20022.py`) maps ARNE
+transfers to and from three ISO 20022 messages:
+
+| Message | Direction | Use |
+| --- | --- | --- |
+| `pacs.008.001.13` | build and parse | Customer credit transfer to or from a bank |
+| `pain.001.001.12` | build and parse | Payment initiation from a corporate account |
+| `camt.053.001.13` | build and parse | Account statement with balances and entries |
+
+```go
+raw, err := iso20022.BuildPacs008(iso20022.Transfer{
+    MessageID: "ARNE-MSG-0001", EndToEndID: "ARNE-E2E-0001",
+    CreatedAt: "2026-11-03T10:00:00Z",
+    Amount:    iso20022.Amount{Currency: "TZS", Value: "1500.50"},
+    Debtor:    iso20022.Party{Name: "Amina Hassan", Account: "DE89370400440532013000",
+        Agent: "DEUTDEFF", Country: "TZ"},
+    Creditor:  iso20022.Party{Name: "John Mwangi", Account: "DE89370400440532013001",
+        Agent: "DEUTDEFF500", Country: "KE"},
+    Remittance: "invoice 42",
+})
+parsed, err := iso20022.ParsePacs008(raw) // identical model
+```
+
+- Amounts are decimal **strings** with an ISO 4217 currency; nothing is parsed
+  into a float. At most 13 integer and 5 fraction digits, and the value must be
+  positive.
+- Text limits are rune counts, not bytes: 35 for message/end-to-end IDs, 140 for
+  names and remittance, 4..34 uppercase alphanumerics for accounts, 8 or 11
+  characters for a BIC, ISO 3166-1 alpha-2 for country, RFC 3339 for
+  `created_at`, and a real calendar date for a booking date.
+- Each message carries exactly one transfer or statement. A batch is refused
+  rather than partially settled, and `CountTransactions` reports what an inbound
+  message claims so a caller can reject it before parsing.
+- `pain.001` cross-checks `CtrlSum` against the instructed amount; a mismatch is
+  an error, because a reconciliation break must not be silently accepted.
+- Optional blocks are omitted entirely when empty. Emitting `<Nm></Nm>` or an
+  empty `<Ustrd>` would be invalid ISO 20022, so the builder drops the parent
+  element instead.
+- `ParsePacs008` and friends validate the parsed model, so a syntactically valid
+  but semantically wrong message (lowercase country, mismatched currency) is
+  rejected with the offending field named.
+
+`spec/vectors/iso20022/` holds the three canonical messages, and Go and Python
+both build those exact bytes and parse them back to the same model.
+`spec/vectors/iso20022.json` also lists 19 malformed mutations (batch counts,
+bad currency, lowercase country or account, short BIC, bad timestamp, zero
+amount, over-long ID, control-sum mismatch, bad balance type, direction, status,
+date, currency mismatch, both parties on one entry, empty statement, wrong
+message type); both suites apply the same edit and expect the same error text.
+
+`shortcut:` the mapping is a pure translation layer: it does not choose which
+canonical asset backs a fiat currency, does not persist messages, and each
+message is single-transaction. Wire it to `internal/connector` asset mapping and
+a durable message log before claiming a live bank rail.
 
 ## Data retention and legal holds
 

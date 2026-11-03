@@ -1,0 +1,240 @@
+{
+  "pacs008": {
+    "file": "iso20022/pacs008.xml",
+    "transfer": {
+      "message_id": "ARNE-MSG-0001",
+      "end_to_end_id": "ARNE-E2E-0001",
+      "created_at": "2026-11-03T10:00:00Z",
+      "amount": {
+        "currency": "TZS",
+        "value": "1500.50"
+      },
+      "debtor": {
+        "name": "Amina Hassan",
+        "account": "DE89370400440532013000",
+        "agent": "DEUTDEFF",
+        "country": "TZ"
+      },
+      "creditor": {
+        "name": "John Mwangi",
+        "account": "DE89370400440532013001",
+        "agent": "DEUTDEFF500",
+        "country": "KE"
+      },
+      "remittance": "invoice 42"
+    }
+  },
+  "pain001": {
+    "file": "iso20022/pain001.xml",
+    "transfer": {
+      "message_id": "ARNE-MSG-0001",
+      "end_to_end_id": "ARNE-E2E-0001",
+      "created_at": "2026-11-03T10:00:00Z",
+      "amount": {
+        "currency": "TZS",
+        "value": "1500.50"
+      },
+      "debtor": {
+        "name": "Amina Hassan",
+        "account": "DE89370400440532013000",
+        "agent": "DEUTDEFF",
+        "country": "TZ"
+      },
+      "creditor": {
+        "name": "John Mwangi",
+        "account": "DE89370400440532013001",
+        "agent": "DEUTDEFF500",
+        "country": "KE"
+      },
+      "remittance": "invoice 42"
+    }
+  },
+  "camt053": {
+    "file": "iso20022/camt053.xml",
+    "statement": {
+      "message_id": "ARNE-STMT-0001",
+      "created_at": "2026-11-03T10:00:00Z",
+      "account": "DE89370400440532013000",
+      "currency": "TZS",
+      "balances": [
+        {
+          "type": "OPBD",
+          "amount": {
+            "currency": "TZS",
+            "value": "100.00"
+          },
+          "direction": "CRDT"
+        },
+        {
+          "type": "CLBD",
+          "amount": {
+            "currency": "TZS",
+            "value": "1600.50"
+          },
+          "direction": "CRDT"
+        }
+      ],
+      "entries": [
+        {
+          "amount": {
+            "currency": "TZS",
+            "value": "1500.50"
+          },
+          "direction": "CRDT",
+          "status": "BOOK",
+          "booking_date": "2026-11-03",
+          "end_to_end_id": "ARNE-E2E-0001",
+          "debtor_name": "Amina Hassan",
+          "creditor_name": ""
+        },
+        {
+          "amount": {
+            "currency": "TZS",
+            "value": "0.50"
+          },
+          "direction": "DBIT",
+          "status": "PDNG",
+          "booking_date": "2026-11-03",
+          "creditor_name": "Bank Fee",
+          "end_to_end_id": "",
+          "debtor_name": ""
+        }
+      ]
+    }
+  },
+  "malformed": [
+    {
+      "name": "pacs009_batch",
+      "file": "iso20022/pacs008.xml",
+      "find": "<NbOfTxs>1</NbOfTxs>",
+      "replace": "<NbOfTxs>2</NbOfTxs>",
+      "error": "pacs.008 mapping expects one transaction"
+    },
+    {
+      "name": "bad_currency",
+      "file": "iso20022/pacs008.xml",
+      "find": "<IntrBkSttlmAmt Ccy=\"TZS\">",
+      "replace": "<IntrBkSttlmAmt Ccy=\"TS\">",
+      "error": "currency must be ISO 4217"
+    },
+    {
+      "name": "lowercase_country",
+      "file": "iso20022/pacs008.xml",
+      "find": "<Ctry>KE</Ctry>",
+      "replace": "<Ctry>ke</Ctry>",
+      "error": "creditor.country must be ISO 3166-1 alpha-2"
+    },
+    {
+      "name": "lowercase_account",
+      "file": "iso20022/pacs008.xml",
+      "find": "<IBAN>DE89370400440532013001</IBAN>",
+      "replace": "<IBAN>de89370400440532013001</IBAN>",
+      "error": "creditor.account must be 5..34 uppercase alphanumeric characters"
+    },
+    {
+      "name": "short_bic",
+      "file": "iso20022/pacs008.xml",
+      "find": "<BICFI>DEUTDEFF500</BICFI>",
+      "replace": "<BICFI>BAD</BICFI>",
+      "error": "creditor.bic must be 8 or 11 characters"
+    },
+    {
+      "name": "bad_timestamp",
+      "file": "iso20022/pacs008.xml",
+      "find": "<CreDtTm>2026-11-03T10:00:00Z</CreDtTm>",
+      "replace": "<CreDtTm>2026-11-03 10:00:00</CreDtTm>",
+      "error": "created_at must be RFC 3339"
+    },
+    {
+      "name": "zero_amount",
+      "file": "iso20022/pacs008.xml",
+      "find": "<IntrBkSttlmAmt Ccy=\"TZS\">1500.50</IntrBkSttlmAmt>",
+      "replace": "<IntrBkSttlmAmt Ccy=\"TZS\">0.00</IntrBkSttlmAmt>",
+      "error": "amount must be positive"
+    },
+    {
+      "name": "long_message_id",
+      "file": "iso20022/pacs008.xml",
+      "find": "<MsgId>ARNE-MSG-0001</MsgId>",
+      "replace": "<MsgId>MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM</MsgId>",
+      "error": "message_id must be 1..35 characters"
+    },
+    {
+      "name": "missing_creditor_name",
+      "file": "iso20022/pacs008.xml",
+      "find": "<Nm>John Mwangi</Nm>",
+      "replace": "<Nm></Nm>",
+      "error": "creditor.name is required"
+    },
+    {
+      "name": "wrong_root",
+      "file": "iso20022/pacs008.xml",
+      "find": "FIToFICstmrCdtTrf",
+      "replace": "CstmrCdtTrfInitn",
+      "error": "unexpected message type"
+    },
+    {
+      "name": "pain_batch",
+      "file": "iso20022/pain001.xml",
+      "find": "<NbOfTxs>1</NbOfTxs>",
+      "replace": "<NbOfTxs>2</NbOfTxs>",
+      "error": "pain.001 mapping expects one transaction"
+    },
+    {
+      "name": "control_sum",
+      "file": "iso20022/pain001.xml",
+      "find": "<CtrlSum>1500.50</CtrlSum>",
+      "replace": "<CtrlSum>1500.51</CtrlSum>",
+      "error": "control sum does not match the amount"
+    },
+    {
+      "name": "camt_bad_balance_type",
+      "file": "iso20022/camt053.xml",
+      "find": "<Cd>OPBD</Cd>",
+      "replace": "<Cd>XXXX</Cd>",
+      "error": "balance 0 type must be OPBD, CLBD, or ITBD"
+    },
+    {
+      "name": "camt_bad_direction",
+      "file": "iso20022/camt053.xml",
+      "find": "<CdtDbtInd>DBIT</CdtDbtInd>",
+      "replace": "<CdtDbtInd>XXXX</CdtDbtInd>",
+      "error": "direction must be CRDT or DBIT"
+    },
+    {
+      "name": "camt_bad_status",
+      "file": "iso20022/camt053.xml",
+      "find": "<Sts>BOOK</Sts>",
+      "replace": "<Sts>DONE</Sts>",
+      "error": "status must be BOOK or PDNG"
+    },
+    {
+      "name": "camt_bad_date",
+      "file": "iso20022/camt053.xml",
+      "find": "<Dt>2026-11-03</Dt>",
+      "replace": "<Dt>2026-13-03</Dt>",
+      "error": "booking_date is not a date"
+    },
+    {
+      "name": "camt_currency_mismatch",
+      "file": "iso20022/camt053.xml",
+      "find": "<Amt Ccy=\"TZS\">1500.50</Amt>",
+      "replace": "<Amt Ccy=\"EUR\">1500.50</Amt>",
+      "error": "entry 0 currency must match the account"
+    },
+    {
+      "name": "camt_both_parties",
+      "file": "iso20022/camt053.xml",
+      "find": "</Dbtr>",
+      "replace": "</Dbtr><Cdtr><Nm>Other</Nm></Cdtr>",
+      "error": "entry 0 cannot have both debtor and creditor"
+    },
+    {
+      "name": "camt_no_entries",
+      "file": "iso20022/camt053.xml",
+      "find": "Ntry",
+      "replace": "Xtry",
+      "error": "statement needs an entry"
+    }
+  ]
+}
