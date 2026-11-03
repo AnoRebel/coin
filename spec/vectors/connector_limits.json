@@ -1,0 +1,376 @@
+{
+  "policy": {
+    "asset": "arce:testnet/usdc",
+    "max_exposure": 3000,
+    "max_counterparty_exposure": 2000,
+    "max_transfer": 1000,
+    "rate_count": 3,
+    "rate_window": 60
+  },
+  "cases": [
+    {
+      "name": "govern_initial",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 3000,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 1000,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": "ops",
+      "reason": "initial limits",
+      "now": 900,
+      "expect": {
+        "asset": "arce:testnet/usdc",
+        "actor": "ops",
+        "reason": "initial limits",
+        "at": 900,
+        "has_prior": false,
+        "next_exposure": 3000
+      }
+    },
+    {
+      "name": "govern_invalid_ordering",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 3000,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 2500,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": "ops",
+      "reason": "bad",
+      "now": 901,
+      "expect": {
+        "error": "max_transfer above max_counterparty_exposure"
+      }
+    },
+    {
+      "name": "govern_invalid_reverse_ordering",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 3000,
+        "max_counterparty_exposure": 4000,
+        "max_transfer": 1000,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": "ops",
+      "reason": "bad",
+      "now": 902,
+      "expect": {
+        "error": "max_counterparty_exposure above max_exposure"
+      }
+    },
+    {
+      "name": "govern_zero_cap",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 0,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 1000,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": "ops",
+      "reason": "bad",
+      "now": 903,
+      "expect": {
+        "error": "caps must be positive"
+      }
+    },
+    {
+      "name": "govern_zero_rate",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 3000,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 1000,
+        "rate_count": 0,
+        "rate_window": 60
+      },
+      "actor": "ops",
+      "reason": "bad",
+      "now": 904,
+      "expect": {
+        "error": "rate_count and rate_window must be positive"
+      }
+    },
+    {
+      "name": "govern_empty_actor",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 3000,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 1000,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": " ",
+      "reason": "bad",
+      "now": 905,
+      "expect": {
+        "error": "actor is required"
+      }
+    },
+    {
+      "name": "submit_unknown_asset",
+      "kind": "submit",
+      "asset": "arce:testnet/eur",
+      "counterparty": "bank-a",
+      "amount": 10,
+      "now": 999,
+      "expect": {
+        "error": "asset is not configured"
+      }
+    },
+    {
+      "name": "submit_zero_amount",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 0,
+      "now": 999,
+      "expect": {
+        "error": "amount must be positive"
+      }
+    },
+    {
+      "name": "submit_above_transfer",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 1001,
+      "now": 999,
+      "expect": {
+        "error": "transfer exceeds the maximum size"
+      }
+    },
+    {
+      "name": "submit_ok_first",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 500,
+      "now": 1000,
+      "expect": {
+        "ordinal": 1,
+        "amount": 500,
+        "exposure": 500,
+        "counterparty_exposure": 500
+      }
+    },
+    {
+      "name": "submit_ok_second",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 600,
+      "now": 1010,
+      "expect": {
+        "ordinal": 2,
+        "amount": 600,
+        "exposure": 1100,
+        "counterparty_exposure": 1100
+      }
+    },
+    {
+      "name": "submit_counterparty_cap",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 1000,
+      "now": 1020,
+      "expect": {
+        "error": "counterparty bank-a has 1100 of 2000"
+      }
+    },
+    {
+      "name": "submit_ok_third",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-b",
+      "amount": 500,
+      "now": 1030,
+      "expect": {
+        "ordinal": 3,
+        "amount": 500,
+        "exposure": 1600,
+        "counterparty_exposure": 500
+      }
+    },
+    {
+      "name": "submit_ok_fourth",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-b",
+      "amount": 500,
+      "now": 1040,
+      "expect": {
+        "ordinal": 4,
+        "amount": 500,
+        "exposure": 2100,
+        "counterparty_exposure": 1000
+      }
+    },
+    {
+      "name": "submit_ok_fifth",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-b",
+      "amount": 500,
+      "now": 1050,
+      "expect": {
+        "ordinal": 5,
+        "amount": 500,
+        "exposure": 2600,
+        "counterparty_exposure": 1500
+      }
+    },
+    {
+      "name": "submit_rate_limited",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-b",
+      "amount": 100,
+      "now": 1060,
+      "expect": {
+        "error": "rate limit exceeded"
+      }
+    },
+    {
+      "name": "submit_asset_cap",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-c",
+      "amount": 1000,
+      "now": 1065,
+      "expect": {
+        "error": "asset arce:testnet/usdc has 2600 of 3000"
+      }
+    },
+    {
+      "name": "submit_after_window_pruned",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-b",
+      "amount": 100,
+      "now": 1121,
+      "expect": {
+        "ordinal": 6,
+        "amount": 100,
+        "exposure": 2700,
+        "counterparty_exposure": 1600
+      }
+    },
+    {
+      "name": "release_unknown",
+      "kind": "release",
+      "id": "nope",
+      "expect": {
+        "error": "unknown reservation"
+      }
+    },
+    {
+      "name": "release_first",
+      "kind": "release",
+      "expect": {
+        "released": true,
+        "amount": 500
+      },
+      "id": "cc3437fe4959a19f2a566433d2c28b86"
+    },
+    {
+      "name": "exposure_after_release",
+      "kind": "exposure",
+      "asset": "arce:testnet/usdc",
+      "expect": {
+        "exposure": 2200
+      }
+    },
+    {
+      "name": "counterparty_exposure_after_release",
+      "kind": "counterparty_exposure",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "expect": {
+        "counterparty_exposure": 600
+      }
+    },
+    {
+      "name": "release_twice",
+      "kind": "release",
+      "expect": {
+        "error": "reservation is already released"
+      },
+      "id": "cc3437fe4959a19f2a566433d2c28b86"
+    },
+    {
+      "name": "govern_lowered_cap",
+      "kind": "govern",
+      "policy": {
+        "asset": "arce:testnet/usdc",
+        "max_exposure": 2000,
+        "max_counterparty_exposure": 2000,
+        "max_transfer": 1000,
+        "rate_count": 3,
+        "rate_window": 60
+      },
+      "actor": "risk",
+      "reason": "exposure review",
+      "now": 1140,
+      "expect": {
+        "asset": "arce:testnet/usdc",
+        "actor": "risk",
+        "reason": "exposure review",
+        "at": 1140,
+        "has_prior": true,
+        "prior_exposure": 3000,
+        "next_exposure": 2000
+      }
+    },
+    {
+      "name": "submit_after_lowered_cap",
+      "kind": "submit",
+      "asset": "arce:testnet/usdc",
+      "counterparty": "bank-a",
+      "amount": 100,
+      "now": 1150,
+      "expect": {
+        "error": "asset arce:testnet/usdc has 2200 of 2000"
+      }
+    },
+    {
+      "name": "history",
+      "kind": "history",
+      "expect": {
+        "changes": [
+          {
+            "actor": "ops",
+            "reason": "initial limits",
+            "at": 900,
+            "has_prior": false,
+            "prior_exposure": 0,
+            "next_exposure": 3000
+          },
+          {
+            "actor": "risk",
+            "reason": "exposure review",
+            "at": 1140,
+            "has_prior": true,
+            "prior_exposure": 3000,
+            "next_exposure": 2000
+          }
+        ]
+      }
+    }
+  ]
+}

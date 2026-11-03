@@ -40,6 +40,7 @@ make test
 | `internal/connector/assetmap` | Versioned external-to-canonical asset mapping |
 | `internal/connector/reconcile` | Idempotent cross-rail matching and exception reports |
 | `internal/connector/security` | Endpoint allowlists, mTLS credential rotation, and log redaction |
+| `internal/connector/limits` | Exposure caps, rate windows, and governed limit changes |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -945,6 +946,59 @@ or pin DNS, and does not persist credentials. The transport must verify the
 chain and present the client certificate; an allowlisted hostname can still
 resolve to a private address, so add resolution checks before calling this
 SSRF-safe. Store credentials in a secret manager, not in the node config.
+
+## Connector exposure and rate limits
+
+`internal/connector/limits` (mirrored by `python/arne/connector_limits.py`)
+caps what a connector may move and how often, and records every change to those
+caps:
+
+```go
+book := limits.New()
+book.Govern(limits.Policy{
+    Asset: "arce:testnet/usdc",
+    MaxExposure: 3000, MaxCounterpartyExposure: 2000, MaxTransfer: 1000,
+    RateCount: 3, RateWindow: 60,
+}, "ops", "initial limits", now)
+
+reservation, err := book.Submit("arce:testnet/usdc", "bank-a", 500, now)
+book.Release(reservation.ID)
+```
+
+- A `Policy` must be internally ordered: `MaxTransfer <=
+  MaxCounterpartyExposure <= MaxExposure`, with positive caps and a positive
+  rate count and window. An unconfigured asset is refused rather than treated
+  as unlimited.
+- `Submit` checks, in order: the single-transfer size, the counterparty's rate
+  window, the asset-wide exposure, and the counterparty exposure. The first
+  failure is returned, so an operator sees one reason instead of a pile. A
+  rejected submission consumes no exposure and no rate budget.
+- Rate windows are half-open `(now-window, now]` and keyed by asset and
+  counterparty, so one peer's burst does not spend another asset's budget.
+  A request exactly one window later is admitted.
+- A reservation holds exposure until `Release`. Releasing twice is a state
+  error, not a silent no-op, and releasing an unknown ID is an unknown
+  reservation. Reservation IDs are deterministic: the first 16 bytes of
+  `SHA-256("arne-reservation-v1" || 0 || asset || 0 || counterparty || 0 ||
+  seq)`.
+- `Govern` validates the policy, requires an actor and a reason, and records the
+  prior policy, the next policy, who changed it, why, and when. Lowering a cap
+  below current exposure is allowed: it stops new reservations without
+  invalidating ones already made, so `Release` still restores exposure
+  correctly.
+
+`spec/vectors/connector_limits.json` drives 26 cases across both
+implementations: initial governance and invalid orderings, zero caps and rate,
+missing actor, unknown asset, zero and over-size transfers, accepted
+reservations that move the asset and counterparty counters, a counterparty cap
+rejection, a rate rejection, an asset cap rejection, a window that prunes, a
+release and its double-release error, exposure after release, a lowered cap that
+stops new reservations, and the governed change history with prior values.
+
+`shortcut:` the book lives in memory only, has no persistence, and is not wired
+into payment submission or the EVM bridge. Durable state is required before a
+restart can trust these caps; expose the book through the connector host and
+persist reservations and history with the settlement record.
 
 ## Data retention and legal holds
 
