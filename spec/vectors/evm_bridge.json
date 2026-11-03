@@ -1,0 +1,287 @@
+{
+  "config": {
+    "chain_id": 1,
+    "finality": 12,
+    "limits": [
+      {
+        "asset": "arce:testnet/arce",
+        "max": 2000,
+        "window": 60
+      }
+    ]
+  },
+  "message_id": "ac69a86fd83506132a6f884b2619e71a",
+  "cases": [
+    {
+      "name": "accept_first",
+      "kind": "submit",
+      "now": 100,
+      "message": {
+        "id": "ac69a86fd83506132a6f884b2619e71a",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      }
+    },
+    {
+      "name": "replay_same_message",
+      "kind": "submit",
+      "now": 101,
+      "message": {
+        "id": "ac69a86fd83506132a6f884b2619e71a",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "replay"
+      }
+    },
+    {
+      "name": "same_tx_other_log",
+      "kind": "submit",
+      "now": 102,
+      "message": {
+        "id": "f9dc5d0e10b58551ce202e3fd014e7b0",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "log_index": 1,
+        "asset": "arce:testnet/arce",
+        "amount": 100,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      }
+    },
+    {
+      "name": "below_finality",
+      "kind": "submit",
+      "now": 103,
+      "message": {
+        "id": "d4114483a1855eb11c1605d0828c36a9",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 11
+      },
+      "expect": {
+        "error": "not final"
+      }
+    },
+    {
+      "name": "wrong_chain",
+      "kind": "submit",
+      "now": 104,
+      "message": {
+        "id": "2cba230d50affba5c9203cef58ef45d8",
+        "direction": "inbound",
+        "chain_id": 137,
+        "block_number": 1000,
+        "tx_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "wrong chain"
+      }
+    },
+    {
+      "name": "bad_tx_hash",
+      "kind": "submit",
+      "now": 105,
+      "message": {
+        "id": "12da0a8115c6a3c8c47344bdde3d3ea9",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xzz",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "tx_hash"
+      }
+    },
+    {
+      "name": "zero_amount",
+      "kind": "submit",
+      "now": 106,
+      "message": {
+        "id": "c714c665a324c985700d5ee705a4f0a1",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 0,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "amount must be positive"
+      }
+    },
+    {
+      "name": "unknown_direction",
+      "kind": "submit",
+      "now": 107,
+      "message": {
+        "id": "7ed89c3d5116a2d45e9b4c8a89b5cf9e",
+        "direction": "sideways",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "direction"
+      }
+    },
+    {
+      "name": "message_id_mismatch",
+      "kind": "submit",
+      "now": 108,
+      "message": {
+        "id": "00112233445566778899aabbccddeeff",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "message id does not match"
+      }
+    },
+    {
+      "name": "rate_limit_exceeded",
+      "kind": "submit",
+      "now": 109,
+      "message": {
+        "id": "f01c8d92acc5f969ad40708d183908dc",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0x1212121212121212121212121212121212121212121212121212121212121212",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 600,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "rate limit exceeded"
+      }
+    },
+    {
+      "name": "pause",
+      "kind": "pause",
+      "now": 110,
+      "reason": "incident-42"
+    },
+    {
+      "name": "submit_while_paused",
+      "kind": "submit",
+      "now": 111,
+      "message": {
+        "id": "d3f84685e8fac509a4b200d76613f378",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0x3434343434343434343434343434343434343434343434343434343434343434",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 10,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      },
+      "expect": {
+        "error": "paused: incident-42"
+      }
+    },
+    {
+      "name": "pause_twice",
+      "kind": "pause",
+      "now": 112,
+      "reason": "again",
+      "expect": {
+        "error": "already paused"
+      }
+    },
+    {
+      "name": "resume",
+      "kind": "resume",
+      "now": 113
+    },
+    {
+      "name": "resume_twice",
+      "kind": "resume",
+      "now": 114,
+      "expect": {
+        "error": "not paused"
+      }
+    },
+    {
+      "name": "limit_after_window",
+      "kind": "submit",
+      "now": 200,
+      "message": {
+        "id": "d3f84685e8fac509a4b200d76613f378",
+        "direction": "inbound",
+        "chain_id": 1,
+        "block_number": 1000,
+        "tx_hash": "0x3434343434343434343434343434343434343434343434343434343434343434",
+        "log_index": 0,
+        "asset": "arce:testnet/arce",
+        "amount": 600,
+        "sender": "0x1111111111111111111111111111111111111111",
+        "recipient": "amina",
+        "confirmations": 12
+      }
+    }
+  ]
+}

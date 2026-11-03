@@ -36,6 +36,7 @@ make test
 | `internal/connector` | Connector handshake: versions, assets, health |
 | `internal/connector/iso20022` | pacs.008, pain.001, camt.053 mapping and validation |
 | `internal/connector/ilp` | ILPv4 prepare/fulfill, Open Payments quotes and grants, HTLC, STREAM |
+| `internal/connector/evm` | EVM bridge guard: finality, replay, limits, pause |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -727,6 +728,53 @@ no peer routing, no liquidity account, and no persistence. Go's escrow is a
 mutable pointer; Python's is a frozen dataclass whose `claim`/`refund` return
 the new escrow. Wire it to a transport and a durable escrow table before moving
 real value.
+
+## EVM bridge
+
+`internal/connector/evm` (mirrored by `python/arne/evm_bridge.py`) is the guard
+in front of a lock/mint or burn/release relayer. It never holds keys and never
+talks to a chain; it decides whether an observed event may execute, then records
+that decision so the relayer acts exactly once:
+
+```go
+bridge, err := evm.New(evm.Config{
+    ChainID: 1, Finality: 12,
+    Limits: []evm.Limit{{Asset: "arce:testnet/arce", Max: 2000, Window: 60}},
+})
+err = bridge.Submit(evm.Message{
+    Direction: evm.Inbound, ChainID: 1, TxHash: "0x…", LogIndex: 0,
+    Asset: "arce:testnet/arce", Amount: 1500,
+    Sender: "0x…", Recipient: "amina", Confirmations: 12,
+}, now)
+```
+
+- The message ID is deterministic: the first 16 bytes of
+  `SHA-256("arne-bridge-v1" || 0 || chainID || 0 || txHash || 0 || logIndex)`.
+  Two logs in one transaction are different messages, and an ID that does not
+  match the event is rejected rather than trusted.
+- `Confirmations` must reach `Finality` (inclusive). A reorg below the
+  threshold cannot execute, and a later retry of the same event is a replay.
+- The replay set is permanent for the process and survives pause/resume. Submit
+  is not safe for concurrent use: serialize it, because replay and limit
+  decisions are stateful.
+- Limits are per asset over a rolling unix-second window. A failed submission
+  charges nothing, so a rejected message does not consume capacity.
+- `Pause` blocks every submission with the reason in the error; `Resume` clears
+  it. Pausing is the emergency stop for a suspected bridge fault; it does not
+  reverse an executed message.
+- Input shape is checked: direction, chain, `0x` + 64 lowercase hex transaction
+  hash, non-empty accounts, positive amount.
+
+`spec/vectors/evm_bridge.json` pins one message ID and drives 16 ordered cases
+against one bridge: accepted message, replay, same transaction with another log
+index, below finality, wrong chain, bad hash, zero amount, unknown direction,
+tampered ID, rate limit, pause, submission while paused, double pause, resume,
+double resume, and window rollover.
+
+`shortcut:` confirmed events are held in memory only; restarting the process
+forgets replays and windows. Persist the seen set and windows (or the messages
+themselves) before running a relayer in production, and wire pause to an
+operator key.
 
 ## Data retention and legal holds
 
