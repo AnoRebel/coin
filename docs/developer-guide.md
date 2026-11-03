@@ -314,6 +314,31 @@ session, err := policy.Handshake(p2p.Offer{
   members. `Apply` sets addresses, limits, and discovery but leaves peers from
   an existing `config.toml` in place when the policy lists none.
 
+### Discovery and backoff
+
+`p2p.NewDiscovery` tracks bootstrap connectivity without doing I/O. The caller
+reports which bootstrap peers answered, and the returned status says whether the
+node has joined gossip, how many peers it holds, and when to retry:
+
+```go
+discovery, err := p2p.NewDiscovery(policy, 2, 5, 60) // min peers, backoff, cap
+status, err := discovery.Observe(now, reachableNodeIDs)
+switch status.State {
+case p2p.StateJoined:   // at or above the minimum, retry reset
+case p2p.StateDegraded: // status.RetryAt is the next attempt
+}
+```
+
+- Public discovery accepts any validated node ID; a consortium node counts only
+  allowlisted peers, so a stranger that speaks the protocol never enters the set.
+- Below the minimum the node reports `degraded` and schedules a retry with
+  exponential backoff capped at the configured maximum. Attempts before
+  `RetryAt` are ignored rather than hammering an unreachable bootstrap, and
+  reaching the minimum resets the delay.
+- `Admit` applies the same handshake checks plus the connection cap and returns
+  `ErrFull` once inbound plus outbound peers are exhausted. `Disconnect` drops a
+  peer, so the next observation reports degraded again.
+
 `shortcut:` discovery, NAT traversal, peer scoring, bans, and snapshot sync are
 not implemented; the policy only constrains what CometBFT already does. The
 devnet in `internal/multinode` still relaxes the address book for loopback
