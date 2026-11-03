@@ -37,6 +37,7 @@ make test
 | `internal/connector/iso20022` | pacs.008, pain.001, camt.053 mapping and validation |
 | `internal/connector/ilp` | ILPv4 prepare/fulfill, Open Payments quotes and grants, HTLC, STREAM |
 | `internal/connector/evm` | EVM bridge guard: finality, replay, limits, pause |
+| `internal/connector/assetmap` | Versioned external-to-canonical asset mapping |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -775,6 +776,61 @@ double resume, and window rollover.
 forgets replays and windows. Persist the seen set and windows (or the messages
 themselves) before running a relayer in production, and wire pause to an
 operator key.
+
+## External asset mapping
+
+`internal/connector/assetmap` (mirrored by `python/arne/assetmap.py`) maps a
+rail-specific identifier to a canonical ARNE asset, and back again for audit:
+
+```go
+registry, err := assetmap.New(1, []assetmap.Mapping{
+    {
+        External: assetmap.External{Rail: assetmap.EVM, ChainID: 1,
+            Address: "0xA0b8…eB48"},
+        Canonical: "arce:testnet/usdc", Decimals: 6,
+    },
+    {
+        External: assetmap.External{Rail: assetmap.Fiat, Scheme: "iso4217", Code: "usd"},
+        Canonical: "arce:testnet/usdc", Decimals: 2,
+        MergePolicy: "usd-fiat-rail",
+    },
+})
+
+got, err := registry.Resolve(assetmap.External{Rail: assetmap.EVM, ChainID: 1,
+    Address: "0xa0b8…eB48"})          // EVM and fiat casing both normalize
+list := registry.Reverse("arce:testnet/usdc") // both rails
+```
+
+- Two rails: `evm` (`chain_id` plus `0x` and 40 lowercase hex) and `fiat`
+  (`scheme: "iso4217"` plus a three-letter uppercase code). Anything else is
+  invalid, and a fiat mapping carrying a chain or address is refused.
+- Normalization happens before duplicate detection: EVM addresses are
+  lowercased and fiat codes uppercased, so casing cannot smuggle in a second
+  mapping for the same reference.
+- Two external references may share one canonical asset only with an explicit
+  `MergePolicy` on every mapping after the first. Without it the set is
+  ambiguous and is rejected, because a caller must not get a different answer
+  depending on table order.
+- Every version is a **full snapshot**, and versions apply strictly in sequence
+  (`1`, then `2`, …). Resolving against an old version is supported, so a past
+  settlement can be audited against the table that was current then. Re-applying
+  a version and skipping a version are both errors.
+- `Reverse` returns a list, because one canonical asset can legitimately have a
+  mapping per rail or chain.
+
+`spec/vectors/assetmap.json` drives 24 cases against one registry: EVM and fiat
+lookups, mixed-case input, unknown reference and rail, reverse before and after
+an apply, a full-snapshot v2 that adds Polygon without dropping Ethereum,
+historical v1 vs v2 resolution, a version gap, duplicate external references,
+missing and over-long merge policies, zero version, empty set, over-long
+canonical, excessive decimals, bad fiat code, bad EVM address, an EVM mapping
+with a fiat field, and a fiat mapping with a chain. Both implementations must
+agree on every result and error.
+
+`shortcut:` this is a lookup table, not an issuer. It does not prove that a
+canonical asset exists, does not check decimals against an on-chain contract,
+and keeps versions in memory only. Persist the registry and verify decimals
+against the source chain before moving value.
 
 ## Data retention and legal holds
 

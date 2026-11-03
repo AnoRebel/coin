@@ -1,0 +1,478 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "external": {
+        "rail": "evm",
+        "chain_id": 1,
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+      },
+      "canonical": "arce:testnet/usdc",
+      "decimals": 6,
+      "since": 0
+    },
+    {
+      "external": {
+        "rail": "fiat",
+        "scheme": "iso4217",
+        "code": "usd"
+      },
+      "canonical": "arce:testnet/usdc",
+      "decimals": 2,
+      "since": 0,
+      "merge_policy": "usd-fiat-rail"
+    }
+  ],
+  "cases": [
+    {
+      "name": "evm_lookup",
+      "kind": "resolve",
+      "external": {
+        "rail": "evm",
+        "chain_id": 1,
+        "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 6
+      }
+    },
+    {
+      "name": "evm_mixed_case_input",
+      "kind": "resolve",
+      "external": {
+        "rail": "evm",
+        "chain_id": 1,
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 6
+      }
+    },
+    {
+      "name": "fiat_lookup_lowercase",
+      "kind": "resolve",
+      "external": {
+        "rail": "fiat",
+        "scheme": "iso4217",
+        "code": "usd"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 2
+      }
+    },
+    {
+      "name": "unknown_evm",
+      "kind": "resolve",
+      "external": {
+        "rail": "evm",
+        "chain_id": 1,
+        "address": "0x0000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "error": "unknown external reference"
+      }
+    },
+    {
+      "name": "unknown_rail",
+      "kind": "resolve",
+      "external": {
+        "rail": "swift",
+        "code": "USD"
+      },
+      "expect": {
+        "error": "unknown external reference"
+      }
+    },
+    {
+      "name": "reverse_before_apply",
+      "kind": "reverse",
+      "canonical": "arce:testnet/usdc",
+      "expect": {
+        "count": 2
+      }
+    },
+    {
+      "name": "apply_v2",
+      "kind": "apply",
+      "version": 2,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        },
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "usd"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2,
+          "since": 0,
+          "merge_policy": "usd-fiat-rail"
+        },
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 137,
+            "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0,
+          "merge_policy": "usdc-multichain"
+        }
+      ]
+    },
+    {
+      "name": "resolve_v2_polygon",
+      "kind": "resolve",
+      "external": {
+        "rail": "evm",
+        "chain_id": 137,
+        "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 6
+      }
+    },
+    {
+      "name": "resolve_v2_keeps_ethereum",
+      "kind": "resolve",
+      "external": {
+        "rail": "evm",
+        "chain_id": 1,
+        "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 6
+      }
+    },
+    {
+      "name": "historical_v1_hides_polygon",
+      "kind": "resolve_version",
+      "version": 1,
+      "external": {
+        "rail": "evm",
+        "chain_id": 137,
+        "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+      },
+      "expect": {
+        "error": "unknown external reference"
+      }
+    },
+    {
+      "name": "historical_v2_has_polygon",
+      "kind": "resolve_version",
+      "version": 2,
+      "external": {
+        "rail": "evm",
+        "chain_id": 137,
+        "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+      },
+      "expect": {
+        "canonical": "arce:testnet/usdc",
+        "decimals": 6
+      }
+    },
+    {
+      "name": "version_gap",
+      "kind": "apply",
+      "version": 4,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        },
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "usd"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2,
+          "since": 0,
+          "merge_policy": "usd-fiat-rail"
+        },
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 137,
+            "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0,
+          "merge_policy": "usdc-multichain"
+        }
+      ],
+      "expect": {
+        "error": "unexpected version"
+      }
+    },
+    {
+      "name": "reverse_after_apply",
+      "kind": "reverse",
+      "canonical": "arce:testnet/usdc",
+      "expect": {
+        "count": 3
+      }
+    },
+    {
+      "name": "duplicate_external",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        },
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+          },
+          "canonical": "arce:testnet/other",
+          "decimals": 6
+        }
+      ],
+      "expect": {
+        "error": "duplicate external reference"
+      }
+    },
+    {
+      "name": "missing_merge_policy",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        },
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "usd"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2,
+          "since": 0
+        }
+      ],
+      "expect": {
+        "error": "needs a merge policy"
+      }
+    },
+    {
+      "name": "merge_policy_too_long",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        },
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "usd"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2,
+          "since": 0,
+          "merge_policy": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+        }
+      ],
+      "expect": {
+        "error": "merge policy must be at most 128 characters"
+      }
+    },
+    {
+      "name": "zero_version",
+      "kind": "new_set",
+      "version": 0,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        }
+      ],
+      "expect": {
+        "error": "version starts at 1"
+      }
+    },
+    {
+      "name": "empty_set",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [],
+      "expect": {
+        "error": "a set needs a mapping"
+      }
+    },
+    {
+      "name": "canonical_too_long",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decimals": 6,
+          "since": 0
+        }
+      ],
+      "expect": {
+        "error": "canonical asset is required"
+      }
+    },
+    {
+      "name": "decimals_too_high",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 37,
+          "since": 0
+        }
+      ],
+      "expect": {
+        "error": "decimals must be at most 36"
+      }
+    },
+    {
+      "name": "bad_fiat_code",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "us"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2
+        }
+      ],
+      "expect": {
+        "error": "ISO 4217"
+      }
+    },
+    {
+      "name": "bad_evm_address",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0x1234"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6
+        }
+      ],
+      "expect": {
+        "error": "evm address"
+      }
+    },
+    {
+      "name": "evm_with_code",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "evm",
+            "chain_id": 1,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "code": "USDC"
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 6,
+          "since": 0
+        }
+      ],
+      "expect": {
+        "error": "evm mapping has no scheme or code"
+      }
+    },
+    {
+      "name": "fiat_with_chain",
+      "kind": "new_set",
+      "version": 1,
+      "mappings": [
+        {
+          "external": {
+            "rail": "fiat",
+            "scheme": "iso4217",
+            "code": "USD",
+            "chain_id": 1
+          },
+          "canonical": "arce:testnet/usdc",
+          "decimals": 2
+        }
+      ],
+      "expect": {
+        "error": "fiat mapping has no chain or address"
+      }
+    }
+  ]
+}
