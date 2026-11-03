@@ -339,10 +339,35 @@ case p2p.StateDegraded: // status.RetryAt is the next attempt
   `ErrFull` once inbound plus outbound peers are exhausted. `Disconnect` drops a
   peer, so the next observation reports degraded again.
 
-`shortcut:` discovery, NAT traversal, peer scoring, bans, and snapshot sync are
-not implemented; the policy only constrains what CometBFT already does. The
-devnet in `internal/multinode` still relaxes the address book for loopback
-peers. Pick a chain ID matching `protocol.ChainID` when hand-writing genesis.
+`shortcut:` this decides policy, not transport: nothing here dials peers,
+traverses NAT, scores them, bans them, or syncs snapshots. The devnet in
+`internal/multinode` still relaxes the address book for loopback peers. Pick a
+chain ID matching `protocol.ChainID` when hand-writing genesis.
+
+### Gossip relay queue
+
+`p2p.NewGossip` is the relay decision in front of the network: it remembers
+message IDs so a duplicate is not re-relayed, enforces per-class size limits,
+and serves blocks before transactions:
+
+```go
+gossip, err := p2p.NewGossip(4<<20, 1<<20, 4096, 100_000)
+if gossip.Offer(p2p.Message{Kind: p2p.Block, ID: blockHash, Size: 812_000}) == p2p.Queued {
+    // relay Next() in order; blocks always come first
+}
+```
+
+- Deduplication is per class: the same hash as a transaction and as a block are
+  different messages, which prevents a crafted hash from masking a block.
+- A message is marked seen only when it is queued, so a full queue refuses for
+  now (`Full`) without suppressing the message forever. Re-offering after space
+  frees works.
+- Oversized messages are refused against the block or transaction limit and are
+  counted; malformed IDs, unknown classes, and non-positive sizes are `Invalid`.
+- The seen set is bounded and evicts the oldest ID, so a flood cannot grow it
+  without limit. Eviction trades perfect suppression for bounded memory.
+- `Stats` counts queued, duplicate, oversized, full, invalid, and evicted
+  messages so operators can see suppression working.
 
 ## Adding a transaction type
 
