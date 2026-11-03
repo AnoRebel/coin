@@ -102,6 +102,34 @@ The project SHALL publish quickstarts, concepts, API reference, operator guides,
 - **WHEN** documentation contains a broken internal link
 - **THEN** CI fails
 
+### Requirement: Documentation is published at a stable public URL
+
+The documentation site SHALL be served at `https://coin.anorebel.net` from the project repository (expected `AnoRebel/coin`) on the default branch. Links in `README.md`, CLI help, and error hints MUST use that canonical URL, and version selection MUST map to immutable release tags rather than a moving branch.
+
+#### Scenario: Canonical link
+- **WHEN** a developer follows a documentation link printed by the CLI or SDK
+- **THEN** it resolves on `coin.anorebel.net` for the matching release
+
+#### Scenario: Version selection
+- **WHEN** a reader selects an older release
+- **THEN** the site serves documentation built from that release tag
+
+### Requirement: Documentation site builds with Docus from the docs directory
+
+The site SHALL build with Docus on Nuxt 4 using `compatibilityVersion: 5`, reading the repository's `docs/` Markdown in place with no copied content directory. It SHALL build and run on Node 26 and SHALL be deployable as a container from `apps/docs/Dockerfile` with the repository root as build context.
+
+#### Scenario: Local preview
+- **WHEN** a contributor edits documentation
+- **THEN** they can build and preview the site locally before publishing
+
+#### Scenario: Single source of truth
+- **WHEN** a guide is edited in `docs/`
+- **THEN** the next build serves that change without editing a second copy
+
+#### Scenario: Container deploy
+- **WHEN** an operator builds `apps/docs/Dockerfile` from the repository root
+- **THEN** the image serves the site on port 3000 without additional build steps
+
 ### Requirement: Error messages guide developers to a fix
 
 SDK and CLI errors SHALL include a stable code, a human-readable explanation, the offending field or input, and a link or hint for resolution. Errors MUST NOT expose secrets or internal stack traces in production mode.

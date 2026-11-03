@@ -1,0 +1,16 @@
+{
+  "name": "@anorebel/coin-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@nuxt/content": "^3.16.2",
+    "docus": "^5.15.0",
+    "nuxt": "^4.6.4"
+  }
+}

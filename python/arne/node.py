@@ -225,6 +225,7 @@ class Node:
         self.blocks: dict[int, ledger.Block] = {}
         self._subscribers: list[Queue[Event]] = []
         self.halted = ""
+        self._pending: ledger.Block | None = None
         self.webhook_dispatcher: webhook_codec.Dispatcher | None = None
         if cfg.webhooks:
             if cfg.webhook_seed is None:
@@ -323,6 +324,108 @@ class Node:
             raise ledger.LedgerError(ledger.INVALID_SCHEMA, f"decode: {exc}") from exc
         with self._lock:
             return self.state.simulate_tx(tx, int(time.time()), self.state.height() + 1)
+
+    # --- ABCI app surface (mirrors internal/node) ---
+
+    def decode_tx(self, raw: bytes) -> types.Tx:
+        try:
+            tx = types.Tx.from_cbor(cbor.decode_map(raw))
+        except (cbor.CBORError, types.ValidationError) as exc:
+            raise ledger.LedgerError(ledger.INVALID_SCHEMA, f"decode: {exc}") from exc
+        if tx.network != self.cfg.network or tx.chain != self.cfg.chain:
+            raise ledger.LedgerError(
+                ledger.WRONG_NETWORK,
+                f"expected {self.cfg.network}/{self.cfg.chain}",
+            )
+        return tx
+
+    def check_raw(self, raw: bytes) -> None:
+        tx = self.decode_tx(raw)
+        with self._lock:
+            if self.halted:
+                raise ledger.InvariantError(f"node is halted: {self.halted}")
+            self.state.check_tx(tx, int(time.time()))
+
+    def prepare_txs(
+        self, raws: list[bytes], max_txs: int = 500, max_bytes: int = 0
+    ) -> list[bytes]:
+        with self._lock:
+            if self.halted or not raws:
+                return []
+            decoded: list[types.Tx] = []
+            by_hash: dict[str, bytes] = {}
+            for raw in raws:
+                try:
+                    tx = self.decode_tx(raw)
+                except ledger.LedgerError:
+                    continue
+                decoded.append(tx)
+                by_hash[tx.hash()] = raw
+            ordered = ledger.order_txs(decoded)
+            expected: dict[str, int] = {}
+
+            def next_nonce(signer: str) -> int:
+                if signer not in expected:
+                    info, _ = self.state.account(signer)
+                    expected[signer] = info.nonce
+                return expected[signer]
+
+            now = int(time.time())
+            out: list[bytes] = []
+            size = 0
+            for tx in ordered:
+                if len(out) >= max_txs:
+                    break
+                if tx.nonce != next_nonce(tx.signer):
+                    continue
+                if not self.state.simulate_tx(tx, now, self.state.height() + 1).success:
+                    continue
+                raw = by_hash[tx.hash()]
+                if max_bytes > 0 and size + len(raw) > max_bytes:
+                    continue
+                out.append(raw)
+                size += len(raw)
+                expected[tx.signer] = tx.nonce + 1
+            return out
+
+    def finalize_txs(
+        self, raws: list[bytes], height: int, now: int, proposer: str
+    ) -> tuple[ledger.Block, list[ledger.Receipt]]:
+        with self._lock:
+            if self.halted:
+                raise ledger.InvariantError(f"node is halted: {self.halted}")
+            txs = [self.decode_tx(raw) for raw in raws]
+            try:
+                block, receipts = ledger.apply_ordered_block(
+                    self.state, txs, now, height, proposer
+                )
+            except (ledger.ConservationError, ledger.InvariantError) as exc:
+                self.halted = str(exc)
+                raise
+            self._pending = block
+            return block, receipts
+
+    def commit_block(self) -> None:
+        with self._lock:
+            block = self._pending
+            if block is None:
+                return
+            try:
+                snapshot = self.state.snapshot()
+                commit = getattr(self.store, "save_commit", None)
+                if commit is not None:
+                    commit(block, snapshot)
+                else:
+                    self.store.save_block(block)
+                    self.store.save_state(block.height, snapshot)
+            except OSError as exc:
+                self.halted = f"storage failure: {exc}"
+                raise
+            self.blocks[block.height] = block
+            for index, tx_hash in enumerate(block.tx_hashes):
+                if index < len(block.receipts):
+                    self.receipts[tx_hash] = block.receipts[index]
+            self._pending = None
 
     def produce_block(self, now: int | None = None) -> ledger.Block:
         with self._lock:

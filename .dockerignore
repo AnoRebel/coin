@@ -1,0 +1,14 @@
+.git
+.venv
+**/node_modules
+**/.nuxt
+**/.output
+**/.data
+legacy
+bin
+tmp
+*.db
+__pycache__
+.pytest_cache
+.ruff_cache
+crypto/core/target

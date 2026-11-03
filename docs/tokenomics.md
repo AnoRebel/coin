@@ -2,9 +2,9 @@
 
 ## Assets
 
-- **ARCE (AnorebelCoin)** is the native utility asset: fees, and later staking
+- **ARCE (AnoRebelCoin)** is the native utility asset: fees, and later staking
   and governance. It is a capped asset with 8 decimals.
-- **ARNE (AnorebelNetwork)** is the network/protocol name, not a second token.
+- **ARNE (AnoRebelNetwork)** is the network/protocol name, not a second token.
 - Any other asset is registered on-chain with its own decimals, supply policy,
   issuer, and metadata. ARCE never wraps or holds those assets; each asset has
   its own conserved supply.

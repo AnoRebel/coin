@@ -54,7 +54,7 @@ func root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	c.AddCommand(versionCmd(), devnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
+	c.AddCommand(versionCmd(), devnetCmd(), multiDevnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
 		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
 		webhookCmd(), intentCmd(), subscriptionCmd(), migrateCmd(), snapshotCmd(), backupCmd(), restoreCmd())
 	return c

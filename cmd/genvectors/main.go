@@ -165,7 +165,7 @@ func cborVectors() map[string]any {
 		{"neg-1000", int64(-1000)},
 		{"text-empty", ""},
 		{"text-arne", "arne"},
-		{"text-unicode", "AnorebelCoin ⚡"},
+		{"text-unicode", "AnoRebelCoin ⚡"},
 		{"bytes-empty", []byte{}},
 		{"bytes", []byte{0, 1, 2, 254, 255}},
 		{"array", []any{uint64(1), "two", []byte{3}}},

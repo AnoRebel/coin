@@ -65,7 +65,7 @@
 - [x] 6.6 Implement commit certificates, validator-set proofs, and light-client verification; verify insufficient-quorum rejection
 - [x] 6.7 Implement public and consortium validator admission; verify public join, consortium approval, and unapproved rejection
 - [x] 6.8 Implement node halt on state-root divergence and consensus-critical invariant violation; verify the halt path with an injected divergence
-- [ ] 6.9 Add a two-node and a Go+Python mixed devnet; verify both finalize the same chain
+- [x] 6.9 Add a two-node and a Go+Python mixed devnet; verify both finalize the same chain
 
 ## 7. Governance and economics
 
@@ -222,6 +222,7 @@
 - [x] 18.7 Write the feature reference and API reference, including every capability and error code; verify OpenAPI and JSON-RPC coverage
 - [x] 18.8 Write security, privacy, compliance, and tokenomics documentation with disclaimers; verify links and versioning
 - [ ] 18.9 Add documentation link checking, version selection, and CI tests; verify broken links and stale commands fail
+- [ ] 18.10 Publish the documentation site at `coin.anorebel.net` from the `AnoRebel/coin` repository on the maintainer's Dokploy instance (create the repository with `gh` if needed); verify HTTPS, automatic redeploy on the default branch, and no secrets in the build
 
 ## 19. Integration and launch readiness
 

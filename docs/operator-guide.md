@@ -109,6 +109,81 @@ the CometBFT mempool size. CometBFT's own endpoints (`/status`, `/block`,
 Restart the node at the last committed height; do not delete `data/` to "fix" a
 startup error. Back up both `data/` and `app/` while stopped.
 
+## Multi-node devnet
+
+`arned multi-devnet` initializes several CometBFT validators under one root,
+shares one genesis between them, and points every node's persistent peers at the
+others. Each node gets its own home (`node-0`, `node-1`, ...), validator key,
+node key, and ports.
+
+```sh
+./bin/arned multi-devnet --nodes 2
+./bin/arned multi-devnet --nodes 3 --p2p-base 26656 --rpc-base 26657
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--root` | `.arne-multidevnet` | Devnet root directory |
+| `--network` | `arne:devnet` | Network ID used in genesis and addresses |
+| `--nodes` | 2 | Number of validators |
+| `--block-interval` | 300ms | CometBFT `timeout_commit` |
+| `--p2p-base` | 0 | First P2P port; 0 picks free ports per node |
+| `--rpc-base` | 0 | First RPC port; 0 picks free ports per node |
+| `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
+
+The command prints each node's kind, home, P2P, and RPC address, then runs until
+Ctrl-C. With `--p2p-base`/`--rpc-base`, ports are allocated as `base + index`.
+Every node uses the Go app by default. Stop the process before deleting the root.
+
+### Mixed Go and Python devnet
+
+`--python-nodes N` runs the first N validators with the Python ABCI app instead
+of the Go app, so a single chain has validators executing different
+implementations. Consensus only advances while both apps return the same app
+hash, which makes any divergence a hard stop rather than a silent fork.
+
+```sh
+./bin/arned multi-devnet --nodes 2 --python-nodes 1
+```
+
+Run it from the repository root so `uv` can find `pyproject.toml`, or pass an
+explicit command:
+
+```sh
+./bin/arned multi-devnet --nodes 2 --python-nodes 1 \
+  --python-cmd "uv run python -m arne.abci"
+```
+
+The Python node stores its ledger under `<node home>/python`; the Go node uses
+`<node home>/app`. Both read the same `config/genesis.json`. If the Python
+process exits, its node stops producing blocks.
+
+## Documentation site
+
+The project documentation is published at <https://coin.anorebel.net> from the
+`AnoRebel/coin` repository. The maintainer deploys it on a Dokploy instance:
+create or connect the repository (the GitHub CLI works:
+`gh repo create AnoRebel/coin --source . --push`), point a Dokploy application
+at it, set the domain `coin.anorebel.net`, and enable automatic deployment on
+the default branch. Build only from committed sources and never put validator
+keys or tokens in the Dokploy build environment.
+
+The site lives in `apps/docs` and is a Docus (Nuxt 4, `compatibilityVersion: 5`)
+app. It reads `docs/*.md` in place; there is no copied content directory. It
+needs Node 26 and Bun:
+
+```sh
+cd apps/docs
+bun install
+bun run dev      # http://localhost:3000
+bun run build
+node .output/server/index.mjs
+```
+
+For Dokploy, use `apps/docs/Dockerfile` with the repository root as the build
+context; the image serves on port 3000. `llms.txt`, `llms-full.txt`, and
+per-page Markdown (`/user-guide.md`) are generated for agents.
+
 ## Data and persistence
 
 - Go: Pebble at `--data-dir`. Blocks are keyed `b<height>`, plus `meta/last` and

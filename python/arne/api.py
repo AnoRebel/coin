@@ -172,7 +172,7 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
             submissions[scope] = (fingerprint, tx_hash, time.monotonic() + IDEMPOTENCY_TTL)
             return tx_hash, False
     app = FastAPI(
-        title="AnorebelNetwork API", version="1.0.0", docs_url="/docs",
+        title="AnoRebelNetwork API", version="1.0.0", docs_url="/docs",
         openapi_url="/openapi.json",
     )
 

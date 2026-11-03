@@ -1009,7 +1009,7 @@ def new_genesis(genesis: Genesis) -> State:
     native = types.native_asset(genesis.network)
     arce = types.Asset(
         id=native, asset_class="native", symbol=types.NATIVE_ASSET_SYMBOL,
-        name="AnorebelCoin", decimals=8, policy="capped",
+        name="AnoRebelCoin", decimals=8, policy="capped",
         max_supply=genesis.params.native_max_supply, issuer="",
     )
     state._put_asset(arce)
@@ -1104,6 +1104,16 @@ def order_txs(txs: list[Tx]) -> list[Tx]:
 
 def apply_block(state: State, txs: list[Tx], now: int, height: int,
                 proposer: str) -> tuple[Block, list[Receipt]]:
+    return apply_ordered_block(state, order_txs(txs), now, height, proposer)
+
+
+def apply_ordered_block(state: State, txs: list[Tx], now: int, height: int,
+                        proposer: str) -> tuple[Block, list[Receipt]]:
+    """Apply decided transactions in the given order.
+
+    Consensus already fixed the order; reordering here would fork a Python
+    validator from the Go node on a non-canonical proposal.
+    """
     if height != state.height() + 1:
         raise InvariantError(f"height {height} after {state.height()}")
     prev = state.root()
@@ -1111,7 +1121,7 @@ def apply_block(state: State, txs: list[Tx], now: int, height: int,
                   state_root="", tx_root="")
     state.set_height(height)
     state.set_block_time(now)
-    for tx in order_txs(txs):
+    for tx in txs:
         receipt = state.apply_tx(tx, now, height)
         block.tx_hashes.append(receipt.hash)
         block.txs.append(cbor.encode(tx.to_cbor()))

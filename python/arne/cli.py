@@ -667,7 +667,7 @@ def cmd_asset_register(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="arne", description="AnorebelNetwork node and client")
+    parser = argparse.ArgumentParser(prog="arne", description="AnoRebelNetwork node and client")
     parser.add_argument("--version", action="version", version="arne 0.1.0")
     sub = parser.add_subparsers(dest="command", required=True)
 

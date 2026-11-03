@@ -1,4 +1,4 @@
-# AnorebelCoin (ARCE) / AnorebelNetwork (ARNE)
+# AnoRebelCoin (ARCE) / AnoRebelNetwork (ARNE)
 
 A production-oriented, currency-agnostic settlement and team-communication
 network. ARCE is the native fee and staking asset; ARNE is the network and
@@ -164,6 +164,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and
 [docs/](docs/README.md).
 
 ## Documentation
+
+The same guides are published at <https://coin.anorebel.net>; the site sources
+live in `apps/docs` and read `docs/` directly.
 
 - [User guide](docs/user-guide.md) — wallets, payments, escrow, assets
 - [Developer guide](docs/developer-guide.md) — architecture, ledger, tests

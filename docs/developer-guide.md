@@ -4,6 +4,7 @@
 
 - Go 1.27+ (`go.mod`)
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
+- Node 26 and [Bun](https://bun.sh/) for `apps/docs` (only to build the docs site)
 - `pre-commit` (optional but recommended)
 
 ```sh
@@ -51,6 +52,7 @@ make test
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
 | `python/arne` | Full parity node (same module split) |
 | `python/arne/rocksstore.py` | RocksDB store with the Go key schema and atomic commits |
+| `apps/docs` | Docus documentation site for `coin.anorebel.net` |
 | `spec/vectors` | Cross-language conformance anchors |
 | `tests` | Go vector tests, Python vector/ledger/API tests |
 | `openspec/changes/arce-arne-network` | Requirements, design, task tracker |
@@ -222,6 +224,44 @@ CometBFT block header `app_hash` at height H is the app hash returned by
 The block hash covers height, time, proposer, previous state root, new state
 root, transaction root, and transaction hashes. Any divergence in execution
 changes the root.
+
+## Multi-node and mixed-language devnet
+
+`internal/multinode` builds N CometBFT homes that share one genesis and peer
+with each other. `Cluster.Start` takes a factory so the caller decides which
+application each node runs:
+
+```go
+cluster, err := multinode.Init(root, "arne:devnet", 2, 300*time.Millisecond, 0, 0)
+nodes, err := cluster.Start(func(i int) (abci.Application, func() error, error) {
+    if i == 0 {
+        app, err := consensus.NewPythonApp("uv run python -m arne.abci", "arne:devnet", chain)
+        return app, app.Close, err
+    }
+    n, err := node.New(nodeConfig, cluster.Genesis, store)
+    if err != nil {
+        return nil, nil, err
+    }
+    return consensus.NewApp(n, "arne:devnet", chain, 500), nil, nil
+}, logger)
+defer multinode.Stop(nodes)
+```
+
+Ports are free when both bases are 0; otherwise node `i` listens on
+`base+i`. Each node gets `node-<i>/config`, `data`, and its own validator and
+node keys. `AllowDuplicateIP`, `AddrBookStrict=false`, and `PexReactor=false`
+make a loopback cluster work without discovery.
+
+`internal/consensus.PythonApp` implements `abci.Application` by piping
+line-delimited JSON to a child process. The command must implement
+`Info`, `InitChain`, `CheckTx`, `PrepareProposal`, `ProcessProposal`,
+`FinalizeBlock`, `Commit`, and `Query`; `python -m arne.abci` does. Every
+request includes the network and chain ID. The bridge compares the Python app
+hash with what CometBFT expects, so a divergence halts rather than forks.
+
+The Python app accepts `--genesis <file>` and `--data-dir <dir>`; without
+`--data-dir` it keeps the ledger in memory. Run the command from the repository
+root (or give an absolute project path) so `uv` resolves the environment.
 
 ## Adding a transaction type
 
@@ -829,8 +869,7 @@ Search the tree for `shortcut:`:
 
 - failed transactions are free;
 - SMT leaf padding is O(256-depth) per leaf rather than a cached subtree hash;
-- Python persistence is file-based;
-- Python block production is time-driven and has no ABCI adapter;
+- Python persistence is file-based unless RocksDB is selected;
 - the consensus app has no validator set, staking, or slashing logic (CometBFT
   holds a static validator set from genesis).
 

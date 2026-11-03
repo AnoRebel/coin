@@ -36,7 +36,7 @@ func NewGenesis(g Genesis) (*State, error) {
 	native := protocol.NativeAsset(g.Network)
 	arce := protocol.Asset{
 		ID: native, Class: "native", Symbol: protocol.NativeAssetSymbol,
-		Name: "AnorebelCoin", Decimals: 8, Policy: "capped",
+		Name: "AnoRebelCoin", Decimals: 8, Policy: "capped",
 		MaxSupply: g.Params.NativeMaxSupply, Issuer: "",
 	}
 	if err := s.putAsset(arce); err != nil {

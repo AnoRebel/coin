@@ -1,11 +1,11 @@
-AnorebelCoin / AnorebelNetwork (ARCE / ARNE)
-Copyright 2026 The AnorebelCoin Authors
+AnoRebelCoin / AnoRebelNetwork (ARCE / ARNE)
+Copyright 2026 The AnoRebelCoin Authors
 
-This product includes software developed by the AnorebelCoin project
+This product includes software developed by the AnoRebelCoin project
 (https://github.com/anorebel/anorebelcoin).
 
 Third-party components retain their own licenses; see go.mod, uv.lock, and the
 licenses shipped with those modules. No third-party code is relicensed here.
 
-"AnorebelCoin", "AnorebelNetwork", "ARCE", and "ARNE" are project names. This
+"AnoRebelCoin", "AnoRebelNetwork", "ARCE", and "ARNE" are project names. This
 license does not grant trademark rights.

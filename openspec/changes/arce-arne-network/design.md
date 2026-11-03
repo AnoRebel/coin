@@ -34,8 +34,8 @@ The design target is a currency-agnostic settlement and team-communication netwo
 
 ### 1. Naming, identity, and namespacing
 
-- Project names: **AnorebelCoin** and **AnorebelNetwork**.
-- Tickers: **ARCE** (AnorebelCoin Eve) and **ARNE** (AnorebelNetwork Eve). This avoids the heavily contested `ARC`/`ARN` tickers while preserving the requested names.
+- Project names: **AnoRebelCoin** and **AnoRebelNetwork**.
+- Tickers: **ARCE** (AnoRebelCoin Eve) and **ARNE** (AnoRebelNetwork Eve). This avoids the heavily contested `ARC`/`ARN` tickers while preserving the requested names.
 - Canonical asset ID: `arce:<network-id>`, for example `arce:mainnet`.
 - Canonical network ID: `arne:<class>/<network-id>`, for example `arne:mainnet`, `arne:testnet`, `arne:devnet`, `arne:consortium/acme-pay`.
 - CometBFT chain IDs: `arne-mainnet-1`, `arne-testnet-1`, `arne-devnet-1`, `arne-consortium-<id>-1`.

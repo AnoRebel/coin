@@ -38,6 +38,26 @@ The project SHALL provide a Docker Compose profile with a node, validator set, i
 - **WHEN** the indexer starts before the node is ready
 - **THEN** it retries and becomes healthy without manual intervention
 
+### Requirement: Public documentation site is deployed from the repository
+
+The project SHALL publish its documentation at `https://coin.anorebel.net`, built from the project repository and deployed on the maintainer's Dokploy instance. The expected repository is `AnoRebel/coin`, which MAY be created with the GitHub CLI (`gh`). Deployments MUST build from committed sources, MUST NOT embed credentials, and MUST redeploy on changes to the default branch.
+
+#### Scenario: Canonical documentation URL
+- **WHEN** a reader opens the documented site URL
+- **THEN** the current documentation is served over HTTPS at `coin.anorebel.net`
+
+#### Scenario: Repository bootstrap
+- **WHEN** the documentation repository does not exist yet
+- **THEN** it is created from the project sources, optionally with `gh repo create AnoRebel/coin`, and connected to the Dokploy application
+
+#### Scenario: Automatic redeploy
+- **WHEN** a documentation change lands on the default branch
+- **THEN** Dokploy rebuilds and publishes the site without manual steps
+
+#### Scenario: No secrets in the site build
+- **WHEN** the deployed build environment and artifacts are inspected
+- **THEN** no credential, validator key, or private environment value is present
+
 ### Requirement: Helm supports consortium and production deployments
 
 The project SHALL provide a Helm chart with configurable replicas, resource limits, persistent storage, TLS, network policies, pod disruption budgets, and separate validator, sentry, indexer, console, and connector workloads.

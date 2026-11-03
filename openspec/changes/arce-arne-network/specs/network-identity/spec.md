@@ -8,7 +8,7 @@ Defines the canonical names, tickers, namespaced identifiers, network identity, 
 
 ### Requirement: Canonical project and ticker names
 
-The system SHALL use `AnorebelCoin` with ticker `ARCE` for the native asset and `AnorebelNetwork` with ticker `ARNE` for the network. The legacy names `RebelCoin`, `ARC`, and `ARN` alone MUST NOT be used as canonical identifiers in new APIs, wire messages, or documentation.
+The system SHALL use `AnoRebelCoin` with ticker `ARCE` for the native asset and `AnoRebelNetwork` with ticker `ARNE` for the network. The legacy names `RebelCoin`, `ARC`, and `ARN` alone MUST NOT be used as canonical identifiers in new APIs, wire messages, or documentation.
 
 #### Scenario: Canonical names in API responses
 - **WHEN** a client requests network or native-asset metadata

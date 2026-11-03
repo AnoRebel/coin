@@ -2,11 +2,11 @@
 
 ## Why
 
-The current AnorebelCoin codebase is a single-node, in-memory, proof-of-work learning toy ported from SavjeeCoin. It cannot carry multiple assets, cannot connect nodes, cannot survive a restart, has no tests, uses unmaintained dependencies, and exposes raw panics and custom key encodings that are unsafe for real value. Small teams and interconnected organizations need a shared settlement and communication network that is currency-neutral, auditable, private where required, and usable without operating a bank.
+The current AnoRebelCoin codebase is a single-node, in-memory, proof-of-work learning toy ported from SavjeeCoin. It cannot carry multiple assets, cannot connect nodes, cannot survive a restart, has no tests, uses unmaintained dependencies, and exposes raw panics and custom key encodings that are unsafe for real value. Small teams and interconnected organizations need a shared settlement and communication network that is currency-neutral, auditable, private where required, and usable without operating a bank.
 
-This change replaces the toy with a production-grade, currency-agnostic settlement and team-communication network: **AnorebelCoin (ARCE)** as the native accounting and fee asset, and **AnorebelNetwork (ARNE)** as the public-and-consortium network that carries any registered currency, token, commodity, or point value.
+This change replaces the toy with a production-grade, currency-agnostic settlement and team-communication network: **AnoRebelCoin (ARCE)** as the native accounting and fee asset, and **AnoRebelNetwork (ARNE)** as the public-and-consortium network that carries any registered currency, token, commodity, or point value.
 
-The requested tickers `ARC` and `ARN` already collide with Circle's Arc L1 and AI Rig Complex (ARC) and with unrelated ARN projects. The project keeps the names AnorebelCoin/AnorebelNetwork but uses the unambiguous tickers **ARCE** (AnorebelCoin Eve) and **ARNE** (AnorebelNetwork Eve), with namespaced identifiers such as `arce:mainnet`, `arne:mainnet`, `arne:testnet`, and `arne:consortium/<id>`.
+The requested tickers `ARC` and `ARN` already collide with Circle's Arc L1 and AI Rig Complex (ARC) and with unrelated ARN projects. The project keeps the names AnoRebelCoin/AnoRebelNetwork but uses the unambiguous tickers **ARCE** (AnoRebelCoin Eve) and **ARNE** (AnoRebelNetwork Eve), with namespaced identifiers such as `arce:mainnet`, `arne:mainnet`, `arne:testnet`, and `arne:consortium/<id>`.
 
 ## What Changes
 
