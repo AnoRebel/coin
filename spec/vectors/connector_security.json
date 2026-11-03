@@ -1,0 +1,472 @@
+{
+  "allowlist": [
+    "api.bank.example",
+    "*.rails.example"
+  ],
+  "cases": [
+    {
+      "name": "allowlist_ok",
+      "kind": "allowlist",
+      "hosts": [
+        "api.bank.example",
+        "*.rails.example"
+      ]
+    },
+    {
+      "name": "allowlist_duplicate",
+      "kind": "allowlist",
+      "hosts": [
+        "api.bank.example",
+        "API.BANK.EXAMPLE"
+      ],
+      "expect": {
+        "error": "duplicate"
+      }
+    },
+    {
+      "name": "allowlist_with_scheme",
+      "kind": "allowlist",
+      "hosts": [
+        "https://api.bank.example"
+      ],
+      "expect": {
+        "error": "bare hostname"
+      }
+    },
+    {
+      "name": "allowlist_empty",
+      "kind": "allowlist",
+      "hosts": [],
+      "expect": {
+        "error": "allowlist is empty"
+      }
+    },
+    {
+      "name": "allowlist_bad_wildcard",
+      "kind": "allowlist",
+      "hosts": [
+        "api.*.example"
+      ],
+      "expect": {
+        "error": "whole label"
+      }
+    },
+    {
+      "name": "endpoint_ok",
+      "kind": "endpoint",
+      "url": "https://api.bank.example/v1/pay",
+      "expect": {
+        "host": "api.bank.example",
+        "path": "/v1/pay",
+        "port": ""
+      }
+    },
+    {
+      "name": "endpoint_wildcard",
+      "kind": "endpoint",
+      "url": "https://eu.rails.example/x",
+      "expect": {
+        "host": "eu.rails.example",
+        "path": "/x",
+        "port": ""
+      }
+    },
+    {
+      "name": "endpoint_apex_rejected",
+      "kind": "endpoint",
+      "url": "https://rails.example/x",
+      "expect": {
+        "error": "not allowlisted"
+      }
+    },
+    {
+      "name": "endpoint_http",
+      "kind": "endpoint",
+      "url": "http://api.bank.example/x",
+      "expect": {
+        "error": "scheme must be https"
+      }
+    },
+    {
+      "name": "endpoint_userinfo",
+      "kind": "endpoint",
+      "url": "https://user:pass@api.bank.example/x",
+      "expect": {
+        "error": "credentials must not appear"
+      }
+    },
+    {
+      "name": "endpoint_fragment",
+      "kind": "endpoint",
+      "url": "https://api.bank.example/x#frag",
+      "expect": {
+        "error": "fragment"
+      }
+    },
+    {
+      "name": "endpoint_bad_port",
+      "kind": "endpoint",
+      "url": "https://api.bank.example:99999/x",
+      "expect": {
+        "error": "port"
+      }
+    },
+    {
+      "name": "endpoint_port_ok",
+      "kind": "endpoint",
+      "url": "https://api.bank.example:8443/x",
+      "expect": {
+        "host": "api.bank.example",
+        "path": "/x",
+        "port": "8443"
+      }
+    },
+    {
+      "name": "register_old",
+      "kind": "register",
+      "credential": {
+        "id": "old",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "not_before": 0,
+        "not_after": 0
+      }
+    },
+    {
+      "name": "register_duplicate_id",
+      "kind": "register",
+      "credential": {
+        "id": "old",
+        "fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "expect": {
+        "error": "duplicate"
+      }
+    },
+    {
+      "name": "register_duplicate_fingerprint",
+      "kind": "register",
+      "credential": {
+        "id": "other",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "expect": {
+        "error": "duplicate"
+      }
+    },
+    {
+      "name": "register_bad_fingerprint",
+      "kind": "register",
+      "credential": {
+        "id": "bad",
+        "fingerprint": "zz",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "expect": {
+        "error": "fingerprint must be"
+      }
+    },
+    {
+      "name": "authorize_ok",
+      "kind": "authorize",
+      "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "now": 10,
+      "expect": {
+        "id": "old"
+      }
+    },
+    {
+      "name": "authorize_no_certificate",
+      "kind": "authorize",
+      "fingerprint": "",
+      "now": 10,
+      "expect": {
+        "error": "client certificate required"
+      }
+    },
+    {
+      "name": "authorize_unknown",
+      "kind": "authorize",
+      "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "now": 10,
+      "expect": {
+        "error": "unknown credential"
+      }
+    },
+    {
+      "name": "register_future",
+      "kind": "register",
+      "credential": {
+        "id": "future",
+        "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "not_before": 100,
+        "not_after": 200
+      }
+    },
+    {
+      "name": "authorize_future_early",
+      "kind": "authorize",
+      "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "now": 99,
+      "expect": {
+        "error": "not yet valid"
+      }
+    },
+    {
+      "name": "authorize_future_ok",
+      "kind": "authorize",
+      "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "now": 100,
+      "expect": {
+        "id": "future"
+      }
+    },
+    {
+      "name": "authorize_future_expired",
+      "kind": "authorize",
+      "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "now": 200,
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "rotate_unknown",
+      "kind": "rotate",
+      "old_id": "nope",
+      "credential": {
+        "id": "new",
+        "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "now": 100,
+      "overlap": 50,
+      "expect": {
+        "error": "unknown credential"
+      }
+    },
+    {
+      "name": "rotate_negative_overlap",
+      "kind": "rotate",
+      "old_id": "old",
+      "credential": {
+        "id": "new",
+        "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "now": 100,
+      "overlap": -1,
+      "expect": {
+        "error": "overlap"
+      }
+    },
+    {
+      "name": "rotate_reuses_fingerprint",
+      "kind": "rotate",
+      "old_id": "old",
+      "credential": {
+        "id": "old2",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "now": 100,
+      "overlap": 50,
+      "expect": {
+        "error": "new fingerprint"
+      }
+    },
+    {
+      "name": "rotate_old",
+      "kind": "rotate",
+      "old_id": "old",
+      "credential": {
+        "id": "new",
+        "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "now": 100,
+      "overlap": 50
+    },
+    {
+      "name": "authorize_old_during_overlap",
+      "kind": "authorize",
+      "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "now": 149,
+      "expect": {
+        "id": "old"
+      }
+    },
+    {
+      "name": "authorize_old_at_end",
+      "kind": "authorize",
+      "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "now": 150,
+      "expect": {
+        "error": "retired"
+      }
+    },
+    {
+      "name": "authorize_new",
+      "kind": "authorize",
+      "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "now": 100,
+      "expect": {
+        "id": "new"
+      }
+    },
+    {
+      "name": "rotate_retired",
+      "kind": "rotate",
+      "old_id": "old",
+      "credential": {
+        "id": "new2",
+        "fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "not_before": 0,
+        "not_after": 0
+      },
+      "now": 160,
+      "overlap": 10,
+      "expect": {
+        "error": "already retired"
+      }
+    },
+    {
+      "name": "revoke_new",
+      "kind": "revoke",
+      "id": "new",
+      "at": 200
+    },
+    {
+      "name": "authorize_new_before_revoke",
+      "kind": "authorize",
+      "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "now": 199,
+      "expect": {
+        "id": "new"
+      }
+    },
+    {
+      "name": "authorize_new_after_revoke",
+      "kind": "authorize",
+      "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "now": 200,
+      "expect": {
+        "error": "retired"
+      }
+    },
+    {
+      "name": "revoke_twice",
+      "kind": "revoke",
+      "id": "new",
+      "at": 210,
+      "expect": {
+        "error": "already retired"
+      }
+    },
+    {
+      "name": "retires_at_old",
+      "kind": "retires_at",
+      "id": "old",
+      "expect": {
+        "found": true,
+        "at": 150
+      }
+    },
+    {
+      "name": "retires_at_missing",
+      "kind": "retires_at",
+      "id": "nope",
+      "expect": {
+        "found": false
+      }
+    },
+    {
+      "name": "redact_url_plain",
+      "kind": "redact_url",
+      "url": "https://api.bank.example/v1/x?amount=10",
+      "expect": {
+        "text": "https://api.bank.example/v1/x?amount=10"
+      }
+    },
+    {
+      "name": "redact_url_userinfo_and_token",
+      "kind": "redact_url",
+      "url": "https://user:pass@api.bank.example/v1?token=abc&amount=10",
+      "expect": {
+        "text": "https://api.bank.example/v1?amount=10&token=REDACTED"
+      }
+    },
+    {
+      "name": "redact_url_fragment",
+      "kind": "redact_url",
+      "url": "https://api.bank.example/x#frag",
+      "expect": {
+        "text": "https://api.bank.example/x"
+      }
+    },
+    {
+      "name": "redact_url_invalid",
+      "kind": "redact_url",
+      "url": "not a url",
+      "expect": {
+        "text": "[invalid-url]"
+      }
+    },
+    {
+      "name": "redact_url_case",
+      "kind": "redact_url",
+      "url": "HTTPS://API.BANK.EXAMPLE/X",
+      "expect": {
+        "text": "https://api.bank.example/X"
+      }
+    },
+    {
+      "name": "redact_headers",
+      "kind": "redact_headers",
+      "headers": {
+        "Authorization": "Bearer abc",
+        "Content-Type": "application/json",
+        "Cookie": "a=b"
+      },
+      "expect": {
+        "headers": {
+          "Authorization": "REDACTED",
+          "Content-Type": "application/json",
+          "Cookie": "REDACTED"
+        }
+      }
+    },
+    {
+      "name": "redact_account_short",
+      "kind": "redact_account",
+      "account": "1234567",
+      "expect": {
+        "text": "****"
+      }
+    },
+    {
+      "name": "redact_account_min",
+      "kind": "redact_account",
+      "account": "12345678",
+      "expect": {
+        "text": "****5678"
+      }
+    },
+    {
+      "name": "redact_account_iban",
+      "kind": "redact_account",
+      "account": "DE89370400440532013000",
+      "expect": {
+        "text": "****3000"
+      }
+    }
+  ]
+}

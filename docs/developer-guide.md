@@ -39,6 +39,7 @@ make test
 | `internal/connector/evm` | EVM bridge guard: finality, replay, limits, pause |
 | `internal/connector/assetmap` | Versioned external-to-canonical asset mapping |
 | `internal/connector/reconcile` | Idempotent cross-rail matching and exception reports |
+| `internal/connector/security` | Endpoint allowlists, mTLS credential rotation, and log redaction |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -891,6 +892,59 @@ totals.
 queue or operator workflow. Persist operations, confirmations, and exceptions
 before using this to move value, and wire exceptions into the monitoring and
 disclosure paths.
+
+## Connector transport security
+
+`internal/connector/security` (mirrored by `python/arne/connector_security.py`)
+protects a connector's outbound transport:
+
+```go
+allow, err := security.NewAllowlist([]string{"api.bank.example", "*.rails.example"})
+endpoint, err := security.ParseEndpoint("https://api.bank.example/v1/pay", allow)
+
+registry := security.NewRegistry()
+registry.Register(security.Credential{ID: "2026-10", Fingerprint: sha256Hex})
+registry.Rotate("2026-10", security.Credential{ID: "2027-01", Fingerprint: next}, now, 86_400)
+credential, err := registry.Authorize(peerFingerprint, now)
+```
+
+- `NewAllowlist` takes bare hostnames (`example.com`) and wildcard suffixes
+  (`*.example.com`). The wildcard does not match the apex, and a scheme, port,
+  path, or duplicate is refused instead of being normalized away.
+- `ParseEndpoint` requires `https`, rejects embedded userinfo and fragments,
+  validates the port range, and checks the host against the allowlist. A
+  plaintext or credential-bearing URL is a configuration error, not a warning.
+- `Authorize` is the post-handshake decision. An empty fingerprint means the
+  peer presented no client certificate and is refused. Unknown, not-yet-valid,
+  expired, and retired credentials each get a distinct error so an operator can
+  tell a rotation mistake from an attack.
+- `Rotate` makes the new credential valid from `now` and keeps the old one
+  working until `now + overlap` (exclusive). Reusing an ID or fingerprint,
+  rotating an already-retired credential, and a negative overlap are refused.
+  `Revoke` is the irreversible emergency path when a key may be compromised.
+- Redaction is built for logs: `RedactURL` drops userinfo and the fragment,
+  redacts known secret query keys (`token`, `api_key`, `secret`, `password`,
+  `signature`, …), sorts the query for stable output, and returns
+  `[invalid-url]` rather than echoing a URL that failed to parse.
+  `RedactHeaders` hides `Authorization`, `Cookie`, `X-Api-Key`, and the
+  signature headers; `RedactAccount` keeps at most the last four characters and
+  hides accounts shorter than eight entirely. Raw key material still goes in
+  `redact.Secret`, which refuses to print or JSON-encode.
+
+`spec/vectors/connector_security.json` drives 47 ordered cases: allowlist
+construction and duplicate/scheme/empty/wildcard failures, endpoint acceptance
+with and without a port, wildcard and apex hosts, plaintext, userinfo, fragment,
+and bad-port rejection, credential registration and duplicate/bad-fingerprint
+failures, authorization including no certificate, unknown, future, and expired
+credentials, rotation with an overlap boundary, re-rotation, revocation before
+and at its effective time, retirement lookups, and URL, header, and account
+redaction.
+
+`shortcut:` this package does not perform the TLS handshake, does not resolve
+or pin DNS, and does not persist credentials. The transport must verify the
+chain and present the client certificate; an allowlisted hostname can still
+resolve to a private address, so add resolution checks before calling this
+SSRF-safe. Store credentials in a secret manager, not in the node config.
 
 ## Data retention and legal holds
 
