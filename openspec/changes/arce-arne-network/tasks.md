@@ -138,7 +138,7 @@
 
 ## 13. Peer network and sync
 
-- [ ] 13.1 Configure CometBFT authenticated/encrypted P2P with network identity and version negotiation; verify handshake and mismatch rejection
+- [x] 13.1 Configure CometBFT authenticated/encrypted P2P with network identity and version negotiation; verify handshake and mismatch rejection
 - [ ] 13.2 Configure public discovery and consortium allowlists; verify public join and unapproved consortium rejection
 - [ ] 13.3 Tune block/tx gossip, deduplication, and block-priority propagation; verify duplicate suppression and priority
 - [ ] 13.4 Implement snapshot/state sync with state-root and commit verification; verify valid and tampered snapshots

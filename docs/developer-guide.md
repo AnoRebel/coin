@@ -59,6 +59,7 @@ make test
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
+| `internal/p2p` | Peer policy: network identity, discovery mode, allowlists, handshake versions |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
 | `python/arne` | Full parity node (same module split) |
 | `python/arne/rocksstore.py` | RocksDB store with the Go key schema and atomic commits |
@@ -272,6 +273,51 @@ hash with what CometBFT expects, so a divergence halts rather than forks.
 The Python app accepts `--genesis <file>` and `--data-dir <dir>`; without
 `--data-dir` it keeps the ledger in memory. Run the command from the repository
 root (or give an absolute project path) so `uv` resolves the environment.
+
+## Peer transport and network identity
+
+`internal/p2p` owns the node-side policy around CometBFT's peer transport.
+CometBFT already encrypts and authenticates every connection with the node's
+ed25519 key and carries the chain ID and protocol version in its handshake;
+this package decides which networks and peers that handshake may admit:
+
+```go
+policy, err := p2p.Default(network) // chain ID, class, peer limits
+policy.ListenAddress = "tcp://0.0.0.0:26656"
+policy.Allowlist = []string{memberNodeID} // consortium only
+if err := policy.Apply(cfg); err != nil { ... }
+
+session, err := policy.Handshake(p2p.Offer{
+    Network: "arne:consortium/acme", Chain: "arne-consortium-acme-1",
+    NodeID: peerNodeID, Versions: []uint16{1},
+})
+```
+
+- `Default` derives the class and chain ID from the network ID, so
+  `arne:testnet` is `arne-testnet-1` and `arne:consortium/acme` is
+  `arne-consortium-acme-1`. A config whose chain disagrees with its network is
+  refused rather than allowed to peer with the wrong chain.
+- Public networks discover peers: peer exchange stays on, the address book is
+  strict, and an allowlist is a configuration error because it would silently
+  disable discovery. Consortium networks need an allowlist, disable peer
+  exchange, and mark every member private so members are not gossiped.
+- `Handshake` checks the claimed network, chain, node ID, and version range
+  before any application message is accepted. Each mismatch has its own error:
+  `ErrNetwork`, `ErrChain`, `ErrIdentity`, `ErrVersion`, and `ErrNotAllowed` for
+  a peer that speaks the protocol but is not a consortium member. The highest
+  version both sides support wins.
+- `NodeID` derives the same identity CometBFT's secret connection
+  authenticates: the first 20 bytes of `SHA-256` over the encoded public key, in
+  lowercase hex. An allowlist therefore holds real peer identities, not names a
+  peer can claim.
+- `arned start` applies the policy and takes `--p2p-allowlist` for consortium
+  members. `Apply` sets addresses, limits, and discovery but leaves peers from
+  an existing `config.toml` in place when the policy lists none.
+
+`shortcut:` discovery, NAT traversal, peer scoring, bans, and snapshot sync are
+not implemented; the policy only constrains what CometBFT already does. The
+devnet in `internal/multinode` still relaxes the address book for loopback
+peers. Pick a chain ID matching `protocol.ChainID` when hand-writing genesis.
 
 ## Adding a transaction type
 

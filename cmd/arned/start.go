@@ -26,6 +26,7 @@ import (
 	"github.com/anorebel/anorebelcoin/internal/consensus"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	"github.com/anorebel/anorebelcoin/internal/node"
+	"github.com/anorebel/anorebelcoin/internal/p2p"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 	"github.com/anorebel/anorebelcoin/internal/storage"
 )
@@ -50,6 +51,7 @@ func startCmd() *cobra.Command {
 		webhookURLs     []string
 		webhookKey      string
 		indexerURL      string
+		p2pAllowlist    []string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -80,6 +82,19 @@ func startCmd() *cobra.Command {
 			}
 			appGenesis, err := ledgerGenesis(genDoc)
 			if err != nil {
+				return err
+			}
+
+			policy, err := p2p.Default(network)
+			if err != nil {
+				return err
+			}
+			policy.ListenAddress = p2pAddr
+			policy.Allowlist = p2pAllowlist
+			if genDoc.ChainID != policy.Chain {
+				return fmt.Errorf("genesis chain %q does not match %s (%s)", genDoc.ChainID, network, policy.Chain)
+			}
+			if err := policy.Apply(cfg); err != nil {
 				return err
 			}
 
@@ -217,6 +232,7 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringVar(&apiAddr, "listen", "127.0.0.1:8080", "API listen address")
 	cmd.Flags().StringVar(&rpcAddr, "rpc", "tcp://127.0.0.1:26657", "CometBFT RPC listen address")
 	cmd.Flags().StringVar(&p2pAddr, "p2p", "tcp://0.0.0.0:26656", "CometBFT P2P listen address")
+	cmd.Flags().StringSliceVar(&p2pAllowlist, "p2p-allowlist", nil, "Node IDs a consortium peer may connect to (comma separated)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "", "app data directory (default <home>/app)")
 	cmd.Flags().DurationVar(&interval, "block-interval", time.Second, "consensus commit timeout")
 	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "temporary home and in-memory app state")
