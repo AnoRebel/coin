@@ -1,0 +1,226 @@
+{
+  "version": "ivms101",
+  "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "network": "arne:testnet",
+  "cases": [
+    {
+      "name": "qualifying_exchange",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "reference": "transfer-0001",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001",
+          "address": "Dar es Salaam",
+          "country": "TZ"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002",
+          "country": "KE"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1",
+          "name": "Origin VASP"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1",
+          "name": "Beneficiary VASP"
+        }
+      },
+      "expect": {
+        "required": true,
+        "status": "exchanged",
+        "reason": "data exchanged",
+        "sender": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "signature": "ef5320f5bf96ea50c867093d68c8f71dff57fd244dbaa1728c2f3d70977c2a9d28caeb57abca450730064d4ce7af819377b27b8aea89f6a07d119a3f3de95e02"
+      }
+    },
+    {
+      "name": "at_threshold",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 1000,
+        "reference": "transfer-0002",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001",
+          "country": "TZ"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002",
+          "country": "KE"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1"
+        }
+      },
+      "expect": {
+        "required": false,
+        "status": "below_threshold",
+        "reason": "amount at or below threshold"
+      }
+    },
+    {
+      "name": "below_threshold",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 999,
+        "reference": "transfer-0003",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1"
+        }
+      },
+      "expect": {
+        "required": false,
+        "status": "below_threshold",
+        "reason": "amount at or below threshold"
+      }
+    },
+    {
+      "name": "counterparty_unavailable",
+      "threshold": 1000,
+      "transport": "unavailable",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "reference": "transfer-0001",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001",
+          "address": "Dar es Salaam",
+          "country": "TZ"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002",
+          "country": "KE"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1",
+          "name": "Origin VASP"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1",
+          "name": "Beneficiary VASP"
+        }
+      },
+      "expect": {
+        "required": true,
+        "status": "unavailable",
+        "reason": "counterparty unavailable"
+      }
+    },
+    {
+      "name": "invalid_country",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "reference": "transfer-0004",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001",
+          "country": "tz"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1"
+        }
+      },
+      "expect": {
+        "error": "originator.country must be ISO 3166-1 alpha-2"
+      }
+    },
+    {
+      "name": "missing_beneficiary_vasp",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 1500,
+        "reference": "transfer-0005",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1"
+        },
+        "beneficiary_vasp": {
+          "id": ""
+        }
+      },
+      "expect": {
+        "error": "beneficiary_vasp.id is required"
+      }
+    },
+    {
+      "name": "zero_amount",
+      "threshold": 1000,
+      "transport": "available",
+      "transfer": {
+        "network": "arne:testnet",
+        "asset": "arce:testnet/arce",
+        "amount": 0,
+        "reference": "transfer-0006",
+        "originator": {
+          "name": "Amina Hassan",
+          "account": "+255700000001"
+        },
+        "beneficiary": {
+          "name": "John Mwangi",
+          "account": "+254700000002"
+        },
+        "originating_vasp": {
+          "id": "LEI-ORIG-1"
+        },
+        "beneficiary_vasp": {
+          "id": "LEI-BEN-1"
+        }
+      },
+      "expect": {
+        "error": "amount must be positive"
+      }
+    }
+  ]
+}

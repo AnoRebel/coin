@@ -31,6 +31,8 @@ make test
 | `internal/compliance/profile` | FATF, MiCA, and ISO 20022 reference profiles |
 | `internal/compliance/access` | Scoped, time-bounded auditor grants and access log |
 | `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
+| `internal/compliance/travelrule` | IVMS101 Travel Rule collection and signed exchange |
+| `internal/compliance/vc` | W3C VC 2.0/SD-JWT selective disclosure and revocation |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -489,6 +491,92 @@ d := screener.Screen(ctx, sanctions.Subject{Address: "arce-devnet1…"})
 `shortcut:` screening is a library only; settlement does not call it yet. Wire
 it into regulated asset transfers together with the policy engine before
 claiming screening coverage.
+
+## Travel Rule exchange
+
+`internal/compliance/travelrule` (mirrored by `python/arne/travelrule.py`)
+collects IVMS101-shaped originator and beneficiary data and exchanges it above a
+threshold. The data never enters the ledger or consensus state; the package
+validates it, signs an envelope, and hands that envelope to a transport you
+supply:
+
+```go
+policy := travelrule.Policy{Threshold: 1000} // base units, strict >
+decision, err := travelrule.Exchange(ctx, policy, transfer, key, transport, now)
+// decision.Required, decision.Status: exchanged | below_threshold | unavailable
+```
+
+- `Policy.Requires` is strict: exactly at the threshold is below it. A threshold
+  of 0 means every positive amount qualifies.
+- `Validate` requires network, asset, reference, positive amount, originator and
+  beneficiary name and account, and both VASP IDs. Country, when present, is
+  ISO 3166-1 alpha-2 uppercase. Optional names and addresses are bounded.
+- `Seal` signs `SHA-256("arne-travelrule-v1" || 0 || canonical-CBOR(transfer))`
+  with the sender's Ed25519 key. `Open` checks the version, signature, and
+  payload, so a receiver attributes the data to `Sender` regardless of how the
+  transport authenticated the connection.
+- A transport error produces `unavailable` with the cause in `detail`; the
+  caller holds or rejects the transfer according to its policy and records the
+  exception. Below-threshold decisions are still returned so they can be logged.
+- `Transport` is the authenticated channel: mTLS, an authenticated HTTPS
+  endpoint, or an internal queue. Authentication is not implied by the envelope
+  signature; the signature proves who authored the data, not who received it.
+
+`spec/vectors/travelrule.json` covers a qualifying exchange, exactly-at and
+below-threshold amounts, an unavailable counterparty, and invalid country, VASP,
+and amount cases. Both suites verify the same sender key and signature, so the
+canonical message and signature are cross-language anchors.
+
+`shortcut:` this is a library only; transfers do not call it yet, and there is
+no HTTP endpoint for counterparty lookup. Wire it into regulated asset transfers
+with the policy engine and FATF profile before claiming Travel Rule coverage.
+
+## Verifiable credentials
+
+`internal/compliance/vc` (mirrored by `python/arne/vc.py`) verifies W3C
+Verifiable Credentials 2.0 using the SD-JWT compact form. The issuer signs a
+payload whose claims are salted and committed into `_sd`; the holder presents
+only the disclosures a verifier needs:
+
+```go
+credential, err := vc.Issue(
+    map[string]any{"country": "TZ", "accredited": true},
+    vc.IssueOptions{Issuer: "did:example:issuer-1", ID: "cred-1",
+        Type: "https://coin.anorebel.net/credentials/kyc",
+        IssuedAt: now, ExpiresAt: now + 365*24*3600},
+    issuerKey,
+)
+presented := vc.Present(credential, "country")
+result, err := vc.Verify(presented, issuerKey.Public, vc.VerifyOptions{
+    Now: now, Require: map[string]any{"country": "TZ"}, Disclose: []string{"country"},
+})
+// result.Claims == {"country": "TZ"}; accredited stays hidden
+```
+
+- The header is fixed (`alg: EdDSA`, `typ: vc+sd-jwt`). Payload, disclosures, and
+  salts are canonical JSON, so Go and Python produce identical signatures.
+- `_sd` holds base64url SHA-256 commitments to `[salt, name, value]`. Every
+  presented disclosure must match a commitment; unreferenced disclosures,
+  duplicate claims, and malformed salts are rejected.
+- `Verify` checks the issuer signature, `now >= exp`, the revocation list, and
+  every required claim before returning anything. `Disclose` narrows the result
+  to the claims the verifier asked for, so a jurisdiction check does not yield
+  the accreditation flag.
+- Revocation is a list of credential IDs (`jti`) from the issuer's status list.
+  `exp` is required; there is no indefinite credential.
+- Credentials are off-chain. Store only a credential reference and hash in
+  application records, and nothing but references on-chain.
+
+`spec/vectors/vc.json` pins one issuer key and credential; Go and Python both
+reproduce the exact credential and the same disclosed results. Cases cover
+jurisdiction-only, accreditation-only, no claims, an undisclosed required claim,
+a value mismatch, expiry at the boundary, revocation, and a tampered signature.
+
+`shortcut:` presentations are not holder-bound: there is no KB-JWT, so a
+presented credential proves the issuer's claims but not who is presenting it.
+Add key binding before using a credential for authorization. Issuer DID
+resolution and status-list bitstrings are also out of scope; pass the issuer's
+public key and revoked IDs from your resolver.
 
 ## Data retention and legal holds
 

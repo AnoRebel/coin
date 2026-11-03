@@ -1,0 +1,129 @@
+{
+  "issuer_seed": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+  "network": "arne:testnet",
+  "issuer": "did:example:issuer-1",
+  "id": "cred-1",
+  "type": "https://coin.anorebel.net/credentials/kyc",
+  "issued_at": 1760000000,
+  "expires_at": 4102444800,
+  "claims": {
+    "country": "TZ",
+    "accredited": true
+  },
+  "salts": {
+    "country": "000102030405060708090a0b0c0d0e0f",
+    "accredited": "101112131415161718191a1b1c1d1e1f"
+  },
+  "issuer_public": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+  "credential": "eyJhbGciOiJFZERTQSIsInR5cCI6InZjK3NkLWp3dCJ9.eyJfc2QiOlsieWxLTEFTNTh3TnBDYU13WmxySng0OXlvUWxFWTAxbXdCWjBTUl8zTVZvMCIsIi1KRFMwbkI3ZVlLQV9md01MeWJRc1d1SUltQkJRcGJxbkxkT1h1cDd6aHciXSwiZXhwIjo0MTAyNDQ0ODAwLCJpYXQiOjE3NjAwMDAwMDAsImlzcyI6ImRpZDpleGFtcGxlOmlzc3Vlci0xIiwianRpIjoiY3JlZC0xIiwidmN0IjoiaHR0cHM6Ly9jb2luLmFub3JlYmVsLm5ldC9jcmVkZW50aWFscy9reWMifQ.T7VXdGuCCufTdLrMkC9Q2KVg3Zw2UYjwo1Y1BOVPPs-LW6dNCaNHcZAxf7RwTTNN5Yi5rq0V5rji-WQ4-ELqDw~[\"EBESExQVFhcYGRobHB0eHw\",\"accredited\",true]~[\"AAECAwQFBgcICQoLDA0ODw\",\"country\",\"TZ\"]",
+  "cases": [
+    {
+      "name": "jurisdiction",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "country": "TZ"
+      },
+      "now": 1760000100,
+      "expect": {
+        "claims": {
+          "country": "TZ"
+        }
+      }
+    },
+    {
+      "name": "accredited_only",
+      "disclose": [
+        "accredited"
+      ],
+      "require": {
+        "accredited": true
+      },
+      "now": 1760000100,
+      "expect": {
+        "claims": {
+          "accredited": true
+        }
+      }
+    },
+    {
+      "name": "no_claims_disclosed",
+      "disclose": [],
+      "require": {},
+      "now": 1760000100,
+      "expect": {
+        "claims": {}
+      }
+    },
+    {
+      "name": "hidden_claim_not_disclosed",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "accredited": true
+      },
+      "now": 1760000100,
+      "expect": {
+        "error": "required claim missing"
+      }
+    },
+    {
+      "name": "claim_mismatch",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "country": "KE"
+      },
+      "now": 1760000100,
+      "expect": {
+        "error": "required claim mismatch"
+      }
+    },
+    {
+      "name": "expired",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "country": "TZ"
+      },
+      "now": 4102444801,
+      "expect": {
+        "error": "expired"
+      }
+    },
+    {
+      "name": "revoked",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "country": "TZ"
+      },
+      "revoked": [
+        "cred-1"
+      ],
+      "now": 1760000100,
+      "expect": {
+        "error": "revoked"
+      }
+    },
+    {
+      "name": "tampered",
+      "disclose": [
+        "country"
+      ],
+      "require": {
+        "country": "TZ"
+      },
+      "tamper": true,
+      "now": 1760000100,
+      "expect": {
+        "error": "bad signature"
+      }
+    }
+  ]
+}
