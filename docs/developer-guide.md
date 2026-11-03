@@ -38,6 +38,7 @@ make test
 | `internal/connector/ilp` | ILPv4 prepare/fulfill, Open Payments quotes and grants, HTLC, STREAM |
 | `internal/connector/evm` | EVM bridge guard: finality, replay, limits, pause |
 | `internal/connector/assetmap` | Versioned external-to-canonical asset mapping |
+| `internal/connector/reconcile` | Idempotent cross-rail matching and exception reports |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -831,6 +832,65 @@ agree on every result and error.
 canonical asset exists, does not check decimals against an on-chain contract,
 and keeps versions in memory only. Persist the registry and verify decimals
 against the source chain before moving value.
+
+## Cross-rail reconciliation
+
+`internal/connector/reconcile` (mirrored by `python/arne/reconcile.py`) matches
+submitted connector operations against external confirmations and reports what
+did not line up:
+
+```go
+ledger := reconcile.New(reconcile.Policy{FailOnTimeout: true})
+state, outcome := ledger.Submit(reconcile.Operation{
+    Key: "retry-1", Correlation: "swap-42",
+    Asset: "arce:testnet/usdc", Amount: 1000,
+    CreatedAt: now, Timeout: 60,
+})
+state, outcome = ledger.Confirm(reconcile.Confirmation{
+    Correlation: "swap-42", Asset: "arce:testnet/usdc", Amount: 1000,
+    Reference: "0xaa…", At: now + 10,
+}, now+10)
+report := ledger.Reconcile(now + 120)
+```
+
+- Two identities: `Key` is the caller's retry identity and `Correlation` is the
+  cross-rail identity. Re-submitting the same key returns the first operation
+  unchanged and never double-books. Reusing a correlation under a different key
+  is a conflict, because it would settle one thing twice.
+- Confirmation outcomes are explicit: `accepted` settles once, `duplicate`
+  ignores an identical repeat, `conflict` freezes the operation for a human,
+  `unknown` names a correlation the ledger never saw, and `invalid` rejects a
+  malformed message. Once an operation is in conflict, later confirmations
+  cannot silently settle it.
+- A mismatch is either a different amount or a different asset. A settled
+  operation that receives a different reference is also a conflict: two rails
+  must not claim the same transfer.
+- `Reconcile(now)` ages pending operations at `CreatedAt + Timeout`: with
+  `FailOnTimeout` they become `failed`, otherwise they stay `pending`, and both
+  are reported once as `missing_confirmation`. Running it twice does not
+  duplicate the exception.
+- The report gives `matched`, `unmatched`, and `conflicting` counts plus
+  per-asset totals split into `settled`, `failed`, `pending`, and `conflicting`
+  amounts, so the buckets add up to every stored operation. Exceptions keep
+  their order: `correlation_reused`, `conflicting_confirmation`,
+  `unknown_confirmation`, `missing_confirmation`, `late_confirmation`.
+
+A confirmation that arrives after the deadline under a fail-on-timeout policy is
+a late confirmation: the operation is failed, and the value needs a manual
+reconciliation rather than an automatic settle.
+
+`spec/vectors/reconcile.json` drives 21 ordered cases against one ledger:
+accepted, duplicate, and reused-correlation submissions; invalid and zero-amount
+operations; a settling confirmation and its duplicate; amount mismatch and
+repeat-after-conflict; unknown and invalid confirmations; a run inside and after
+the timeout; an idempotent second run; a late confirmation; state lookups; and a
+settled operation frozen by a conflicting reference, followed by the final
+totals.
+
+`shortcut:` operations live in memory only and there is no durable exception
+queue or operator workflow. Persist operations, confirmations, and exceptions
+before using this to move value, and wire exceptions into the monitoring and
+disclosure paths.
 
 ## Data retention and legal holds
 

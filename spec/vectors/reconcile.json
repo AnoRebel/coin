@@ -1,0 +1,396 @@
+{
+  "policy": {
+    "fail_on_timeout": true
+  },
+  "cases": [
+    {
+      "name": "submit_op1",
+      "kind": "submit",
+      "operation": {
+        "key": "k1",
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1000,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "accepted",
+        "status": "pending"
+      }
+    },
+    {
+      "name": "resubmit_same_key",
+      "kind": "submit",
+      "operation": {
+        "key": "k1",
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 7000,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "duplicate",
+        "status": "pending",
+        "amount": 1000
+      }
+    },
+    {
+      "name": "submit_op2",
+      "kind": "submit",
+      "operation": {
+        "key": "k2",
+        "correlation": "c2",
+        "asset": "arce:testnet/arce",
+        "amount": 500,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "accepted",
+        "status": "pending"
+      }
+    },
+    {
+      "name": "reuse_correlation",
+      "kind": "submit",
+      "operation": {
+        "key": "k3",
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "conflict",
+        "status": "pending",
+        "correlation": "c1",
+        "amount": 1000
+      }
+    },
+    {
+      "name": "invalid_key",
+      "kind": "submit",
+      "operation": {
+        "key": "bad key",
+        "correlation": "c5",
+        "asset": "arce:testnet/usdc",
+        "amount": 10,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "invalid"
+      }
+    },
+    {
+      "name": "zero_amount",
+      "kind": "submit",
+      "operation": {
+        "key": "k6",
+        "correlation": "c6",
+        "asset": "arce:testnet/usdc",
+        "amount": 0,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "invalid"
+      }
+    },
+    {
+      "name": "confirmation_settles_once",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1000,
+        "reference": "0xaa",
+        "at": 110
+      },
+      "expect": {
+        "outcome": "accepted",
+        "status": "settled",
+        "reference": "0xaa"
+      }
+    },
+    {
+      "name": "duplicate_confirmation",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1000,
+        "reference": "0xaa",
+        "at": 111
+      },
+      "expect": {
+        "outcome": "duplicate",
+        "status": "settled",
+        "reference": "0xaa"
+      }
+    },
+    {
+      "name": "amount_mismatch",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c2",
+        "asset": "arce:testnet/arce",
+        "amount": 400,
+        "reference": "0xbb",
+        "at": 112
+      },
+      "expect": {
+        "outcome": "conflict",
+        "status": "conflicting",
+        "detail_contains": "expected arce:testnet/arce/500, got arce:testnet/arce/400"
+      }
+    },
+    {
+      "name": "confirmation_after_conflict",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c2",
+        "asset": "arce:testnet/arce",
+        "amount": 500,
+        "reference": "0xbb",
+        "at": 113
+      },
+      "expect": {
+        "outcome": "conflict",
+        "status": "conflicting",
+        "detail_contains": "already in conflict"
+      }
+    },
+    {
+      "name": "unknown_confirmation",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c9",
+        "asset": "arce:testnet/usdc",
+        "amount": 10,
+        "reference": "0xcc",
+        "at": 114
+      },
+      "expect": {
+        "outcome": "unknown"
+      }
+    },
+    {
+      "name": "invalid_confirmation",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1000,
+        "reference": "",
+        "at": 115
+      },
+      "expect": {
+        "outcome": "invalid"
+      }
+    },
+    {
+      "name": "submit_op4",
+      "kind": "submit",
+      "operation": {
+        "key": "k4",
+        "correlation": "c4",
+        "asset": "arce:testnet/arce",
+        "amount": 200,
+        "created_at": 100,
+        "timeout": 60
+      },
+      "expect": {
+        "outcome": "accepted",
+        "status": "pending"
+      }
+    },
+    {
+      "name": "reconcile_within_timeout",
+      "kind": "reconcile",
+      "now": 130,
+      "expect": {
+        "matched": 1,
+        "unmatched": 1,
+        "conflicting": 1,
+        "totals": [
+          {
+            "asset": "arce:testnet/arce",
+            "settled": 0,
+            "failed": 0,
+            "pending": 200,
+            "conflicting": 500
+          },
+          {
+            "asset": "arce:testnet/usdc",
+            "settled": 1000,
+            "failed": 0,
+            "pending": 0,
+            "conflicting": 0
+          }
+        ],
+        "exceptions": [
+          "correlation_reused",
+          "conflicting_confirmation",
+          "conflicting_confirmation",
+          "unknown_confirmation"
+        ]
+      }
+    },
+    {
+      "name": "reconcile_after_timeout",
+      "kind": "reconcile",
+      "now": 170,
+      "expect": {
+        "matched": 1,
+        "unmatched": 1,
+        "conflicting": 1,
+        "totals": [
+          {
+            "asset": "arce:testnet/arce",
+            "settled": 0,
+            "failed": 200,
+            "pending": 0,
+            "conflicting": 500
+          },
+          {
+            "asset": "arce:testnet/usdc",
+            "settled": 1000,
+            "failed": 0,
+            "pending": 0,
+            "conflicting": 0
+          }
+        ],
+        "exceptions": [
+          "correlation_reused",
+          "conflicting_confirmation",
+          "conflicting_confirmation",
+          "unknown_confirmation",
+          "missing_confirmation"
+        ]
+      }
+    },
+    {
+      "name": "reconcile_is_idempotent",
+      "kind": "reconcile",
+      "now": 180,
+      "expect": {
+        "matched": 1,
+        "unmatched": 1,
+        "conflicting": 1,
+        "totals": [
+          {
+            "asset": "arce:testnet/arce",
+            "settled": 0,
+            "failed": 200,
+            "pending": 0,
+            "conflicting": 500
+          },
+          {
+            "asset": "arce:testnet/usdc",
+            "settled": 1000,
+            "failed": 0,
+            "pending": 0,
+            "conflicting": 0
+          }
+        ],
+        "exceptions": [
+          "correlation_reused",
+          "conflicting_confirmation",
+          "conflicting_confirmation",
+          "unknown_confirmation",
+          "missing_confirmation"
+        ]
+      }
+    },
+    {
+      "name": "late_confirmation",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c4",
+        "asset": "arce:testnet/arce",
+        "amount": 200,
+        "reference": "0xdd",
+        "at": 171
+      },
+      "expect": {
+        "outcome": "conflict",
+        "status": "failed",
+        "detail_contains": ""
+      }
+    },
+    {
+      "name": "state_op1",
+      "kind": "state",
+      "correlation": "c1",
+      "expect": {
+        "found": true,
+        "status": "settled",
+        "amount": 1000,
+        "reference": "0xaa"
+      }
+    },
+    {
+      "name": "state_unknown",
+      "kind": "state",
+      "correlation": "nope",
+      "expect": {
+        "found": false
+      }
+    },
+    {
+      "name": "settled_conflict_freezes",
+      "kind": "confirm",
+      "confirmation": {
+        "correlation": "c1",
+        "asset": "arce:testnet/usdc",
+        "amount": 1000,
+        "reference": "0xee",
+        "at": 120
+      },
+      "expect": {
+        "outcome": "conflict",
+        "status": "conflicting",
+        "detail_contains": "settled as arce:testnet/usdc/1000 from 0xaa, got arce:testnet/usdc/1000 from 0xee"
+      }
+    },
+    {
+      "name": "final_report",
+      "kind": "reconcile",
+      "now": 200,
+      "expect": {
+        "matched": 0,
+        "unmatched": 1,
+        "conflicting": 2,
+        "totals": [
+          {
+            "asset": "arce:testnet/arce",
+            "settled": 0,
+            "failed": 200,
+            "pending": 0,
+            "conflicting": 500
+          },
+          {
+            "asset": "arce:testnet/usdc",
+            "settled": 0,
+            "failed": 0,
+            "pending": 0,
+            "conflicting": 1000
+          }
+        ],
+        "exceptions": [
+          "correlation_reused",
+          "conflicting_confirmation",
+          "conflicting_confirmation",
+          "unknown_confirmation",
+          "missing_confirmation",
+          "late_confirmation",
+          "conflicting_confirmation"
+        ]
+      }
+    }
+  ]
+}

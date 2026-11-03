@@ -132,7 +132,7 @@
 - [x] 12.3 Implement ILPv4/Open Payments quotes, grants, STREAM, and HTLC settlement; verify quote expiry, fulfillment, and refund
 - [x] 12.4 Implement the EVM lock/mint and burn/release bridge with finality, replay protection, rate limits, and emergency pause; verify replay and pause
 - [x] 12.5 Implement external-to-canonical asset mapping with versioning and ambiguity rejection; verify EVM, fiat, and duplicate mappings
-- [ ] 12.6 Implement idempotent cross-rail reconciliation and exception reporting; verify duplicate confirmation, missing confirmation, and report totals
+- [x] 12.6 Implement idempotent cross-rail reconciliation and exception reporting; verify duplicate confirmation, missing confirmation, and report totals
 - [ ] 12.7 Implement mTLS, credential rotation, allowlists, and secret redaction for connectors; verify rejection and rotation
 - [ ] 12.8 Implement exposure caps, rate limits, and governed limit changes; verify cap and rate-limit rejection
 
