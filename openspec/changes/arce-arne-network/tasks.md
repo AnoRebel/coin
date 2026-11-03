@@ -127,7 +127,7 @@
 
 ## 12. Interoperability connectors
 
-- [ ] 12.1 Implement the connector interface, capability handshake, asset mapping, health, and version negotiation; verify unsupported-asset and unhealthy cases
+- [x] 12.1 Implement the connector interface, capability handshake, asset mapping, health, and version negotiation; verify unsupported-asset and unhealthy cases
 - [ ] 12.2 Implement ISO 20022 `pacs.008`, `camt.053`, and `pain.001` mapping with field-level validation; verify outbound, inbound, statement, and malformed cases
 - [ ] 12.3 Implement ILPv4/Open Payments quotes, grants, STREAM, and HTLC settlement; verify quote expiry, fulfillment, and refund
 - [ ] 12.4 Implement the EVM lock/mint and burn/release bridge with finality, replay protection, rate limits, and emergency pause; verify replay and pause

@@ -1,0 +1,145 @@
+{
+  "cases": [
+    {
+      "name": "highest_common",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1, 2, 3],
+        "assets": ["arce:testnet/arce", "arce:testnet/usdc"],
+        "health": "healthy"
+      },
+      "request": {
+        "versions": [2, 3, 4],
+        "assets": ["arce:testnet/usdc"],
+        "network": "arne:testnet"
+      },
+      "expect": {
+        "connector": "iso20022",
+        "version": 3,
+        "assets": ["arce:testnet/usdc"],
+        "network": "arne:testnet"
+      }
+    },
+    {
+      "name": "degraded_can_negotiate",
+      "connector": {
+        "name": "ilp",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "degraded"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"connector": "ilp", "version": 1, "assets": ["arce:testnet/arce"]}
+    },
+    {
+      "name": "no_common_version",
+      "connector": {
+        "name": "evm",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [9], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "unsupported protocol version"}
+    },
+    {
+      "name": "no_common_asset",
+      "connector": {
+        "name": "evm",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/eur"]},
+      "expect": {"error": "unsupported asset"}
+    },
+    {
+      "name": "unhealthy",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "unhealthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "unhealthy"}
+    },
+    {
+      "name": "unknown_health",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "unknown"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "health status"}
+    },
+    {
+      "name": "duplicate_versions",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1, 1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "duplicate: version 1"}
+    },
+    {
+      "name": "duplicate_assets",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1],
+        "assets": ["arce:testnet/arce", "arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "duplicate: asset"}
+    },
+    {
+      "name": "empty_versions",
+      "connector": {
+        "name": "iso20022",
+        "versions": [],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "no protocol versions"}
+    },
+    {
+      "name": "request_without_versions",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "request needs a version"}
+    },
+    {
+      "name": "request_without_assets",
+      "connector": {
+        "name": "iso20022",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": []},
+      "expect": {"error": "request needs an asset"}
+    },
+    {
+      "name": "empty_name",
+      "connector": {
+        "name": "",
+        "versions": [1],
+        "assets": ["arce:testnet/arce"],
+        "health": "healthy"
+      },
+      "request": {"versions": [1], "assets": ["arce:testnet/arce"]},
+      "expect": {"error": "adapter name is required"}
+    }
+  ]
+}

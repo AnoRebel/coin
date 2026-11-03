@@ -33,6 +33,7 @@ make test
 | `internal/compliance/sanctions` | Provider-agnostic sanctions screening, fail-closed |
 | `internal/compliance/travelrule` | IVMS101 Travel Rule collection and signed exchange |
 | `internal/compliance/vc` | W3C VC 2.0/SD-JWT selective disclosure and revocation |
+| `internal/connector` | Connector handshake: versions, assets, health |
 | `internal/compliance/retention` | Per-class retention, legal holds, deletion/anonymization tombstones |
 | `internal/compliance/disclosure` | Grant-scoped memo disclosure with an audit log |
 | `internal/compliance/monitoring` | Threshold/velocity alerts, freeze policy, analyst dispositions |
@@ -577,6 +578,48 @@ presented credential proves the issuer's claims but not who is presenting it.
 Add key binding before using a credential for authorization. Issuer DID
 resolution and status-list bitstrings are also out of scope; pass the issuer's
 public key and revoked IDs from your resolver.
+
+## Connector handshake
+
+`internal/connector` (mirrored by `python/arne/connector.py`) is the contract
+every external rail implements before any quote or settlement:
+
+```go
+type Adapter interface {
+    Name() string
+    Versions() []uint32          // protocol versions this rail speaks
+    Assets() []string            // canonical asset IDs it supports
+    Health(context.Context) Health
+}
+
+session, err := connector.Negotiate(ctx, adapter, connector.Request{
+    Versions: []uint32{2, 3}, Assets: []string{"arce:testnet/usdc"}, Network: "arne:testnet",
+})
+// session.Version is the highest common version; session.Assets is the
+// intersection, sorted. A degraded adapter still negotiates.
+```
+
+- Capabilities are static and validated every call: empty names, version 0,
+  duplicate versions or assets, and empty asset lists are rejected, so a
+  misconfigured adapter cannot claim support it cannot honour.
+- The request must name at least one version and one asset. No shared version is
+  `unsupported protocol version`; no shared asset is `unsupported asset`.
+- Health status is `healthy`, `degraded`, or `unhealthy`. Only `unhealthy`
+  blocks negotiation; an unknown status is invalid. A health check error is the
+  adapter's responsibility and must surface as `unhealthy`.
+- Asset IDs are canonical ledger IDs, matched exactly and case-sensitively.
+  External symbol mapping is a separate, versioned concern; do not treat a
+  rail's ticker as a canonical ID.
+- The session names the connector, version, assets, and network. Concrete
+  adapters take their operations from the session rather than re-reading
+  configuration, so a negotiated capability set cannot drift mid-flow.
+
+`spec/vectors/connector.json` covers highest-common version, degraded health,
+missing version and asset, unhealthy and unknown health, duplicate capabilities,
+and empty requests. Both suites read it.
+
+`shortcut:` this package negotiates only; there is no quote, transfer, or retry
+loop yet. Those arrive with the ISO 20022, ILP, and EVM adapters.
 
 ## Data retention and legal holds
 
