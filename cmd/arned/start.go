@@ -52,6 +52,10 @@ func startCmd() *cobra.Command {
 		webhookKey      string
 		indexerURL      string
 		p2pAllowlist    []string
+		p2pAdvertise    string
+		p2pOutboundOnly bool
+		p2pRelay        []string
+		p2pAnchor       []string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -91,11 +95,18 @@ func startCmd() *cobra.Command {
 			}
 			policy.ListenAddress = p2pAddr
 			policy.Allowlist = p2pAllowlist
+			policy.AdvertisedAddress = p2pAdvertise
+			policy.OutboundOnly = p2pOutboundOnly
+			policy.RelayPeers = p2pRelay
+			policy.AnchorPeers = p2pAnchor
 			if genDoc.ChainID != policy.Chain {
 				return fmt.Errorf("genesis chain %q does not match %s (%s)", genDoc.ChainID, network, policy.Chain)
 			}
 			if err := policy.Apply(cfg); err != nil {
 				return err
+			}
+			if report := policy.Report(); report.Mismatch {
+				fmt.Printf("p2p: %s; continuing with outbound connectivity\n", report.Reason)
 			}
 
 			apiKeys, err := parseAPIKeys(apiKeySpecs)
@@ -233,6 +244,10 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringVar(&rpcAddr, "rpc", "tcp://127.0.0.1:26657", "CometBFT RPC listen address")
 	cmd.Flags().StringVar(&p2pAddr, "p2p", "tcp://0.0.0.0:26656", "CometBFT P2P listen address")
 	cmd.Flags().StringSliceVar(&p2pAllowlist, "p2p-allowlist", nil, "Node IDs a consortium peer may connect to (comma separated)")
+	cmd.Flags().StringVar(&p2pAdvertise, "p2p-advertise", "", "Address peers should dial, as tcp://host:port")
+	cmd.Flags().BoolVar(&p2pOutboundOnly, "p2p-outbound-only", false, "Do not accept inbound peers; dial seeds, relays, and anchors")
+	cmd.Flags().StringSliceVar(&p2pRelay, "p2p-relay", nil, "Relay peer as <node-id>@<host>:<port> (repeatable)")
+	cmd.Flags().StringSliceVar(&p2pAnchor, "p2p-anchor", nil, "Anchor peer as <node-id>@<host>:<port> (repeatable)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "", "app data directory (default <home>/app)")
 	cmd.Flags().DurationVar(&interval, "block-interval", time.Second, "consensus commit timeout")
 	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "temporary home and in-memory app state")

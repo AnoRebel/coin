@@ -315,6 +315,44 @@ session, err := policy.Handshake(p2p.Offer{
   members. `Apply` sets addresses, limits, and discovery but leaves peers from
   an existing `config.toml` in place when the policy lists none.
 
+### NAT, relays, and anchor peers
+
+A node behind NAT cannot accept inbound connections. Set `OutboundOnly` (or
+`--p2p-outbound-only`) and give it a seed, persistent peer, or relay to dial:
+
+```go
+policy.OutboundOnly = true
+policy.RelayPeers = []string{relayNodeID + "@relay.example.com:26656"}
+policy.AnchorPeers = []string{anchorNodeID + "@anchor.example.com:26656"}
+report := policy.Report()
+if report.Mismatch {
+    fmt.Printf("p2p: %s; continuing with outbound connectivity\n", report.Reason)
+}
+```
+
+- `Report` says whether the node advertises an address, whether that address
+  looks publicly reachable, and why not. A public network with no advertised
+  address, or with a loopback, private, unspecified, or link-local host, is
+  reported as a mismatch. The node keeps running and stays usable outbound;
+  `Apply` still writes the advertised address unchanged, because this package
+  cannot prove reachability without an external dialer.
+- Outbound-only nodes must not advertise an address, because advertising one
+  that peers cannot dial wastes their retries. They must also have at least one
+  seed, persistent, relay, or anchor peer to dial.
+- Relay peers are added to the persistent set, so the node keeps an outbound
+  connection to them even when peer exchange is off. Anchor peers are added the
+  same way and also become CometBFT `unconditional_peer_ids`, so they are
+  redialled even when the connection limits are full. Listing a peer twice, or
+  as both a relay and an anchor, does not duplicate it.
+- `arned start` exposes `--p2p-advertise`, `--p2p-outbound-only`,
+  `--p2p-relay`, and `--p2p-anchor`; a reachability mismatch is printed and
+  startup continues.
+
+`shortcut:` this configures outbound-only operation, relay connectivity through
+persistent peers, and anchor reconnects. CometBFT has no hole punching, UPnP, or
+relay circuits, so a true relayed transport needs a layer that does not exist
+here. Reachability is a heuristic, not a live inbound probe.
+
 ### Discovery and backoff
 
 `p2p.NewDiscovery` tracks bootstrap connectivity without doing I/O. The caller
@@ -340,8 +378,10 @@ case p2p.StateDegraded: // status.RetryAt is the next attempt
   `ErrFull` once inbound plus outbound peers are exhausted. `Disconnect` drops a
   peer, so the next observation reports degraded again.
 
-`shortcut:` this decides policy, not transport: nothing here dials peers,
-traverses NAT, scores them, bans them, or syncs snapshots. The devnet in
+`shortcut:` this decides policy, not transport: nothing here dials peers or
+traverses NAT. Scoring and bans live in `Guard`, snapshot trust in `statesync`,
+and relay connectivity works by keeping outbound connections to configured
+relay peers; CometBFT has no hole punching or relay circuits. The devnet in
 `internal/multinode` still relaxes the address book for loopback peers. Pick a
 chain ID matching `protocol.ChainID` when hand-writing genesis.
 

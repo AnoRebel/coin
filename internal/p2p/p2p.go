@@ -51,6 +51,9 @@ type Config struct {
 	Allowlist         []string `json:"allowlist,omitempty"`
 	MaxInbound        int      `json:"max_inbound"`
 	MaxOutbound       int      `json:"max_outbound"`
+	OutboundOnly      bool     `json:"outbound_only,omitempty"`
+	RelayPeers        []string `json:"relay_peers,omitempty"`
+	AnchorPeers       []string `json:"anchor_peers,omitempty"`
 }
 
 // Default returns a config with the network's chain ID and conservative peer
@@ -116,6 +119,9 @@ func (c Config) Validate() error {
 	if err := validateAllowlist(c.Allowlist); err != nil {
 		return err
 	}
+	if err := c.validateConnectivity(); err != nil {
+		return err
+	}
 	if class == protocol.ClassConsortium {
 		if len(c.Allowlist) == 0 {
 			return fmt.Errorf("%w: a consortium network needs an allowlist", ErrInvalid)
@@ -141,11 +147,21 @@ func (c Config) Apply(cfg *cmtcfg.Config) error {
 	p2p := cfg.P2P
 	p2p.ListenAddress = c.ListenAddress
 	p2p.ExternalAddress = c.AdvertisedAddress
+	if c.OutboundOnly {
+		p2p.ExternalAddress = ""
+	}
 	if len(c.Seeds) > 0 {
 		p2p.Seeds = strings.Join(c.Seeds, ",")
 	}
-	if len(c.PersistentPeers) > 0 {
-		p2p.PersistentPeers = strings.Join(c.PersistentPeers, ",")
+	persistent := mergePeers(c.PersistentPeers, c.RelayPeers)
+	persistent = mergePeers(persistent, c.AnchorPeers)
+	if len(persistent) > 0 {
+		p2p.PersistentPeers = strings.Join(persistent, ",")
+	}
+	if anchors := peerIDs(c.AnchorPeers); len(anchors) > 0 {
+		p2p.UnconditionalPeerIDs = strings.Join(anchors, ",")
+	} else {
+		p2p.UnconditionalPeerIDs = ""
 	}
 	p2p.MaxNumInboundPeers = c.MaxInbound
 	p2p.MaxNumOutboundPeers = c.MaxOutbound
