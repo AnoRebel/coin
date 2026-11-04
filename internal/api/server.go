@@ -30,7 +30,9 @@ type Config struct {
 	Workspace      *workspace.Workspace
 	AuditGrants    *access.Registry // scoped auditor grants; nil disables scoping
 	AllowedOrigins []string
-	RateLimit      int // requests per second per IP; 0 disables
+	RateLimit      int         // requests per second per credential or IP; 0 disables
+	OIDC           *OIDCConfig // RS256 JWT validation; nil disables
+	AdminMTLS      bool        // a verified client certificate grants admin
 	Devnet         bool
 }
 
@@ -38,6 +40,7 @@ type Config struct {
 type Server struct {
 	node        *node.Node
 	cfg         Config
+	auth        *authenticator
 	lim         *limiter
 	submissions submissions
 }
@@ -47,7 +50,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	if cfg.Workspace != nil && cfg.AuditGrants == nil {
 		cfg.AuditGrants = access.New("")
 	}
-	s := &Server{node: n, cfg: cfg}
+	s := &Server{node: n, cfg: cfg, auth: newAuthenticator(cfg)}
 	if cfg.RateLimit > 0 {
 		s.lim = newLimiter(cfg.RateLimit, cfg.RateLimit*2)
 	}
@@ -56,6 +59,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 		writeError(c, err)
 	}
 	e.Use(s.securityHeaders)
+	e.Use(s.authenticate)
 	e.Use(s.limitMiddleware)
 	e.Use(s.corsMiddleware)
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -138,7 +142,7 @@ func (s *Server) corsMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 func (s *Server) limitMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if s.lim != nil && !s.lim.allow(c.RealIP()) {
+		if s.lim != nil && !s.lim.allow(rateKey(c)) {
 			return apiErr(http.StatusTooManyRequests, "RATE_LIMITED", "too many requests")
 		}
 		return next(c)
@@ -148,20 +152,20 @@ func (s *Server) limitMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 func (s *Server) require(scope string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			if len(s.cfg.APIKeys) == 0 {
+			if !s.auth.enabled() {
 				return next(c)
 			}
-			key := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
-			scopes, ok := s.cfg.APIKeys[key]
-			if !ok {
-				return apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid API key")
+			cred := credentialFrom(c)
+			if scope == "admin" && cred != nil && cred.MTLSAdmin {
+				return next(c)
 			}
-			for _, sc := range scopes {
-				if sc == scope || sc == "admin" {
-					return next(c)
-				}
+			if cred == nil {
+				return apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 			}
-			return apiErr(http.StatusForbidden, "FORBIDDEN", "missing scope "+scope)
+			if !cred.hasScope(scope) {
+				return apiErr(http.StatusForbidden, "FORBIDDEN", "missing scope "+scope)
+			}
+			return next(c)
 		}
 	}
 }
@@ -199,11 +203,15 @@ func (s *Server) principal(c *echo.Context) (string, error) {
 		return "", apiErr(http.StatusNotFound, "NOT_FOUND", "workspace is not configured")
 	}
 	key := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
-	actor, ok := s.cfg.Workspace.Actor(key)
-	if !ok {
-		return "", apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid API key")
+	if actor, ok := s.cfg.Workspace.Actor(key); ok {
+		return actor, nil
 	}
-	return actor, nil
+	if cred := credentialFrom(c); cred != nil && cred.Subject != "" {
+		if _, ok := s.cfg.Workspace.RoleOf(cred.Subject); ok {
+			return cred.Subject, nil
+		}
+	}
+	return "", apiErr(http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid API key")
 }
 
 func (s *Server) getWorkspace(c *echo.Context) error {

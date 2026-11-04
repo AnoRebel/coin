@@ -114,8 +114,15 @@ sanctions, tax, and consumer-protection obligations in their jurisdiction.
 
 ## Secure deployment checklist
 
-- [ ] Node bound to localhost or behind a TLS proxy.
-- [ ] `--api-key` set; keys are long, random, and rotated.
+- [ ] Node bound to localhost, behind a TLS proxy, or serving TLS itself with
+      `--tls-cert`/`--tls-key`.
+- [ ] `--api-key` set; keys are long, random, and rotated. Writes use `write`,
+      block production uses a separate `admin` key or mTLS.
+- [ ] OIDC uses `--oidc-issuer`, `--oidc-audience`, and `--oidc-jwks`; the JWKS
+      file is `0600` and rotated with the issuer.
+- [ ] `--tls-client-ca` points at the intended CA, not a broad public bundle;
+      mTLS grants admin to every certificate that CA issues.
+- [ ] Rate limits are per credential (`--rate-limit`), not only per address.
 - [ ] `--allow-origin` restricted; no wildcard credentialed CORS.
 - [ ] Data directory permissions restricted to the node user.
 - [ ] Backups encrypted; restore tested.

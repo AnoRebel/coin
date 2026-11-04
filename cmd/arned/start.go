@@ -56,6 +56,7 @@ func startCmd() *cobra.Command {
 		p2pOutboundOnly bool
 		p2pRelay        []string
 		p2pAnchor       []string
+		auth            authOptions
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -214,18 +215,22 @@ func startCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			oidc, err := auth.oidc()
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
-				Devnet: devnet, RateLimit: rateLimit,
+				Devnet: devnet, RateLimit: rateLimit, OIDC: oidc, AdminMTLS: auth.adminMTLS(),
 				APIKeys: apiKeys, Workspace: ws, AuditGrants: grants, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
-				if err := srv.Start(apiAddr); err != nil && !errors.Is(err, io.EOF) {
+				if err := auth.serve(srv, apiAddr); err != nil && !errors.Is(err, io.EOF) {
 					fmt.Fprintln(os.Stderr, "api:", err)
 				}
 			}()
 
-			fmt.Printf("network: %s\nchain:   %s\nhome:    %s\napi:     http://%s\nrpc:     %s\n",
-				appGenesis.Network, appGenesis.Chain, home, apiAddr, rpcAddr)
+			fmt.Printf("network: %s\nchain:   %s\nhome:    %s\napi:     %s://%s\nrpc:     %s\n",
+				appGenesis.Network, appGenesis.Chain, home, auth.scheme(), apiAddr, rpcAddr)
 			if created {
 				fmt.Printf("genesis: created %s (devnet allocations, %s)\n", cfg.GenesisFile(), mnemonic)
 			}
@@ -260,6 +265,7 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringVar(&indexerURL, "indexer-url", "", "Postgres URL for the optional read-model indexer")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
 	cmd.Flags().StringVar(&auditGrantsPath, "audit-grants", "", "auditor grants file (requires --workspace)")
+	auth.register(cmd)
 	return cmd
 }
 

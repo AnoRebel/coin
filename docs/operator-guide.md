@@ -49,8 +49,14 @@ Flags:
 | `--block-interval` | `2s` | Idle block interval (blocks are also produced when the mempool is non-empty) |
 | `--ephemeral` | false | In-memory store; nothing survives restart |
 | `--api-key` | none | Repeatable `key=read,write[,admin]`; when set, writes require `Authorization: Bearer <key>` |
+| `--oidc-issuer` | none | OIDC issuer URL accepted in RS256 JWTs; requires the two flags below |
+| `--oidc-audience` | none | Required JWT audience |
+| `--oidc-jwks` | none | Static JWKS file holding the issuer's named RSA keys |
+| `--tls-cert` | none | TLS certificate chain for the API; requires `--tls-key` |
+| `--tls-key` | none | TLS private key for the API |
+| `--tls-client-ca` | none | Client CA bundle; a verified certificate grants admin |
 | `--allow-origin` | none | Repeatable CORS allowlist entry |
-| `--rate-limit` | 200 | Requests/second per IP; 0 disables |
+| `--rate-limit` | 200 | Requests/second per credential, or per IP when anonymous; 0 disables |
 | `--keep-blocks` | 0 | Keep only the newest N ledger blocks; 0 archives all |
 | `--webhook` | none | Repeatable webhook endpoint URL |
 | `--webhook-key` | none | Hex Ed25519 seed used to sign webhook bodies; required with `--webhook` |
@@ -225,9 +231,17 @@ The Python node does the same on open and exposes `arne migrate --data-dir DIR
 
 ## API exposure
 
-- Bind to `127.0.0.1` unless you need remote access. There is no TLS in the node;
-  terminate TLS at a reverse proxy.
-- Always set `--api-key` and `--allow-origin` for anything reachable.
+- Bind to `127.0.0.1` unless you need remote access. For remote clients either
+  terminate TLS at a proxy or pass `--tls-cert` and `--tls-key`; add
+  `--tls-client-ca` when administrators should authenticate with client
+  certificates instead of an admin API key.
+- Always set `--api-key` and `--allow-origin` for anything reachable. For
+  identity-provider logins, set the three `--oidc-*` flags and leave the JWKS
+  file readable only by the node.
+- Scopes are `read`, `write`, and `admin`. Reads stay public; only wrapped
+  operations check scopes. Use `admin` sparingly: it can produce blocks.
+- A verified client certificate grants admin only when `--tls-client-ca` is set.
+  It never grants `write`, so integrations still need an API key or JWT.
 - Reads are open by design. Plaintext memos are public; opt-in sealed memos hide
   text only, not sender, recipient, amount, or time.
 - The faucet exists only on devnet and is disabled by `Devnet: false`.
@@ -538,7 +552,7 @@ integration calls the hybrid library directly.
 Do not describe this node as production-ready until these exist:
 
 - multi-node consensus networking, validator admission, staking and slashing;
-- TLS, OIDC/JWT, mTLS, and secrets management;
+- secrets management and automatic OIDC key rotation;
 - metrics, tracing, structured logs, dashboards, alerts;
 - online snapshots, CometBFT blockstore pruning, and migrations;
 - validator key separation, HSM/KMS support, slashing and staking;

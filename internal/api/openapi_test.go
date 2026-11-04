@@ -165,3 +165,47 @@ func TestServedDocumentMatchesSpec(t *testing.T) {
 		t.Fatal("served document differs from spec/openapi.json")
 	}
 }
+
+func TestProtectedOperationsDeclareSecurity(t *testing.T) {
+	raw, err := os.ReadFile("openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Paths      map[string]map[string]json.RawMessage `json:"paths"`
+		Components struct {
+			SecuritySchemes map[string]json.RawMessage `json:"securitySchemes"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"bearerAuth", "mtls"} {
+		if _, ok := document.Components.SecuritySchemes[name]; !ok {
+			t.Fatalf("security scheme %q is missing", name)
+		}
+	}
+	securityOf := func(path, method string) []map[string][]string {
+		var operation struct {
+			Security []map[string][]string `json:"security"`
+		}
+		if err := json.Unmarshal(document.Paths[path][method], &operation); err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return operation.Security
+	}
+	for path, method := range map[string]string{
+		"/v1/transactions": "post", "/v1/faucet": "post", "/v1/workspace": "get",
+	} {
+		if len(securityOf(path, method)) == 0 {
+			t.Fatalf("%s %s has no security requirement", method, path)
+		}
+	}
+	produce := securityOf("/v1/blocks/produce", "post")
+	if len(produce) != 2 || produce[0]["bearerAuth"] == nil || produce[1]["mtls"] == nil {
+		t.Fatalf("produce security = %+v", produce)
+	}
+	if len(securityOf("/v1/blocks", "get")) != 0 {
+		t.Fatal("public reads must not require a credential")
+	}
+}

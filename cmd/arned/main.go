@@ -123,6 +123,7 @@ func devnetCmd() *cobra.Command {
 		indexerURL      string
 		workspacePath   string
 		auditGrantsPath string
+		auth            authOptions
 	)
 	cmd := &cobra.Command{
 		Use:   "devnet",
@@ -189,8 +190,8 @@ func devnetCmd() *cobra.Command {
 				fmt.Println("Generated devnet mnemonic (write it down):")
 				fmt.Println("  " + mnemonic)
 			}
-			fmt.Printf("network:  %s\nchain:    %s\nfunder:   %s\nfaucet:   %s\napi:      http://%s\n",
-				network, chain, funder.Address, faucetKP.Address, addr)
+			fmt.Printf("network:  %s\nchain:    %s\nfunder:   %s\nfaucet:   %s\napi:      %s://%s\n",
+				network, chain, funder.Address, faucetKP.Address, auth.scheme(), addr)
 
 			apiKeys, err := parseAPIKeys(apiKeySpecs)
 			if err != nil {
@@ -204,12 +205,16 @@ func devnetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			oidc, err := auth.oidc()
+			if err != nil {
+				return err
+			}
 			srv := api.New(n, api.Config{
-				Devnet: true, RateLimit: rateLimit,
+				Devnet: true, RateLimit: rateLimit, OIDC: oidc, AdminMTLS: auth.adminMTLS(),
 				APIKeys: apiKeys, Workspace: ws, AuditGrants: grants, AllowedOrigins: allowedOrigins,
 			})
 			go func() {
-				if err := srv.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if err := auth.serve(srv, addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					fmt.Fprintln(os.Stderr, "api:", err)
 				}
 			}()
@@ -258,6 +263,7 @@ func devnetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&indexerURL, "indexer-url", "", "Postgres URL for the optional read-model indexer")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "workspace roles file (enables role enforcement)")
 	cmd.Flags().StringVar(&auditGrantsPath, "audit-grants", "", "auditor grants file (requires --workspace)")
+	auth.register(cmd)
 	return cmd
 }
 

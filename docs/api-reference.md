@@ -6,7 +6,45 @@ Protocol `arne/1`, API `v1`, transaction version `1`.
 - Request body limit: 2 MiB
 - Content types: `application/json`, `application/cbor`
 - Errors: `{"error": {"code": "...", "message": "..."}}`
-- Auth: `Authorization: Bearer <key>` (writes only, when keys are configured)
+- Auth: `Authorization: Bearer <key or JWT>` on protected operations; reads are public
+
+## Authentication
+
+Reads are public. These operations require a credential when the node has one
+configured:
+
+| Operation | Scope |
+| --- | --- |
+| `POST /v1/transactions` | `write` |
+| `POST /v1/faucet` | `write` |
+| `POST /v1/blocks/produce` | `admin` |
+| `/v1/workspace*` | workspace principal key |
+| `/v1/audit/grants*` | workspace owner |
+
+Credentials are checked in this order:
+
+1. **API key** — `--api-key key=read,write[,admin]`. Send it as
+   `Authorization: Bearer <key>`. `admin` implies `write` and `read`.
+2. **OIDC access token** — when `--oidc-issuer`, `--oidc-audience`, and
+   `--oidc-jwks` are set. The node accepts RS256 JWTs whose `kid` is a named RSA
+   key in the static JWKS file, whose `iss` and `aud` match exactly, and whose
+   `sub` is non-empty. Expired tokens and tokens before `nbf` are rejected, as
+   are `alg: none`, HS256, and unknown keys. Scopes come from the `scope` string
+   and the `scp` string or array.
+3. **Mutual TLS** — with `--tls-client-ca`, a client certificate verified
+   against that bundle authenticates the caller as admin on
+   `POST /v1/blocks/produce`. It does not grant `write` or `read`.
+
+A missing or invalid credential is `401 UNAUTHORIZED`; a valid credential
+without the required scope is `403 FORBIDDEN`. When no credential is configured
+the API is open, which is the devnet default. A bearer token for a workspace
+principal authenticates as that member with `read` and `write` but never
+`admin`.
+
+`--rate-limit` applies per credential (its scope is the token subject) and falls
+back to the client IP for anonymous requests. Exceeding it returns
+`429 RATE_LIMITED`. Behind a proxy, bind the API to localhost or set the proxy to
+overwrite `X-Forwarded-For`; the node trusts it for rate-limit keys.
 
 ## REST `/v1`
 
@@ -591,6 +629,6 @@ on every `check_tx`; proposal building keeps the same nonce rule.
 ## Not implemented
 
 Idempotency for writes other than REST transaction submission, WebSocket,
-pagination cursors beyond `before`/`cursor`, OIDC/JWT, mTLS, message/channel
-APIs, contract APIs, and shielded APIs. They appear in the OpenSpec change,
-not in this server.
+message/channel APIs, contract APIs, and shielded APIs. They appear in the
+OpenSpec change, not in this server. Streaming is SSE only; there is no
+WebSocket endpoint.

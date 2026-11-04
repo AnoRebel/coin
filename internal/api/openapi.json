@@ -848,7 +848,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/transactions/simulate": {
@@ -945,7 +950,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "mtls": []
+          }
+        ]
       }
     },
     "/v1/faucet": {
@@ -1007,8 +1020,33 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/escrows/{id}": {
@@ -1486,8 +1524,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/workspace/members": {
@@ -1526,8 +1579,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/workspace/members/{id}": {
@@ -1621,8 +1689,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1690,8 +1773,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/workspace/audit": {
@@ -1752,8 +1850,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/audit/grants": {
@@ -1792,8 +1905,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1850,8 +1978,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/audit/grants/{id}": {
@@ -1911,8 +2054,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/audit/grants/log": {
@@ -1951,8 +2109,23 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/rpc": {
@@ -2357,6 +2530,17 @@
             "type": "string"
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key from `--api-key` or an RS256 OIDC access token. Keys carry `read`, `write`, and `admin` scopes; a token's `scope` or `scp` claims carry the same names."
+      },
+      "mtls": {
+        "type": "mutualTLS",
+        "description": "Client certificate verified against `--tls-client-ca`. Grants admin operations only; it is not a read/write key."
       }
     }
   }
