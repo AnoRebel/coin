@@ -1339,22 +1339,45 @@
           "Events"
         ],
         "summary": "Server-sent events for finalized blocks",
-        "description": "Streams `text/event-stream`; each event id is a block height and `from` replays retained blocks.",
+        "description": "Streams `text/event-stream`. `stream=blocks` (default) emits one `block` event per finalized block; `stream=transactions` emits a `transaction` event with the receipt for each transaction in a block. Event ids are the block height, or `<height>-<index>` for transactions. Resume with `Last-Event-ID` (exclusive) or `from` (inclusive block height). A cursor older than the retained window gets a `cursor_expired` event carrying the earliest usable cursor. Message streams are not emitted until the workspace messaging subsystem exists.",
         "parameters": [
+          {
+            "name": "stream",
+            "in": "query",
+            "required": false,
+            "description": "Event stream. `blocks` emits finalized blocks; `transactions` emits receipts.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "blocks",
+                "transactions"
+              ],
+              "default": "blocks"
+            }
+          },
           {
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Replay retained blocks at or above this height.",
+            "description": "Inclusive block height to replay from; `0` replays the retained window.",
             "schema": {
               "type": "integer",
               "format": "uint64"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "Last seen event id; resumes after it and takes precedence over `from`.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Event stream.",
+            "description": "Event stream of `block` or `transaction` events, optionally preceded by `cursor_expired`.",
             "content": {
               "text/event-stream": {
                 "schema": {

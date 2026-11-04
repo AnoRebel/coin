@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Full, Queue
-from typing import Protocol
+from typing import Any, Protocol
 
 from . import cbor, ledger, types
 from . import webhook as webhook_codec
@@ -59,12 +59,27 @@ class Event:
     time: int
     hash: str
     tx_hashes: list[str] = field(default_factory=list)
+    receipt: dict[str, Any] | None = None
+    index: int = 0
+
+    @property
+    def stream(self) -> str:
+        if self.type == "transaction":
+            return "transactions"
+        if self.type == "message":
+            return "messages"
+        return "blocks"
 
     def to_dict(self) -> dict:
-        return {
+        out: dict[str, Any] = {
             "type": self.type, "height": self.height, "time": self.time,
             "hash": self.hash, "tx_hashes": list(self.tx_hashes),
         }
+        if self.receipt is not None:
+            out["receipt"] = self.receipt
+        if self.index:
+            out["index"] = self.index
+        return out
 
 
 class Store(Protocol):
@@ -463,6 +478,11 @@ class Node:
                 type="block", height=block.height, time=block.time,
                 hash=block.hash(), tx_hashes=list(block.tx_hashes),
             ))
+            for index, receipt in enumerate(receipts):
+                self._broadcast(Event(
+                    type="transaction", height=block.height, time=block.time,
+                    hash=receipt.hash, receipt=receipt.to_dict(), index=index,
+                ))
             self._dispatch_receipts(block, receipts)
             return block
 

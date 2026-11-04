@@ -376,3 +376,40 @@ def test_faucet_disabled_outside_devnet(setup) -> None:
     node, _ = setup
     client = TestClient(create_app(node, ApiConfig(devnet=False)))
     assert client.post("/v1/faucet", json={"address": "x"}).status_code == 404
+
+
+def test_event_stream_replay_and_validation(client: TestClient, setup) -> None:
+    node, keys = setup
+    with client.stream("GET", "/v1/events?from=1") as response:
+        lines: list[str] = []
+        for line in response.iter_lines():
+            lines.append(line)
+            if line == "" and "event: block" in lines:
+                break
+    body = "\n".join(lines)
+    assert "id: 1" in body and "event: block" in body
+
+    key = keys["funder"]
+    now = int(time.time())
+    tx = types.Tx(
+        version=1, network=NETWORK, chain=types.chain_id(NETWORK), tx_type=types.TX_TRANSFER,
+        signer=key.address, nonce=0, created_at=now, expires_at=now + 3600,
+        fee_asset="arce:devnet", max_fee=10_000,
+        payload={"asset": "arce:devnet", "to": key.address, "amount": 5},
+    )
+    tx.sign(key)
+    assert client.post("/v1/transactions", content=cbor.encode(tx.to_cbor())).status_code == 202
+    node.produce_block(now + 1)
+
+    with client.stream("GET", "/v1/events?stream=transactions&from=1") as response:
+        lines = []
+        for line in response.iter_lines():
+            lines.append(line)
+            if line == "" and "event: transaction" in lines:
+                break
+    body = "\n".join(lines)
+    assert "id: 2-0" in body or "id: 1-0" in body
+    assert tx.hash() in body
+
+    assert client.get("/v1/events?stream=messages").status_code == 400
+    assert client.get("/v1/events?from=abc").status_code == 400

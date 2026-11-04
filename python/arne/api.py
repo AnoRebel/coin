@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import access, cbor, ledger, types
@@ -37,6 +37,37 @@ class ApiError(Exception):
         self.status = status
         self.code = code
         self.message = message
+
+
+def _event_cursor(stream: str, raw: str) -> tuple[int, int]:
+    """Parse a resume cursor. Transaction cursors carry an in-block index."""
+    if not raw:
+        return 0, -1
+    height_part, has_index, index_part = raw.partition("-")
+    try:
+        height = int(height_part)
+        if height < 0:
+            raise ValueError
+        index = -1
+        if has_index:
+            if stream != "transactions":
+                raise ValueError
+            index = int(index_part)
+            if index < 0:
+                raise ValueError
+        return height, index
+    except ValueError:
+        raise ApiError(
+            400, "INVALID_ARGUMENT",
+            "cursor must be a block height or <height>-<transaction-index>",
+        ) from None
+
+
+def block_event(block: ledger.Block) -> dict[str, Any]:
+    return {
+        "type": "block", "height": block.height, "time": block.time,
+        "hash": block.hash(), "tx_hashes": list(block.tx_hashes),
+    }
 
 
 @dataclass
@@ -413,20 +444,92 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
 
     @app.get("/v1/events")
     def events(
-        request: Request, from_height: int = 0, from_: int = Query(0, alias="from")
+        request: Request,
+        stream: str = "blocks",
+        from_height: str = "",
+        from_: str = Query("", alias="from"),
+        last_event_id: str | None = Header(None, alias="Last-Event-ID"),
     ) -> StreamingResponse:
-        start = from_ or from_height
+        name = {
+            "block": "blocks", "blocks": "blocks",
+            "transaction": "transactions", "transactions": "transactions",
+        }.get(stream)
+        if name is None:
+            raise ApiError(400, "INVALID_ARGUMENT", "stream must be one of: blocks, transactions")
 
-        def stream() -> Iterator[str]:
+        cursor_raw = last_event_id or ""
+        from_query = False
+        raw_from = from_ or from_height
+        if not cursor_raw and raw_from:
+            try:
+                start = int(raw_from)
+            except ValueError:
+                raise ApiError(400, "INVALID_ARGUMENT", "from must be a block height") from None
+            if start < 0:
+                raise ApiError(400, "INVALID_ARGUMENT", "from must be a block height")
             if start > 0:
-                for block in reversed(node.blocks_page(1000, 0)):
-                    if block.height < start:
+                cursor_raw = raw_from
+                from_query = True
+        height, index = _event_cursor(name, cursor_raw)
+        replay = bool(cursor_raw)
+        transaction_cursor = "-" in cursor_raw
+        # from is inclusive for the block-height form; a header or a
+        # <height>-<index> cursor is the last seen event and resumes after it.
+        if from_query and not transaction_cursor:
+            if height == 0:
+                replay = False
+            else:
+                height, index = height - 1, -1
+
+        def event_id(event_height: int, event_index: int) -> str:
+            if name == "transactions" and event_index >= 0:
+                return f"{event_height}-{event_index}"
+            return str(event_height)
+
+        def generate() -> Iterator[str]:
+            from_height, from_index = height, index
+            if replay:
+                blocks = node.blocks_page(1000, 0)
+                oldest = blocks[-1].height if blocks else 0
+                expired = from_height + 1 < oldest
+                if name == "transactions" and transaction_cursor and from_height < oldest:
+                    expired = True
+                if expired:
+                    earliest = event_id(oldest, 0)
+                    yield (
+                        f"id: {earliest}\nevent: cursor_expired\n"
+                        f"data: {json.dumps({'stream': name, 'earliest': earliest})}\n\n"
+                    )
+                    from_height, from_index = oldest - 1, -1
+                for block in reversed(blocks):
+                    if name == "blocks":
+                        if block.height <= from_height:
+                            continue
+                        yield (
+                            f"id: {block.height}\nevent: block\n"
+                            f"data: {json.dumps(block_event(block))}\n\n"
+                        )
                         continue
-                    data = {
-                        "type": "block", "height": block.height, "time": block.time,
-                        "hash": block.hash(), "tx_hashes": block.tx_hashes,
-                    }
-                    yield f"id: {block.height}\nevent: block\ndata: {json.dumps(data)}\n\n"
+                    if block.height < from_height:
+                        continue
+                    if block.height == from_height and from_index < 0:
+                        continue
+                    for position, tx_hash in enumerate(block.tx_hashes):
+                        if block.height == from_height and position <= from_index:
+                            continue
+                        receipt = node.receipt(tx_hash)
+                        if receipt is None:
+                            continue
+                        payload = {
+                            "type": "transaction", "height": block.height,
+                            "time": block.time, "hash": tx_hash,
+                            "receipt": receipt.to_dict(), "index": position,
+                        }
+                        yield (
+                            f"id: {event_id(block.height, position)}\nevent: transaction\n"
+                            f"data: {json.dumps(payload)}\n\n"
+                        )
+
             queue = node.subscribe()
             try:
                 while True:
@@ -436,14 +539,17 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
                         event = queue.get(timeout=1.0)
                     except Exception:
                         continue
+                    if event.stream != name:
+                        continue
                     yield (
-                        f"id: {event.height}\nevent: block\n"
+                        f"id: {event_id(event.height, event.index)}\n"
+                        f"event: {'transaction' if name == 'transactions' else 'block'}\n"
                         f"data: {json.dumps(event.to_dict())}\n\n"
                     )
             finally:
                 node.unsubscribe(queue)
 
-        return StreamingResponse(stream(), media_type="text/event-stream")
+        return StreamingResponse(generate(), media_type="text/event-stream")
 
     # --- writes ---
 

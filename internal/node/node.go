@@ -46,11 +46,25 @@ type BlockSink interface {
 
 // Event is a broadcast block notification.
 type Event struct {
-	Type     string   `json:"type"`
-	Height   uint64   `json:"height"`
-	Time     uint64   `json:"time"`
-	Hash     string   `json:"hash"`
-	TxHashes []string `json:"tx_hashes"`
+	Type     string          `json:"type"`
+	Height   uint64          `json:"height"`
+	Time     uint64          `json:"time"`
+	Hash     string          `json:"hash"`
+	TxHashes []string        `json:"tx_hashes,omitempty"`
+	Receipt  *ledger.Receipt `json:"receipt,omitempty"`
+	Index    int             `json:"index,omitempty"`
+}
+
+// Stream maps an event to the subscription stream that carries it.
+func (e Event) Stream() string {
+	switch e.Type {
+	case "transaction":
+		return "transactions"
+	case "message":
+		return "messages"
+	default:
+		return "blocks"
+	}
 }
 
 // Node is a single-process ARNE node. Consensus is pluggable; this service owns
@@ -532,6 +546,13 @@ func (n *Node) ProduceBlock(now uint64) (ledger.Block, error) {
 		Type: "block", Height: block.Height, Time: block.Time,
 		Hash: mustHash(block), TxHashes: block.TxHashes,
 	})
+	for index, receipt := range receipts {
+		r := receipt
+		n.broadcast(Event{
+			Type: "transaction", Height: block.Height, Time: block.Time,
+			Hash: receipt.Hash, Receipt: &r, Index: index,
+		})
+	}
 	n.dispatchReceipts(block, receipts)
 	return block, nil
 }

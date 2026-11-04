@@ -248,15 +248,41 @@ Failures add `"code"` and `"error"`.
 
 ### Events
 
-`GET /v1/events?from=<height>` streams `text/event-stream`:
+`GET /v1/events` streams `text/event-stream`. `stream` selects the feed:
+`blocks` (default) sends one `block` event per finalized block, and
+`transactions` sends one `transaction` event per transaction with its receipt.
 
 ```
 id: 7
 event: block
 data: {"type":"block","height":7,"time":…,"hash":"…","tx_hashes":["…"]}
+
+id: 7-0
+event: transaction
+data: {"type":"transaction","height":7,"time":…,"hash":"…","index":0,
+       "receipt":{"hash":"…","success":true,"fee":1000,"events":[…]}}
 ```
 
-Replay covers the last 1,000 blocks. Python also accepts `from_height`.
+- Event ids are the block height for `blocks` and `<height>-<index>` for
+  `transactions`. Send the last id back as `Last-Event-ID` to resume after it,
+  or use `?from=<height>`, which is inclusive and replays from that height.
+- `Last-Event-ID` wins over `from`. A transaction cursor resumes inside its
+  block, so two transactions in one block do not duplicate after a reconnect.
+- Replay covers the last 1,000 retained blocks. A cursor older than that gets
+  `event: cursor_expired` with `{"stream":"…","earliest":"…"}` before the
+  available events; reconnect from that cursor. Blocks pruned by the node's
+  retention policy are also reported this way.
+- The stream starts live after any replay. Slow subscribers drop events instead
+  of blocking consensus; reconcile from the chain after a long disconnect.
+
+```sh
+curl -N "http://127.0.0.1:8080/v1/events?from=120"
+curl -N -H "Last-Event-ID: 481-2" "http://127.0.0.1:8080/v1/events?stream=transactions"
+```
+
+Python also accepts `from_height`. A `message` stream is not emitted yet:
+workspace messaging (`10.7`) has no publisher, so `stream=messages` is rejected
+with `400 INVALID_ARGUMENT` rather than opening an empty stream silently.
 
 ### Webhook deliveries
 

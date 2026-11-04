@@ -812,47 +812,6 @@ func (s *Server) webhookKey(c *echo.Context) error {
 
 // --- SSE ---
 
-func (s *Server) events(c *echo.Context) error {
-	w := c.Response()
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return apiErr(http.StatusInternalServerError, "UNSUPPORTED", "streaming unsupported")
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
-	from, _ := strconv.ParseUint(c.QueryParamOr("from", "0"), 10, 64)
-	if from > 0 {
-		blocks := s.node.Blocks(1000, 0)
-		for i := len(blocks) - 1; i >= 0; i-- {
-			if blocks[i].Height < from {
-				continue
-			}
-			data, _ := json.Marshal(blockEvent(blocks[i]))
-			fmt.Fprintf(w, "id: %d\nevent: block\ndata: %s\n\n", blocks[i].Height, data)
-		}
-		flusher.Flush()
-	}
-
-	ch, cancel := s.node.Subscribe()
-	defer cancel()
-	for {
-		select {
-		case <-c.Request().Context().Done():
-			return nil
-		case e, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			data, _ := json.Marshal(e)
-			fmt.Fprintf(w, "id: %d\nevent: block\ndata: %s\n\n", e.Height, data)
-			flusher.Flush()
-		}
-	}
-}
-
 func blockEvent(b ledger.Block) node.Event {
 	h, _ := b.Hash()
 	return node.Event{Type: "block", Height: b.Height, Time: b.Time, Hash: h, TxHashes: b.TxHashes}

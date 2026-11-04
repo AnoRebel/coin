@@ -187,10 +187,13 @@ event: block
 data: {"type":"block","height":7,"time":...,"hash":"...","tx_hashes":["..."]}
 ```
 
-Reconnect with `from=<last height + 1>`. The replay window is the last 1,000
-blocks. Python accepts `from_height` as an alias. A slow consumer drops events
-rather than stalling block production, so reconcile with block polling after a
-long disconnect.
+Reconnect with `Last-Event-ID: <last id>` to resume after that event, or with
+`from=<height>` to replay inclusively from a height. Ids are block heights;
+`stream=transactions` switches to receipts with `<height>-<index>` ids. A cursor
+older than the last 1,000 retained blocks gets a `cursor_expired` event with the
+earliest usable cursor. Python accepts `from_height` as an alias. A slow
+consumer drops events rather than stalling block production, so reconcile with
+block polling after a long disconnect.
 
 ## 5. JSON-RPC
 
