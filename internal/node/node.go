@@ -668,6 +668,43 @@ func (n *Node) Blocks(limit int, before uint64) []ledger.Block {
 	return out
 }
 
+// ListBlocks returns one page of blocks and the next cursor. Cursor 0 starts
+// at the newest block when descending or the oldest when ascending; a non-zero
+// cursor is the last height already returned. proposer limits the page to one
+// proposer and is applied before the page is taken.
+func (n *Node) ListBlocks(limit int, cursor uint64, ascending bool, proposer string) ([]ledger.Block, uint64) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	heights := make([]uint64, 0, len(n.blocks))
+	for h, b := range n.blocks {
+		if cursor != 0 {
+			if ascending && h <= cursor || !ascending && h >= cursor {
+				continue
+			}
+		}
+		if proposer != "" && b.Proposer != proposer {
+			continue
+		}
+		heights = append(heights, h)
+	}
+	sort.Slice(heights, func(i, j int) bool {
+		if ascending {
+			return heights[i] < heights[j]
+		}
+		return heights[i] > heights[j]
+	})
+	next := uint64(0)
+	if limit > 0 && len(heights) > limit {
+		heights = heights[:limit]
+		next = heights[len(heights)-1]
+	}
+	out := make([]ledger.Block, 0, len(heights))
+	for _, h := range heights {
+		out = append(out, n.blocks[h])
+	}
+	return out, next
+}
+
 // Receipt returns a transaction receipt.
 func (n *Node) Receipt(hash string) (ledger.Receipt, bool) {
 	n.mu.RLock()

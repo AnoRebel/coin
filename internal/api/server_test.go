@@ -32,7 +32,7 @@ func newTestNode(t *testing.T, keepBlocks uint64) (*node.Node, *protocol.KeyPair
 	genesis := node.DevnetGenesis(testNetwork, uint64(time.Now().Unix()), funder, faucet)
 	n, err := node.New(node.Config{
 		Network: testNetwork, Chain: genesis.Chain, Params: ledger.DefaultParams(),
-		KeepBlocks: keepBlocks,
+		KeepBlocks: keepBlocks, Proposer: funder.Address,
 	}, genesis, storage.NewMemory())
 	if err != nil {
 		t.Fatal(err)

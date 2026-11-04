@@ -65,6 +65,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 		}
 	})
 
+	e.GET("/v1/openapi.json", s.openapi)
 	e.GET("/v1/health", s.health)
 	e.GET("/v1/version", s.version)
 	e.GET("/v1/status", s.status)
@@ -81,6 +82,7 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 	e.GET("/v1/blocks", s.listBlocks)
 	e.GET("/v1/blocks/:height", s.getBlock)
 	e.GET("/v1/transactions/:hash", s.getTx)
+	e.GET("/v1/transactions/:hash/status", deprecatedHandler(s.getTx, "Tue, 04 May 2027 00:00:00 GMT", "/v1/transactions/{hash}"))
 	e.GET("/v1/events", s.events)
 	e.GET("/v1/webhooks/key", s.webhookKey)
 	e.GET("/v1/proofs/*", s.keyProof)
@@ -413,17 +415,55 @@ func (s *Server) status(c *echo.Context) error {
 }
 
 func (s *Server) listAssets(c *echo.Context) error {
+	if err := checkQuery(c, "limit", "cursor", "order", "class", "issuer"); err != nil {
+		return err
+	}
+	limit, err := pageLimit(c, 100, 1000)
+	if err != nil {
+		return err
+	}
+	cursor, err := assetCursor(c)
+	if err != nil {
+		return err
+	}
+	descending, err := pageOrder(c)
+	if err != nil {
+		return err
+	}
+	class, issuer := c.QueryParam("class"), c.QueryParam("issuer")
 	st := s.node.State()
 	ids := st.Assets()
-	out := make([]map[string]any, 0, len(ids))
+	if descending {
+		for i, j := 0, len(ids)-1; i < j; i, j = i+1, j-1 {
+			ids[i], ids[j] = ids[j], ids[i]
+		}
+	}
+	out := make([]map[string]any, 0, limit)
+	next := ""
 	for _, id := range ids {
+		if cursor != "" {
+			if descending && id >= cursor || !descending && id <= cursor {
+				continue
+			}
+		}
 		a, _, err := st.Asset(id)
 		if err != nil {
 			return err
 		}
+		if class != "" && a.Class != class || issuer != "" && a.Issuer != issuer {
+			continue
+		}
+		if len(out) == limit {
+			next = out[len(out)-1]["id"].(string)
+			break
+		}
 		out = append(out, assetView(a, st.Supply(id), st.Burned(id)))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": out})
+	body := map[string]any{"items": out}
+	if next != "" {
+		body["next_cursor"] = next
+	}
+	return c.JSON(http.StatusOK, body)
 }
 
 func assetView(a any, supply, burned uint64) map[string]any {
@@ -582,14 +622,34 @@ func (s *Server) getAllowance(c *echo.Context) error {
 }
 
 func (s *Server) listBlocks(c *echo.Context) error {
-	limit, _ := strconv.Atoi(c.QueryParamOr("limit", "50"))
-	before, _ := strconv.ParseUint(c.QueryParamOr("before", "0"), 10, 64)
-	blocks := s.node.Blocks(limit, before)
+	if err := checkQuery(c, "limit", "cursor", "order", "sort", "proposer"); err != nil {
+		return err
+	}
+	limit, err := pageLimit(c, 50, 1000)
+	if err != nil {
+		return err
+	}
+	cursor, err := blockCursor(c)
+	if err != nil {
+		return err
+	}
+	descending, err := pageOrder(c)
+	if err != nil {
+		return err
+	}
+	if sort := c.QueryParamOr("sort", "height"); sort != "height" {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "sort must be one of: height")
+	}
+	blocks, next := s.node.ListBlocks(limit, cursor, !descending, c.QueryParam("proposer"))
 	out := make([]map[string]any, 0, len(blocks))
 	for _, b := range blocks {
 		out = append(out, blockView(b))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": out})
+	body := map[string]any{"items": out}
+	if next > 0 {
+		body["next_cursor"] = next
+	}
+	return c.JSON(http.StatusOK, body)
 }
 
 func blockView(b ledger.Block) map[string]any {

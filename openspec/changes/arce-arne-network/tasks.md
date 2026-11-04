@@ -149,7 +149,7 @@
 
 ## 14. Node API, CLI, and SDKs
 
-- [ ] 14.1 Implement REST `/v1` with OpenAPI, stable errors, cursor pagination, filters, and deprecation metadata; verify contract tests
+- [x] 14.1 Implement REST `/v1` with OpenAPI, stable errors, cursor pagination, filters, and deprecation metadata; verify contract tests
 - [x] 14.2 Implement JSON-RPC 2.0 with batch calls and stable method errors; verify valid, batch, and unknown-method cases
 - [ ] 14.3 Implement WebSocket/SSE subscriptions with resumable cursors and `cursor_expired`; verify block, transaction, and message streams
 - [ ] 14.4 Implement API keys, OIDC/JWT, mTLS admin access, scopes, and rate limits; verify missing-scope, admin, and rate-limit cases

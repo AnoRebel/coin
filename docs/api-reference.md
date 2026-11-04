@@ -10,11 +10,26 @@ Protocol `arne/1`, API `v1`, transaction version `1`.
 
 ## REST `/v1`
 
+`GET /v1/openapi.json` serves the OpenAPI 3.1 document for this API. The same
+file is committed at `spec/openapi.json`, and a contract test fails when the
+document and the live routes disagree. The document regenerates nothing at
+runtime: rebuild the node after editing it.
+
+List endpoints share one pagination shape:
+
+- `limit` is the page size, capped at 1,000.
+- `cursor` is the opaque `next_cursor` from the previous page and is exclusive.
+- `order` is `asc` or `desc`; the default is `desc` (newest or highest first).
+- `next_cursor` appears only when another page exists.
+- Unknown query parameters are rejected with `400 INVALID_ARGUMENT`, so a
+  misspelled filter never silently returns unfiltered data.
+
 ### Health and discovery
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/v1/health` | `200 {"status":"ok","height":N}`; `503` with `"status":"halted"` |
+| GET | `/v1/openapi.json` | OpenAPI 3.1 description of every public route |
 | GET | `/v1/version` | `{"protocol":"arne/1","tx_version":1,"api":"v1","cbor":"deterministic","state":"smt-sha256"}` |
 | GET | `/v1/status` | Node status |
 | GET | `/v1/webhooks/key` | `{"algorithm":"ed25519","public_key":"…"}`, or `404 NOT_FOUND` when webhooks are disabled |
@@ -110,11 +125,15 @@ outside scope returns `403 AUDIT_SCOPE` and is logged.
 
 ### Assets
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/v1/assets` | `{"items":[asset…]}` |
-| GET | `/v1/assets/{asset-id}` | One asset, or `404 UNKNOWN_ASSET` |
-| GET | `/v1/supply/{asset-id}` | `{"asset":"…","supply":N,"burned":N}` |
+| Method | Path | Query | Description |
+| --- | --- | --- | --- |
+| GET | `/v1/assets` | `limit`, `cursor`, `order`, `class`, `issuer` | Filtered, paginated assets |
+| GET | `/v1/assets/{asset-id}` | — | One asset, or `404 UNKNOWN_ASSET` |
+| GET | `/v1/supply/{asset-id}` | — | `{"asset":"…","supply":N,"burned":N}` |
+
+`cursor` is the last asset ID of the previous page; `class` matches the exact
+asset class (`fiat`, `crypto`, `stablecoin`, …) and `issuer` matches the issuing
+address exactly.
 
 Asset object:
 
@@ -187,9 +206,23 @@ proves absence at the returned `state_root`.
 
 | Method | Path | Query | Description |
 | --- | --- | --- | --- |
-| GET | `/v1/blocks` | `limit` (default 50), `before` (height) | Newest-first page |
+| GET | `/v1/blocks` | `limit` (default 50), `cursor`, `order`, `sort`, `proposer` | Paginated blocks |
 | GET | `/v1/blocks/{height}` | — | One block, or `404 BLOCK_NOT_FOUND`; `410 PRUNED` outside the retention window |
 | GET | `/v1/transactions/{hash}` | — | Receipt, or `404 TX_NOT_FOUND` |
+| GET | `/v1/transactions/{hash}/status` | — | Deprecated alias of the receipt; sends `Deprecation`, `Sunset`, and `Link` headers |
+
+`/v1/blocks` sorts by `height` only (`sort=height`); `cursor` is the last
+returned height and is exclusive in either direction. `proposer` matches the
+block proposer address exactly. The deprecated status alias has the same body
+as `/v1/transactions/{hash}`; its `Sunset` header is
+`Tue, 04 May 2027 00:00:00 GMT` and `Link` points at the successor.
+
+Block page:
+
+```json
+{"items": [{"height": 7, "hash": "…", "proposer": "…", "…": "…"}],
+ "next_cursor": 5}
+```
 
 Block:
 
