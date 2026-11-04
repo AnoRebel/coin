@@ -142,7 +142,7 @@
 - [x] 13.2 Configure public discovery and consortium allowlists; verify public join and unapproved consortium rejection
 - [x] 13.3 Tune block/tx gossip, deduplication, and block-priority propagation; verify duplicate suppression and priority
 - [x] 13.4 Implement snapshot/state sync with state-root and commit verification; verify valid and tampered snapshots
-- [ ] 13.5 Implement peer scoring, rate limits, size limits, and bans; verify flood, invalid-message, and ban-expiry cases
+- [x] 13.5 Implement peer scoring, rate limits, size limits, and bans; verify flood, invalid-message, and ban-expiry cases
 - [ ] 13.6 Configure NAT traversal, relay, advertised addresses, and anchor peers; verify NAT and mismatch behavior
 - [ ] 13.7 Implement eclipse/partition detection and no-finality-without-quorum behavior; verify partition and anchor recovery
 - [ ] 13.8 Verify Go and Python nodes interoperate on the same wire protocol; verify mixed-node finalization

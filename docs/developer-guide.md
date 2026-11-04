@@ -370,6 +370,47 @@ if gossip.Offer(p2p.Message{Kind: p2p.Block, ID: blockHash, Size: 812_000}) == p
 - `Stats` counts queued, duplicate, oversized, full, invalid, and evicted
   messages so operators can see suppression working.
 
+### Peer scoring and bans
+
+`p2p.NewGuard` tracks each peer's message rate, score, and ban state. Compose it
+in front of the relay queue and the handshake:
+
+```go
+guard, err := p2p.NewGuard(p2p.AbusePolicy{
+    RateCount: 100, RateWindow: 10, InitialScore: 50,
+    InvalidPenalty: 5, OversizedPenalty: 10, ThrottlePenalty: 1,
+    BanDuration: 3600,
+})
+if err := guard.Allow(peerID, now); err != nil {
+    // ErrThrottled or ErrBanned: drop the message, keep the connection
+}
+view, err := guard.Record(peerID, p2p.OutcomeInvalid, now)
+if view.Banned {
+    // disconnect; Admit refuses this peer until view.BannedUntil
+}
+```
+
+- `Allow` counts one message in a half-open window `(now-window, now]`. At the
+  limit the message is refused with `ErrThrottled` and costs score; the refused
+  message is not counted, so backing off is enough to recover.
+- `Record` rewards valid traffic one point up to the initial score and
+  subtracts the configured penalty for invalid, oversized, or throttled traffic.
+  A score at or below zero bans the peer for `BanDuration`, and every call while
+  banned returns `ErrBanned` with the expiry time.
+- Bans expire by time, not by a cleanup job: `Admit` and `View` clear an expired
+  ban, restore the initial score, and empty the rate window, so the peer
+  reconnects subject to the normal handshake and connection caps.
+- `Peers` returns known peers in stable order; `View` reports score, window
+  occupancy, and ban deadline for metrics and operator tooling.
+- Connection limits live in `Discovery`, message-size limits in `Gossip`, and
+  the score/rate/ban decision here. An operator gets all three by wiring the
+  same peer ID through each layer.
+
+`shortcut:` scores and bans are in memory only and are not shared between nodes
+or persisted across restarts. A restarted node forgets a ban, though the peer
+still has to pass the handshake and the caps. A coordinated attacker can also
+spread traffic across many node IDs; reputation sharing is not implemented.
+
 ### State sync verification
 
 `internal/statesync` decides whether a peer's snapshot can be trusted. It does
