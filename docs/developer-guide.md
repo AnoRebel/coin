@@ -60,6 +60,7 @@ make test
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/p2p` | Peer policy: network identity, discovery mode, allowlists, handshake versions |
+| `internal/statesync` | Snapshot trust: digest, chained blocks, commit certificate, quorum |
 | `internal/api` | Echo REST `/v1`, JSON-RPC, SSE, auth, rate limit |
 | `python/arne` | Full parity node (same module split) |
 | `python/arne/rocksstore.py` | RocksDB store with the Go key schema and atomic commits |
@@ -368,6 +369,45 @@ if gossip.Offer(p2p.Message{Kind: p2p.Block, ID: blockHash, Size: 812_000}) == p
   without limit. Eviction trades perfect suppression for bounded memory.
 - `Stats` counts queued, duplicate, oversized, full, invalid, and evicted
   messages so operators can see suppression working.
+
+### State sync verification
+
+`internal/statesync` decides whether a peer's snapshot can be trusted. It does
+not download or store anything; it verifies an offer against a validator set the
+node already trusts and returns the accepted height and root:
+
+```go
+result, err := statesync.Verify(statesync.Offer{
+    Snapshot:    offered,
+    Base:        base, // required when offered is incremental
+    Certificate: cert,
+}, statesync.Trusted{Network: network, Set: genesisValidators})
+if err != nil {
+    // discard the snapshot and fall back to block sync
+}
+```
+
+- The snapshot must pass `snapshot.Verify` first: its digest covers every
+  field, its blocks are ordered and chained, and its state root recomputes from
+  the state it carries.
+- The snapshot's network and chain must match the trusted network. A snapshot
+  for another chain is discarded even if it is internally valid.
+- The certificate height must equal the snapshot height and its state root must
+  equal the snapshot's. A mismatched height is `ErrHeight`; a mismatched root is
+  `ErrRoot`.
+- `lightclient.Verify` then requires signatures from more than two thirds of
+  the trusted voting power over the certificate message. Insufficient, forged,
+  duplicate, or unknown-validator signatures reject the offer as
+  `ErrCertificate`.
+- An incremental snapshot needs its full base; without it verification fails
+  rather than assuming the missing history. The caller gets `Kind` and
+  `SignedPower` back for logging.
+
+`shortcut:` this is the trust decision only. Nothing here downloads snapshot
+chunks, persists the accepted snapshot, or applies it to a store; wiring the
+verified offer into `snapshot.Restore` and block sync is left to the node. The
+trusted set must come from genesis or a previously verified certificate, never
+from the peer offering the snapshot.
 
 ## Adding a transaction type
 
