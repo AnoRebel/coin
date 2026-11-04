@@ -145,7 +145,7 @@
 - [x] 13.5 Implement peer scoring, rate limits, size limits, and bans; verify flood, invalid-message, and ban-expiry cases
 - [x] 13.6 Configure NAT traversal, relay, advertised addresses, and anchor peers; verify NAT and mismatch behavior
 - [x] 13.7 Implement eclipse/partition detection and no-finality-without-quorum behavior; verify partition and anchor recovery
-- [ ] 13.8 Verify Go and Python nodes interoperate on the same wire protocol; verify mixed-node finalization
+- [x] 13.8 Verify Go and Python nodes interoperate on the same wire protocol; verify mixed-node finalization
 
 ## 14. Node API, CLI, and SDKs
 

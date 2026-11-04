@@ -275,6 +275,20 @@ The Python app accepts `--genesis <file>` and `--data-dir <dir>`; without
 `--data-dir` it keeps the ledger in memory. Run the command from the repository
 root (or give an absolute project path) so `uv` resolves the environment.
 
+Wire interoperability is covered by
+`TestMixedGoPythonDevnetFinalizesSameChain`: one Go app and one Python app,
+each behind its own CometBFT node, must finalize the same chain and the test
+compares every block hash. Because both nodes use CometBFT's authenticated
+peer transport, the network wire is byte-identical; the language boundary is
+the ABCI app bridge, where the Python app hash must match what CometBFT expects
+or the node halts.
+
+`shortcut:` Python does not ship a standalone P2P or consensus stack. It runs
+`python -m arne.abci` behind CometBFT, so "Python node" means a Python
+application on the shared transport, not a second implementation of the
+transport. A standalone Python node that joins without CometBFT is not
+implemented.
+
 ## Peer transport and network identity
 
 `internal/p2p` owns the node-side policy around CometBFT's peer transport.
