@@ -451,6 +451,45 @@ or persisted across restarts. A restarted node forgets a ban, though the peer
 still has to pass the handshake and the caps. A coordinated attacker can also
 spread traffic across many node IDs; reputation sharing is not implemented.
 
+### Eclipse and partition detection
+
+Two checks keep a node from being quietly cut off:
+
+```go
+diversity, err := p2p.NewDiversity(5000) // no group above 50% of peers
+err = diversity.Check([]p2p.PeerGroup{
+    {NodeID: peerID, Group: operatorOrNetworkRange},
+})
+
+partition, err := p2p.NewPartition(6667, 60) // >2/3 power, 60s threshold
+status, err := partition.Observe(now, signedPower, totalPower)
+if !status.CanFinalize {
+    // refuse new blocks before the threshold too
+}
+if status.Partitioned {
+    // page an operator: no quorum for the whole threshold
+}
+```
+
+- `Diversity.Check` groups peers by operator or network range and rejects a set
+  where one group holds more than `MaxShareBPS`. Duplicate node IDs, empty
+  groups, and an empty set are configuration errors, not silent passes.
+- `Partition.Observe` computes reachable power and flips `CanFinalize` off the
+  moment quorum is lost, regardless of what local peers claim. It reports
+  `Partitioned` only after `Threshold` seconds without quorum, so a short blip
+  does not raise an alarm.
+- `CheckFinality` is the hard gate for a block: below quorum it returns
+  `ErrNoQuorum` even when every connected peer presents a chain. Regaining
+  quorum, for example through a configured anchor, clears `Since` and
+  `Partitioned` and re-enables finality.
+- Quorum math is integer-safe: signed power times 10000 is compared against
+  total power times the configured basis points without overflowing `uint64`.
+
+`shortcut:` both checks are decisions, not wiring. CometBFT's own consensus
+still produces blocks; a deployment must call `CheckFinality` before accepting
+a commit and feed `Observe` from its peer set. Anchor reconnects come from the
+persistent and unconditional peer lists, not from a discovery crawler.
+
 ### State sync verification
 
 `internal/statesync` decides whether a peer's snapshot can be trusted. It does
