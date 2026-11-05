@@ -112,8 +112,23 @@ replace github.com/anorebel/anorebelcoin => ../anorebelcoin
 
 (A published tag replaces the `replace` line once releases exist.)
 
-Python client: the `arne` package is importable and its types match the wire
-format. See `examples/python/client.py`.
+Python client (`arne.sdk`) mirrors the Go surface: reads, `Wallet`, the same
+payloads, and `ApiError` with `is_code` for stable codes.
+
+```python
+from arne import types
+from arne.sdk import Client, Payment, Wallet
+
+payer, mnemonic = Wallet.new("arne:devnet")  # store the mnemonic
+with Client("http://127.0.0.1:8080", api_key="…") as client:
+    client.faucet(payer.address)  # devnet only
+    payload = Payment(to=destination, asset="arce:devnet", amount=1_250_000_000)
+    tx_hash = payer.send(client, types.TX_TRANSFER, payload.to_payload())
+    receipt = client.wait_receipt(tx_hash)
+    assert receipt["success"]
+```
+
+See `examples/python/client.py` for a standalone script.
 
 ## 2. Embed the Python node in-process
 
