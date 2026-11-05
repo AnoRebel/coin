@@ -69,7 +69,7 @@
 
 ## 7. Governance and economics
 
-- [ ] 7.1 Implement proposal types, deposit, voting, quorum, threshold, timelock, execution, and cancellation; verify each lifecycle path
+- [x] 7.1 Implement proposal types, deposit, voting, quorum, threshold, timelock, execution, and cancellation; verify each lifecycle path
 - [ ] 7.2 Implement stake-weighted and consortium role-weighted voting with delegation and double-vote rejection; verify weights and rejection
 - [ ] 7.3 Implement constitutional invariants with supermajority and extended timelock; verify a simple majority cannot change the supply cap
 - [ ] 7.4 Implement timelocked code upgrades with binary-hash verification and rollback metadata; verify hash mismatch blocks activation

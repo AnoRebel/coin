@@ -1,0 +1,243 @@
+{
+  "network": "arne:devnet",
+  "params": {
+    "min_deposit": 100,
+    "deposit_period": 10,
+    "voting_period": 100,
+    "timelock": 50,
+    "quorum_bps": 5000,
+    "threshold_bps": 5000,
+    "constitutional_threshold_bps": 6667,
+    "constitutional_timelock": 500,
+    "max_actions": 8
+  },
+  "cases": [
+    {
+      "name": "parameter executes after timelock",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "title": "raise memo limit",
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "max_memo_bytes", "value": 512}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 600, "at": 111},
+        {"op": "vote", "voter": "voter-b", "option": "no", "weight": 100, "at": 112},
+        {"op": "advance", "at": 210},
+        {"op": "queue", "at": 210},
+        {"op": "execute", "at": 260}
+      ],
+      "expect": {
+        "status": "executed",
+        "yes": 600,
+        "no": 100,
+        "timelock_end": 260,
+        "activation_height": 500,
+        "applied": {"max_memo_bytes": 512}
+      }
+    },
+    {
+      "name": "quorum failure rejects",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 100, "at": 111},
+        {"op": "advance", "at": 210},
+        {"op": "queue", "at": 210, "error": "status"}
+      ],
+      "expect": {"status": "rejected", "yes": 100}
+    },
+    {
+      "name": "threshold failure rejects",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "no", "weight": 600, "at": 111},
+        {"op": "advance", "at": 210}
+      ],
+      "expect": {"status": "rejected", "no": 600}
+    },
+    {
+      "name": "double vote and over-power rejected",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 300, "at": 111},
+        {"op": "vote", "voter": "voter-a", "option": "no", "weight": 300, "at": 112, "error": "voted"},
+        {"op": "vote", "voter": "voter-b", "option": "yes", "weight": 701, "at": 113, "error": "power"}
+      ],
+      "expect": {"status": "voting", "yes": 300, "no": 0}
+    },
+    {
+      "name": "proposer cancels before execution",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "cancel", "actor": "someone-else", "at": 111, "error": "unauthorized"},
+        {"op": "cancel", "actor": "arce-devnet1proposer", "at": 112},
+        {"op": "execute", "at": 1000, "error": "status"}
+      ],
+      "expect": {"status": "cancelled", "refunded": true}
+    },
+    {
+      "name": "deposit period delays voting",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 600, "at": 109, "error": "status"},
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 600, "at": 110}
+      ],
+      "expect": {"status": "voting", "yes": 600, "voting_start": 110, "voting_end": 210}
+    },
+    {
+      "name": "constitutional sixty percent is rejected",
+      "submit": {
+        "kind": "constitutional",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "supply_cap", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 900,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 600, "at": 111},
+        {"op": "vote", "voter": "voter-b", "option": "no", "weight": 400, "at": 112},
+        {"op": "advance", "at": 210}
+      ],
+      "expect": {"status": "rejected"}
+    },
+    {
+      "name": "constitutional supermajority uses the long timelock",
+      "submit": {
+        "kind": "constitutional",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "supply_cap", "value": 1}}
+        ],
+        "deposit": 100,
+        "activation_height": 900,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 700, "at": 111},
+        {"op": "vote", "voter": "voter-b", "option": "no", "weight": 300, "at": 112},
+        {"op": "advance", "at": 210},
+        {"op": "queue", "at": 210}
+      ],
+      "expect": {"status": "timelock", "timelock_end": 710}
+    },
+    {
+      "name": "failed action reverts every applied action",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}},
+          {"type": "fail"}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [
+        {"op": "advance", "at": 110},
+        {"op": "vote", "voter": "voter-a", "option": "yes", "weight": 600, "at": 111},
+        {"op": "advance", "at": 210},
+        {"op": "queue", "at": 210},
+        {"op": "execute", "at": 260, "error": "boom"}
+      ],
+      "expect": {"status": "failed", "applied": {}, "execution_error": "boom"}
+    },
+    {
+      "name": "deposit below the minimum is refused",
+      "submit_error": "invalid",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "x", "value": 1}}
+        ],
+        "deposit": 99,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [],
+      "expect": {}
+    }
+  ]
+}
