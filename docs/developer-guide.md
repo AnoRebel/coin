@@ -895,6 +895,23 @@ session, err := connector.Negotiate(ctx, adapter, connector.Request{
 missing version and asset, unhealthy and unknown health, duplicate capabilities,
 and empty requests. Both suites read it.
 
+Operators can check an onboarding handshake without writing code:
+
+```sh
+arned connector negotiate --file handshake.json
+uv run arne connector negotiate --file handshake.json
+```
+
+```json
+{
+  "adapter": {"name": "evm", "versions": [1, 2], "assets": ["arce:devnet", "usd:devnet"], "health": "degraded"},
+  "request": {"versions": [1, 2], "assets": ["usd:devnet"], "network": "arne:devnet"}
+}
+```
+
+The command prints the negotiated session as JSON and exits non-zero on a
+rejected handshake. `health` defaults to `healthy` when omitted.
+
 `shortcut:` this package negotiates only; there is no quote, transfer, or retry
 loop yet. Those arrive with the ISO 20022, ILP, and EVM adapters.
 

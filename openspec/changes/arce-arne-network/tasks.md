@@ -158,7 +158,7 @@
 - [x] 14.7 Implement health, readiness, and version endpoints; verify healthy, syncing, and version discovery
 - [ ] 14.8 Implement the Go SDK covering wallets, transactions, assets, payments, escrow, messaging, governance, and subscriptions; verify quickstart and typed errors (wallets, transactions, assets, payments, escrow, allowances, and subscriptions are in `sdk/go/arne`; messaging and governance wait on 10.7 and 7.1)
 - [ ] 14.9 Implement the Python SDK with the same surface; verify quickstart and typed errors (matching `sdk/go/arne` in `arne.sdk`; messaging and governance wait on 10.7 and 7.1)
-- [ ] 14.10 Implement the CLI for node, wallet, asset, pay, escrow, governance, connector, and devnet commands with JSON output; verify each command
+- [ ] 14.10 Implement the CLI for node, wallet, asset, pay, escrow, governance, connector, and devnet commands with JSON output; verify each command (every command exists in `arned` and `arne` except governance, which waits on 7.1)
 - [x] 14.11 Add code generation and CI drift checks; verify stale generated code fails
 
 ## 15. Wallet and web console

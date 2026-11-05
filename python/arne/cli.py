@@ -482,6 +482,41 @@ def cmd_subscription_cancel(args: argparse.Namespace) -> int:
     return _submit(args.url, tx, args.wait)
 
 
+
+def _fetch_escrow(url: str, network: str, escrow_id: str) -> dict[str, Any]:
+    if re.fullmatch(r"esc_[0-9a-f]{32}", escrow_id) is None:
+        raise ValueError("escrow ID must be esc_ followed by 32 hex characters")
+    actual = _get(url, "/v1/status")["network"]
+    if actual != network:
+        raise ValueError(f"API network {actual} conflicts with {network}")
+    escrow = _get(url, f"/v1/escrows/{escrow_id}")
+    short = types.short_network(network)
+    if escrow["id"] != escrow_id or not escrow["asset"].endswith(":" + short):
+        raise ValueError("API returned a malformed escrow")
+    return escrow
+
+
+def cmd_escrow_create(args: argparse.Namespace) -> int:
+    if args.timeout <= int(time.time()):
+        raise ValueError("--timeout must be a future Unix timestamp")
+    decimals = _get(args.url, f"/v1/assets/{args.asset}")["decimals"]
+    payload = {
+        "beneficiary": args.beneficiary, "arbiter": args.arbiter, "asset": args.asset,
+        "amount": parse_amount(args.amount, decimals), "timeout": args.timeout,
+    }
+    return _submit(args.url, _signed_tx(args, types.TX_CREATE_ESCROW, payload), args.wait)
+
+
+def cmd_escrow_show(args: argparse.Namespace) -> int:
+    print(json.dumps(_fetch_escrow(args.url, args.network, args.id), indent=2))
+    return 0
+
+
+def cmd_escrow_close(args: argparse.Namespace) -> int:
+    _fetch_escrow(args.url, args.network, args.id)
+    tx_type = types.TX_RELEASE_ESCROW if args.escrow_command == "release" else types.TX_REFUND_ESCROW
+    return _submit(args.url, _signed_tx(args, tx_type, {"id": args.id}), args.wait)
+
 def _write_intent_qr(path: str, uri: str) -> None:
     import io
 
@@ -633,6 +668,47 @@ def cmd_webhook_keygen(args: argparse.Namespace) -> int:
     seed = secrets.token_bytes(32)
     signer = webhook_codec.Signer(seed)
     print(f"seed:       {seed.hex()}\npublic_key: {signer.public_key}")
+    return 0
+
+
+def cmd_connector_negotiate(args: argparse.Namespace) -> int:
+    from . import connector as connector_codec
+
+    with open(args.file, encoding="utf-8") as handle:
+        raw = json.load(handle)
+    spec = raw.get("adapter") or {}
+    request = raw.get("request") or {}
+
+    class Static:
+        def name(self) -> str:
+            return str(spec.get("name") or "")
+
+        def versions(self) -> tuple[int, ...]:
+            return tuple(spec.get("versions") or ())
+
+        def assets(self) -> tuple[str, ...]:
+            return tuple(spec.get("assets") or ())
+
+        def health(self) -> connector_codec.Health:
+            return connector_codec.Health(
+                str(spec.get("health") or connector_codec.HEALTHY), str(spec.get("detail") or "")
+            )
+
+    try:
+        session = connector_codec.negotiate(
+            Static(),
+            connector_codec.Request(
+                tuple(request.get("versions") or ()),
+                tuple(request.get("assets") or ()),
+                str(request.get("network") or ""),
+            ),
+        )
+    except connector_codec.ConnectorError as exc:
+        raise ValueError(f"{exc.code}: {exc}") from exc
+    print(json.dumps({
+        "connector": session.connector, "version": session.version,
+        "assets": list(session.assets), "network": session.network,
+    }, indent=2))
     return 0
 
 
@@ -811,6 +887,36 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--amount", default="", help="default: what this period allows")
         write_flags(command)
         command.set_defaults(func=function)
+
+
+    escrow = sub.add_parser("escrow", help="create, inspect, release, and refund escrows")
+    escrow_sub = escrow.add_subparsers(dest="escrow_command", required=True)
+    escrow_create = escrow_sub.add_parser("create", help="lock funds for a beneficiary")
+    escrow_create.add_argument("--beneficiary", required=True)
+    escrow_create.add_argument("--arbiter", default="", help="arbiter address (default: payer)")
+    escrow_create.add_argument("--asset", required=True)
+    escrow_create.add_argument("--amount", required=True, help="human amount")
+    escrow_create.add_argument("--timeout", type=int, required=True, help="refund-after Unix timestamp")
+    write_flags(escrow_create)
+    escrow_create.set_defaults(func=cmd_escrow_create)
+    escrow_show = escrow_sub.add_parser("show", help="inspect an escrow")
+    escrow_show.add_argument("--id", required=True)
+    escrow_show.add_argument("--network", default="arne:devnet")
+    escrow_show.add_argument("--url", default=DEFAULT_URL)
+    escrow_show.set_defaults(func=cmd_escrow_show)
+    for name in ("release", "refund"):
+        command = escrow_sub.add_parser(name)
+        command.add_argument("--id", required=True)
+        write_flags(command)
+        command.set_defaults(func=cmd_escrow_close)
+
+    connector = sub.add_parser("connector", help="validate interoperability connector handshakes")
+    connector_sub = connector.add_subparsers(dest="connector_command", required=True)
+    connector_negotiate = connector_sub.add_parser(
+        "negotiate", help="negotiate versions and assets from a handshake JSON file"
+    )
+    connector_negotiate.add_argument("--file", required=True, help="handshake JSON file")
+    connector_negotiate.set_defaults(func=cmd_connector_negotiate)
 
     migrate = sub.add_parser("migrate", help="inspect or migrate the on-disk schema")
     migrate.add_argument("--data-dir", required=True)

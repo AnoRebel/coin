@@ -36,9 +36,8 @@ func fetchSubscription(network, id string) (protocol.Subscription, error) {
 	return sub, nil
 }
 
-// signSubTx fetches the account nonce so creation can derive the subscription
-// ID before submitting.
-func signSubTx(kp *protocol.KeyPair, network, txType string, payload map[string]any) (protocol.Tx, error) {
+// signTx fetches the account nonce so the caller can derive an ID first.
+func signTx(kp *protocol.KeyPair, network, txType string, payload map[string]any) (protocol.Tx, error) {
 	var account accountInfo
 	if err := getJSON("/v1/accounts/"+url.PathEscape(kp.Address), &account); err != nil {
 		return protocol.Tx{}, err
@@ -110,7 +109,7 @@ func subscriptionCmd() *cobra.Command {
 		if expires != 0 {
 			payload["expires_at"] = expires
 		}
-		tx, err := signSubTx(kp, network, protocol.TxCreateSub, payload)
+		tx, err := signTx(kp, network, protocol.TxCreateSub, payload)
 		if err != nil {
 			return err
 		}
@@ -155,7 +154,7 @@ func subscriptionCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		tx, err := signSubTx(kp, network, protocol.TxChargeSub, map[string]any{"id": id, "amount": units})
+		tx, err := signTx(kp, network, protocol.TxChargeSub, map[string]any{"id": id, "amount": units})
 		if err != nil {
 			return err
 		}
@@ -175,7 +174,7 @@ func subscriptionCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		tx, err := signSubTx(kp, network, protocol.TxCancelSub, map[string]any{"id": id})
+		tx, err := signTx(kp, network, protocol.TxCancelSub, map[string]any{"id": id})
 		if err != nil {
 			return err
 		}

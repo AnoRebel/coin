@@ -352,21 +352,27 @@ An escrow locks funds until released to the beneficiary, refunded, or expired.
 The ID is deterministic:
 `esc_` plus the first 16 bytes of the SHA-256 of the canonical escrow fields.
 
-Create one with the example client (works against either node):
+Create one with the CLI. `--timeout` is a Unix timestamp, and `--arbiter`
+defaults to the payer:
 
 ```sh
-export ARNE_MNEMONIC="abandon abandon ... about"
-uv run python examples/python/client.py escrow \
-  --beneficiary arce-devnet1... \
-  --arbiter arce-devnet1... \
-  --amount 50 --timeout 86400
+arned escrow create --mnemonic "$MNEMONIC" \
+  --beneficiary arce-devnet1... --arbiter arce-devnet1... \
+  --asset arce:devnet --amount 50 \
+  --timeout $(( $(date +%s) + 86400 )) --wait
 ```
 
-Release or refund:
+Inspect, release, or refund:
 
 ```sh
-uv run python examples/python/client.py release --id esc_...
+arned escrow show --id esc_...
+arned escrow release --mnemonic "$MNEMONIC" --id esc_... --wait
+arned escrow refund  --mnemonic "$MNEMONIC" --id esc_... --wait
 ```
+
+The Python CLI has the same four commands
+(`uv run arne escrow ...`). Add `--wait` to print the receipt; without it the
+command prints only the transaction hash.
 
 Rules:
 

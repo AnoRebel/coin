@@ -56,7 +56,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(versionCmd(), devnetCmd(), multiDevnetCmd(), startCmd(), walletCmd(), balanceCmd(), payCmd(),
 		previewCmd(), faucetCmd(), statusCmd(), assetCmd(), proofCmd(), memoCmd(), uriCmd(),
-		webhookCmd(), intentCmd(), subscriptionCmd(), migrateCmd(), snapshotCmd(), backupCmd(), restoreCmd())
+		webhookCmd(), intentCmd(), subscriptionCmd(), escrowCmd(), connectorCmd(), migrateCmd(), snapshotCmd(), backupCmd(), restoreCmd())
 	return c
 }
 
