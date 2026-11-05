@@ -413,3 +413,34 @@ def test_event_stream_replay_and_validation(client: TestClient, setup) -> None:
 
     assert client.get("/v1/events?stream=messages").status_code == 400
     assert client.get("/v1/events?from=abc").status_code == 400
+
+
+def test_idempotent_writes(setup) -> None:
+    node, _ = setup
+    app = create_app(node, ApiConfig(api_keys={"operator-key": ["admin"]}, devnet=True))
+    client = TestClient(app)
+    headers = {
+        "Authorization": "Bearer operator-key", "Idempotency-Key": "produce-once",
+    }
+    first = client.post("/v1/blocks/produce", headers=headers)
+    assert first.status_code == 200
+    height = node.status()["height"]
+
+    retry = client.post("/v1/blocks/produce", headers=headers)
+    assert retry.status_code == first.status_code
+    assert retry.json() == first.json()
+    assert retry.headers["Idempotent-Replay"] == "true"
+    assert node.status()["height"] == height  # no second block
+
+    conflict = client.post(
+        "/v1/faucet", headers=headers, json={"address": "arce-devnet1someone"}
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+    invalid = client.post(
+        "/v1/blocks/produce",
+        headers={"Authorization": "Bearer operator-key", "Idempotency-Key": "has space"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "INVALID_ARGUMENT"

@@ -949,6 +949,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -957,6 +977,19 @@
           },
           {
             "mtls": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         ]
       }
@@ -1040,11 +1073,44 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         ]
       }
@@ -1613,6 +1679,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         ],
         "requestBody": {
@@ -1699,6 +1776,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1720,6 +1807,17 @@
             "description": "Member ID.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -1775,6 +1873,16 @@
             }
           },
           "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Error envelope; `code` is stable and `message` is human readable.",
             "content": {
               "application/json": {
@@ -1988,11 +2096,34 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         ]
       }
@@ -2011,6 +2142,17 @@
             "description": "Grant ID.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retry key: 1-128 characters from `[A-Za-z0-9_.:-]`. A replay returns the original response with `Idempotent-Replay: true`; reuse with a different request is `409 IDEMPOTENCY_CONFLICT`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -2056,6 +2198,26 @@
             }
           },
           "401": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; `code` is stable and `message` is human readable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Error envelope; `code` is stable and `message` is human readable.",
             "content": {
               "application/json": {

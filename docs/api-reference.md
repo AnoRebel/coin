@@ -97,6 +97,8 @@ needs `Authorization: Bearer <key>` where the key appears in the file's
 | GET | `/v1/workspace/members` | `member.read` | `{"items":[{"id","role"}…]}` |
 | PUT | `/v1/workspace/members/{id}` | `member.manage` | Body `{"role":"owner\|admin\|member\|auditor"}` |
 | DELETE | `/v1/workspace/members/{id}` | `member.manage` | `204`; also drops that member's principals |
+
+Membership writes accept `Idempotency-Key`; see [Idempotency](#idempotency).
 | GET | `/v1/workspace/audit?after=N&limit=M` | `audit.read` | Audit entries with `seq > after` |
 
 Roles and permissions:
@@ -348,37 +350,45 @@ events; overload drops new events, so reconcile from the chain after downtime.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/v1/transactions` | `write` | Submit canonical CBOR or `{"tx":"base64-or-hex"}`; `202 {"hash":"…","status":"accepted"}` |
+| POST | `/v1/transactions` | `write` | Submit canonical CBOR or `{"tx":"base64-or-hex"}`; `202 {"hash":"…","status":"accepted"}`; accepts `Idempotency-Key` |
 | POST | `/v1/transactions/simulate` | — | Dry run; returns a receipt, never commits |
-| POST | `/v1/blocks/produce` | `admin` | Produce a block now (devnet/operator use) |
-| POST | `/v1/faucet` | `write` | Devnet only; body `{"address":"…"}`; `202 {"hash":"…"}` |
+| POST | `/v1/blocks/produce` | `admin` | Produce a block now (devnet/operator use); accepts `Idempotency-Key` |
+| POST | `/v1/faucet` | `write` | Devnet only; body `{"address":"…"}`; `202 {"hash":"…"}`; accepts `Idempotency-Key` |
 
 Submitting does not mean success. Poll the receipt or watch events.
 
-### Transaction-submit idempotency
+### Idempotency
 
-`POST /v1/transactions` accepts one optional `Idempotency-Key` header: 1–128
-ASCII letters, digits, `_`, `.`, `:`, or `-`. Keys are scoped by authorization
-credential, transaction network, and signer. Authorization runs before lookup.
+Every REST write except JSON-RPC accepts one optional `Idempotency-Key` header:
+1–128 ASCII letters, digits, `_`, `.`, `:`, or `-`. This covers transaction
+submission, faucet calls, block production, workspace membership changes, and
+auditor-grant creation or revocation. `/rpc` has its own request ids; a retry is
+only safe if the JSON-RPC method is itself idempotent.
 
-- Retry the same signed CBOR bytes with the same key. Raw CBOR and a JSON
-  wrapper containing those bytes refer to the same request.
-- Before finalization, a retry returns the original `202 {"hash","status":"accepted"}`.
-- After finalization, a retry returns `200 {"hash","status":"finalized","receipt":{…}}`
-  with the original receipt, while it is retained by the node.
-- Different signed bytes in the same scope return `409 IDEMPOTENCY_CONFLICT`;
-  changing nonce, timestamp, or signature also changes the bytes.
-- Failed admission does not reserve a key. Successful admission retains it
-  for 24 hours, without extending expiry on retries. Expired keys are reusable.
+- Retry the same method, path, and body with the same key. A replay returns the
+  original status, headers, and body with `Idempotent-Replay: true` and does not
+  run the handler again.
+- Reusing a key for a different method, path, or body in the same credential
+  returns `409 IDEMPOTENCY_CONFLICT`. A concurrent request with the same key
+  while the first is still running also returns `409`; retry shortly.
+- Only successful (`2xx`) responses are cached, so a validation failure or an
+  authorization failure leaves the key free for a corrected retry.
+- Successful writes retain a key for 24 hours, without extending expiry on
+  retries. Expired keys are reusable.
 - The cache holds at most 10,000 entries. If all are unexpired, a new key
   returns `503 IDEMPOTENCY_FULL` rather than evicting another client's record.
+
+Transaction submission has one extra rule: a retry after finalization returns
+`200 {"hash","status":"finalized","receipt":{…}}` with the original receipt
+while the node retains it, instead of the cached `202`. Raw CBOR and a JSON
+wrapper containing the same bytes refer to the same request, and a transaction
+key is scoped by credential, network, and signer.
 
 The cache is process-local and is lost on restart; use one API instance for a
 retry sequence. It is not a durable job queue and does not guarantee that an
 accepted transaction will finalize. Intent state and account nonces still
 prevent duplicate execution after cache loss. Receipt lookup follows the
 node's pruning policy; retain accounting receipts in your integration.
-Other REST writes and JSON-RPC do not yet support idempotency keys.
 
 ## Transaction envelope
 
@@ -628,7 +638,6 @@ on every `check_tx`; proposal building keeps the same nonce rule.
 
 ## Not implemented
 
-Idempotency for writes other than REST transaction submission, WebSocket,
-message/channel APIs, contract APIs, and shielded APIs. They appear in the
-OpenSpec change, not in this server. Streaming is SSE only; there is no
-WebSocket endpoint.
+Idempotency for JSON-RPC writes, WebSocket, message/channel APIs, contract
+APIs, and shielded APIs. They appear in the OpenSpec change, not in this
+server. Streaming is SSE only; there is no WebSocket endpoint.

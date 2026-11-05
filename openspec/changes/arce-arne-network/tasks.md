@@ -153,7 +153,7 @@
 - [x] 14.2 Implement JSON-RPC 2.0 with batch calls and stable method errors; verify valid, batch, and unknown-method cases
 - [ ] 14.3 Implement WebSocket/SSE subscriptions with resumable cursors and `cursor_expired`; verify block, transaction, and message streams
 - [x] 14.4 Implement API keys, OIDC/JWT, mTLS admin access, scopes, and rate limits; verify missing-scope, admin, and rate-limit cases
-- [ ] 14.5 Implement idempotency keys for every write with conflict detection and expiry; verify retry, conflict, and expiry
+- [x] 14.5 Implement idempotency keys for every write with conflict detection and expiry; verify retry, conflict, and expiry
 - [x] 14.6 Implement transaction submission, status polling/subscription, and dry-run simulation; verify valid, invalid, and simulated-failure cases
 - [x] 14.7 Implement health, readiness, and version endpoints; verify healthy, syncing, and version discovery
 - [ ] 14.8 Implement the Go SDK covering wallets, transactions, assets, payments, escrow, messaging, governance, and subscriptions; verify quickstart and typed errors

@@ -230,6 +230,94 @@ def create_app(node: Node, config: ApiConfig | None = None) -> FastAPI:
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
+    # Non-transaction writes support the same retry contract as Go. The
+    # transaction endpoint uses the signed-bytes cache above because a replay
+    # reports the finalized receipt.
+    writes: dict[bytes, tuple[bytes, int, dict[str, str], bytes, float]] = {}
+    writes_lock = threading.Lock()
+    pending_ttl = 60.0
+
+    @app.middleware("http")
+    async def idempotent_write(request: Request, call_next):
+        if request.method not in ("POST", "PUT", "DELETE") or request.url.path in (
+            "/v1/transactions", "/v1/transactions/simulate", "/rpc",
+        ):
+            return await call_next(request)
+        keys = request.headers.getlist("idempotency-key")
+        if not keys:
+            return await call_next(request)
+        if len(keys) > 1 or _IDEMPOTENCY_KEY.fullmatch(keys[0]) is None:
+            return error_response(
+                400, "INVALID_ARGUMENT",
+                "Idempotency-Key must be 1-128 letters, digits, _, ., :, or -",
+            )
+        key = keys[0]
+        body = await request.body()
+        if len(body) > MAX_BODY:
+            return error_response(413, "BODY_TOO_LARGE", "request body above 2 MiB")
+        fingerprint = hashlib.sha256(
+            request.method.encode() + b"\0" + request.url.path.encode() + b"\0" + body
+        ).digest()
+        scope = hashlib.sha256(
+            request.headers.get("authorization", "").encode() + b"\0" + key.encode()
+        ).digest()
+        now = time.monotonic()
+        with writes_lock:
+            previous = writes.get(scope)
+            if previous is not None:
+                if now < previous[4]:
+                    if previous[1] == 0:
+                        return error_response(
+                            409, "IDEMPOTENCY_CONFLICT",
+                            "a request with this key is in progress",
+                        )
+                    if previous[0] != fingerprint:
+                        return error_response(
+                            409, "IDEMPOTENCY_CONFLICT",
+                            "key already used for a different request",
+                        )
+                    headers = {
+                        name: value for name, value in previous[2].items()
+                        if name.lower() != "content-length"
+                    }
+                    headers["Idempotent-Replay"] = "true"
+                    return Response(
+                        content=previous[3], status_code=previous[1], headers=headers
+                    )
+                del writes[scope]
+            for expired in [s for s, e in writes.items() if now >= e[4]]:
+                del writes[expired]
+            if len(writes) >= IDEMPOTENCY_LIMIT:
+                return error_response(
+                    503, "IDEMPOTENCY_FULL", "idempotency cache full; retry later"
+                )
+            writes[scope] = (fingerprint, 0, {}, b"", now + pending_ttl)
+
+        try:
+            response = await call_next(request)
+        except Exception:
+            with writes_lock:
+                writes.pop(scope, None)
+            raise
+        if not 200 <= response.status_code < 300:
+            with writes_lock:
+                writes.pop(scope, None)
+            return response
+        payload = b"".join([chunk async for chunk in response.body_iterator])
+        headers = dict(response.headers)
+        with writes_lock:
+            writes[scope] = (
+                fingerprint, response.status_code, headers, payload,
+                time.monotonic() + IDEMPOTENCY_TTL,
+            )
+        return Response(
+            content=payload, status_code=response.status_code,
+            headers={
+                name: value for name, value in headers.items()
+                if name.lower() != "content-length"
+            },
+        )
+
     def require(scope: str):
         def check(request: Request) -> None:
             if not config.api_keys:

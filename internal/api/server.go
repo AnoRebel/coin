@@ -43,6 +43,7 @@ type Server struct {
 	auth        *authenticator
 	lim         *limiter
 	submissions submissions
+	writes      writeCache
 }
 
 // New builds an Echo server.
@@ -93,16 +94,16 @@ func New(n *node.Node, cfg Config) *echo.Echo {
 
 	e.POST("/v1/transactions", s.submitTx, s.require("write"), s.workspaceAction(workspace.ActionPaymentWrite))
 	e.POST("/v1/transactions/simulate", s.simulateTx, s.workspaceAction(workspace.ActionPaymentRead))
-	e.POST("/v1/blocks/produce", s.produceBlock, s.require("admin"))
-	e.POST("/v1/faucet", s.faucet, s.require("write"))
+	e.POST("/v1/blocks/produce", s.produceBlock, s.require("admin"), s.idempotent)
+	e.POST("/v1/faucet", s.faucet, s.require("write"), s.idempotent)
 	e.GET("/v1/workspace", s.getWorkspace)
 	e.GET("/v1/workspace/members", s.listWorkspaceMembers, s.workspaceAction(workspace.ActionMemberRead))
-	e.PUT("/v1/workspace/members/:id", s.setWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
-	e.DELETE("/v1/workspace/members/:id", s.deleteWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage))
+	e.PUT("/v1/workspace/members/:id", s.setWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage), s.idempotent)
+	e.DELETE("/v1/workspace/members/:id", s.deleteWorkspaceMember, s.workspaceAction(workspace.ActionMemberManage), s.idempotent)
 	e.GET("/v1/workspace/audit", s.getWorkspaceAudit, s.workspaceAction(workspace.ActionAuditRead))
 	e.GET("/v1/audit/grants", s.listGrants, s.workspaceAction(workspace.ActionAuditRead))
-	e.POST("/v1/audit/grants", s.createGrant, s.workspaceAction(workspace.ActionSettings))
-	e.DELETE("/v1/audit/grants/:id", s.revokeGrant, s.workspaceAction(workspace.ActionSettings))
+	e.POST("/v1/audit/grants", s.createGrant, s.workspaceAction(workspace.ActionSettings), s.idempotent)
+	e.DELETE("/v1/audit/grants/:id", s.revokeGrant, s.workspaceAction(workspace.ActionSettings), s.idempotent)
 	e.GET("/v1/audit/grants/log", s.getGrantLog, s.workspaceAction(workspace.ActionSettings))
 	e.POST("/rpc", s.rpc)
 	return e
