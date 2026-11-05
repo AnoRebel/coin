@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,26 +21,55 @@ const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abando
 
 func main() {
 	dir := "spec/vectors"
+	check := flag.Bool("check", false, "verify the checked-in vectors instead of writing them")
+	flag.Parse()
+
+	files := map[string][]byte{
+		"cbor.json":   marshal(cborVectors()),
+		"keys.json":   marshal(keyVectors()),
+		"smt.json":    marshal(smtVectors()),
+		"ledger.json": marshal(ledgerVectors()),
+		"tx.json":     marshal(txVectors()),
+		"memo.json":   marshal(memoVectors()),
+	}
+	if *check {
+		if stale := verify(dir, files); stale > 0 {
+			fmt.Fprintf(os.Stderr, "%d stale vector file(s); run go run ./cmd/genvectors\n", stale)
+			os.Exit(1)
+		}
+		fmt.Println("vectors up to date")
+		return
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		panic(err)
 	}
-	write(dir, "cbor.json", cborVectors())
-	write(dir, "keys.json", keyVectors())
-	write(dir, "smt.json", smtVectors())
-	write(dir, "ledger.json", ledgerVectors())
-	write(dir, "tx.json", txVectors())
-	write(dir, "memo.json", memoVectors())
+	for name, b := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			panic(err)
+		}
+	}
 	fmt.Println("wrote vectors to", dir)
 }
 
-func write(dir, name string, v any) {
+func marshal(v any) []byte {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		panic(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, name), append(b, '\n'), 0o644); err != nil {
-		panic(err)
+	return append(b, '\n')
+}
+
+// verify reports generated files that differ from the checked-in copies.
+func verify(dir string, files map[string][]byte) int {
+	stale := 0
+	for name, want := range files {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || !bytes.Equal(got, want) {
+			fmt.Fprintln(os.Stderr, "stale:", filepath.Join(dir, name))
+			stale++
+		}
 	}
+	return stale
 }
 
 // txVectors pins the transaction envelope bytes, hash, and closed-schema

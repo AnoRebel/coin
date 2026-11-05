@@ -6,6 +6,12 @@ repos:
         entry: gofmt -l -w
         language: system
         types: [go]
+      - id: generated-drift
+        name: generated drift
+        entry: go run ./cmd/genvectors -check
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: go-vet
         name: go vet
         entry: go vet ./...

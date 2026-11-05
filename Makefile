@@ -54,6 +54,11 @@ fmt:
 generate:
 	$(GO) run ./cmd/genvectors
 
+# Fail when checked-in generated files are stale. CI runs this on every push.
+check-generated:
+	$(GO) run ./cmd/genvectors -check
+	$(GO) test ./internal/api -run TestServedDocumentMatchesSpec -count=1
+
 clean:
 	rm -rf bin tmp .arne-devnet .pytest_cache crypto/core/target
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

@@ -27,7 +27,8 @@ make conformance
 ```
 
 Never hand-edit `spec/vectors/*.json`; regenerate them with `make generate` and
-explain the change in the commit.
+explain the change in the commit. `make check-generated` fails when the vectors
+or the embedded/spec OpenAPI copies are stale; CI runs it on every push.
 
 ## Rules
 
