@@ -222,7 +222,7 @@
 - [x] 18.7 Write the feature reference and API reference, including every capability and error code; verify OpenAPI and JSON-RPC coverage
 - [x] 18.8 Write security, privacy, compliance, and tokenomics documentation with disclaimers; verify links and versioning
 - [ ] 18.9 Add documentation link checking, version selection, and CI tests; verify broken links and stale commands fail
-- [ ] 18.10 Publish the documentation site at `coin.anorebel.net` from the `AnoRebel/coin` repository on the maintainer's Dokploy instance (create the repository with `gh` if needed); verify HTTPS, automatic redeploy on the default branch, and no secrets in the build
+- [x] 18.10 Publish the documentation site at `coin.anorebel.net` from the `AnoRebel/coin` repository on the maintainer's Dokploy instance (create the repository with `gh` if needed); verify HTTPS, automatic redeploy on the default branch, and no secrets in the build
 
 ## 19. Integration and launch readiness
 

@@ -1,6 +1,6 @@
 # Documentation
 
-Start where you fit:
+Published at <https://coin.anorebel.net>. Start where you fit:
 
 | I want to... | Read |
 | --- | --- |
