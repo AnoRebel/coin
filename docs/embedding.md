@@ -38,24 +38,70 @@ func main() {
 }
 ```
 
-The client exposes `Status`, `Account`, `Assets`, `Proof`, `Submit`, `Simulate`,
-`Receipt`, `WaitReceipt`, `Faucet`, and `RPC`. It re-exports `Tx`, `KeyPair`,
-`Asset`, `Receipt`, key derivation, canonical encoding, and `FormatAmount`, so
-callers do not reimplement the wire format:
+The client exposes reads for `Status`, `Account`, `Assets`, `Asset`, `Supply`,
+`Proof`, `Escrow`, `Intent`, `Subscription`, `Transfer`, `AllowanceInfo`,
+`Block`, `Blocks`, `Simulate`, `Receipt`, `WaitReceipt`, `Faucet`, and `RPC`.
+`Wallet` adds signing: `NewWallet`/`WalletFromMnemonic`, `Build`, `BuildNonce`,
+`Send`, `SendAndWait`, and `Simulate`. Payload builders cover transfers
+(`Payment`), escrow, allowances, assets (`AssetRegister`, `Mint`, `Burn`),
+invoices (`IntentCreate`), subscriptions, and batches. A node rejection is an
+`*arne.Error`; use `arne.IsCode(err, "ESCROW_NOT_FOUND")` or `arne.AsError` to
+branch on the stable code.
 
 ```go
-kp, _, _ := arne.NewKeyPair("arne:devnet")
-acct, _ := client.Account(ctx, kp.Address)
-tx := arne.Tx{
-	Version: 1, Network: "arne:devnet", Chain: "arne:devnet-1",
-	Type: "transfer", Signer: kp.Address, Nonce: acct.Nonce,
-	CreatedAt: uint64(time.Now().Unix()), ExpiresAt: uint64(time.Now().Unix()) + 3600,
-	FeeAsset: arne.NativeAsset("arne:devnet"), MaxFee: 10_000,
-	Payload: map[string]any{"asset": "arce:devnet", "to": dest, "amount": uint64(1_250_000_000)},
+payer, mnemonic, _ := arne.NewWallet("arne:devnet") // store the mnemonic
+payee, _, _ := arne.NewWallet("arne:devnet")
+
+// Devnet only: fund the payer, then wait for inclusion.
+hash, _ := client.Faucet(ctx, payer.Address)
+if _, err := client.WaitReceipt(ctx, hash); err != nil {
+	log.Fatal(err)
 }
-if err := tx.Sign(kp); err != nil { log.Fatal(err) }
-hash, err := client.SubmitTx(ctx, tx)
+
+payment := arne.Payment{To: payee.Address, Asset: "arce:devnet", Amount: 1_250_000_000}
+hash, err = payer.Send(ctx, client, arne.TxTransfer, payment.Payload())
+if err != nil {
+	log.Fatal(err)
+}
+receipt, err := client.WaitReceipt(ctx, hash)
+if err != nil || !receipt.Success {
+	log.Fatalf("transfer failed: %+v %v", receipt, err)
+}
 ```
+
+Other transaction types use the same `Send` call with a payload struct:
+
+```go
+// Invoice: signed by the payee.
+hash, _ = payee.Send(ctx, client, arne.TxCreateIntent, arne.IntentCreate{
+	Reference: "invoice-1001", Asset: "arce:devnet", Amount: 500,
+}.Payload())
+
+// Pay it; payee, asset, and amount must match the intent.
+_, _ = payer.Send(ctx, client, arne.TxTransfer, arne.Payment{
+	To: payee.Address, Asset: "arce:devnet", Amount: 500, Intent: intentID,
+}.Payload())
+
+// Escrow and subscriptions follow the same pattern.
+_, _ = payer.Send(ctx, client, arne.TxCreateEscrow, arne.EscrowCreate{
+	Beneficiary: payee.Address, Arbiter: payee.Address, Asset: "arce:devnet",
+	Amount: 1_000, Timeout: uint64(time.Now().Unix()) + 3600,
+}.Payload())
+_, _ = payer.Send(ctx, client, arne.TxCreateSub, arne.SubscriptionCreate{
+	Payee: payee.Address, Asset: "arce:devnet",
+	AmountPerPeriod: 100, Period: 30, TotalCap: 1_000,
+}.Payload())
+```
+
+`BuildNonce` skips the account lookup for offline signing or when queueing
+several transactions from one account. The SDK re-exports `Tx`, `KeyPair`,
+`Asset`, `Receipt`, `Escrow`, `Intent`, `Subscription`, `Transfer`, key
+derivation, canonical encoding, and `FormatAmount`, so callers do not
+reimplement the wire format.
+
+Message channels and governance transactions are not exposed yet: the node has
+no message or governance endpoints, so the SDK does not pretend otherwise.
+
 
 Install from another module:
 
