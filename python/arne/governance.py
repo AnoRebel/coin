@@ -76,6 +76,8 @@ class Vote:
     option: str
     weight: int
     at: int
+    role: str = ""
+    delegators: dict[str, int] | None = None
 
 
 @dataclass
@@ -99,6 +101,7 @@ class Proposal:
     no: int = 0
     abstain: int = 0
     votes: dict[str, Vote] = field(default_factory=dict)
+    attributed: dict[str, str] = field(default_factory=dict)
     refunded: bool = False
     execution_error: str = ""
 
@@ -169,6 +172,7 @@ def submit(state: State, proposal: Proposal, total_power: int, now: int) -> None
     proposal.voting_end = proposal.voting_start + state.params.voting_period
     proposal.total_power = total_power
     proposal.votes = {}
+    proposal.attributed = {}
     if state.params.deposit_period == 0:
         proposal.status = VOTING
     state.proposals[proposal.id] = proposal
@@ -212,6 +216,19 @@ def _tally(state: State, proposal: Proposal) -> None:
 def vote(
     state: State, pid: str, voter: str, option: str, weight: int, now: int
 ) -> None:
+    _cast(state, pid, voter, option, weight, "", None, now)
+
+
+def _cast(
+    state: State,
+    pid: str,
+    voter: str,
+    option: str,
+    weight: int,
+    role: str,
+    delegators: dict[str, int] | None,
+    now: int,
+) -> None:
     proposal = state.proposals.get(pid)
     if proposal is None:
         _fail("unknown", f"proposal {pid}")
@@ -229,9 +246,19 @@ def vote(
         _fail("status", f"proposal is {proposal.status}")
     if voter in proposal.votes:
         _fail("voted", f"voter {voter}")
+    if voter in proposal.attributed:
+        _fail("voted", f"voter {voter} already voted through a delegate")
+    for delegator in delegators or {}:
+        if delegator in proposal.attributed:
+            _fail("voted", f"delegator {delegator} already voted")
     if proposal.yes + proposal.no + proposal.abstain + weight > proposal.total_power:
         _fail("power", "cast above snapshot power")
-    proposal.votes[voter] = Vote(option=option, weight=weight, at=now)
+    proposal.votes[voter] = Vote(
+        option=option, weight=weight, at=now, role=role, delegators=delegators
+    )
+    proposal.attributed[voter] = voter
+    for delegator in delegators or {}:
+        proposal.attributed[delegator] = voter
     if option == YES:
         proposal.yes += weight
     elif option == NO:
@@ -313,3 +340,95 @@ def cancel(state: State, pid: str, actor: str, now: int) -> None:
         _fail("status", f"proposal is {proposal.status}")
     proposal.refunded = proposal.yes + proposal.no + proposal.abstain == 0
     proposal.status = CANCELLED
+
+
+@dataclass
+class VotingPower:
+    """Stake- or role-weighted ballots; delegated stake stays attributed."""
+
+    stake: dict[str, int] = field(default_factory=dict)
+    delegated_to: dict[str, str] = field(default_factory=dict)
+    role_of: dict[str, str] = field(default_factory=dict)
+    role_weights: dict[str, int] = field(default_factory=dict)
+    max_voter_bps: int = 0
+    consortium: bool = False
+
+
+def new_voting_power() -> VotingPower:
+    return VotingPower()
+
+
+def set_stake(power: VotingPower, member: str, amount: int) -> None:
+    if not member:
+        _fail("invalid", "member is required")
+    power.stake[member] = amount
+
+
+def set_delegation(power: VotingPower, delegator: str, delegate: str) -> None:
+    if delegator not in power.stake:
+        _fail("invalid", f"unknown delegator {delegator}")
+    if not delegate:
+        power.delegated_to.pop(delegator, None)
+        return
+    if delegate == delegator:
+        _fail("invalid", "self-delegation")
+    if delegate not in power.stake:
+        _fail("invalid", f"unknown delegate {delegate}")
+    at = delegate
+    while at:
+        if at == delegator:
+            _fail("invalid", "delegation cycle")
+        at = power.delegated_to.get(at, "")
+    power.delegated_to[delegator] = delegate
+
+
+def set_role(power: VotingPower, member: str, role: str, weight: int) -> None:
+    if not member or not role:
+        _fail("invalid", "member and role are required")
+    if weight == 0:
+        _fail("invalid", "role weight must be positive")
+    power.role_of[member] = role
+    power.role_weights[role] = weight
+    power.consortium = True
+
+
+def total(power: VotingPower) -> int:
+    if power.consortium:
+        return sum(
+            power.role_weights[role]
+            for role in power.role_of.values()
+            if role in power.role_weights
+        )
+    return sum(power.stake.values())
+
+
+def ballot(power: VotingPower, voter: str) -> tuple[int, str, dict[str, int] | None]:
+    """Return (weight, role, delegators) for one voter."""
+    if voter in power.role_of:
+        role = power.role_of[voter]
+        weight = power.role_weights.get(role, 0)
+        return weight, role, None
+    weight = power.stake.get(voter, 0)
+    if power.delegated_to.get(voter):
+        # Delegated stake is spent; it belongs to the delegate's ballot.
+        weight = 0
+    delegators: dict[str, int] = {}
+    for member, delegate in power.delegated_to.items():
+        if delegate == voter and member != voter:
+            delegators[member] = power.stake.get(member, 0)
+            weight += power.stake.get(member, 0)
+    if 0 < power.max_voter_bps < 10_000:
+        cap = total(power) * power.max_voter_bps // 10_000
+        if weight > cap:
+            weight = cap
+    return weight, "", delegators or None
+
+
+def cast_vote(
+    state: State, pid: str, voter: str, option: str, power: VotingPower, now: int
+) -> None:
+    """Compute a ballot from the power set and record it."""
+    weight, role, delegators = ballot(power, voter)
+    if weight == 0:
+        _fail("power", f"voter {voter} has no voting power")
+    _cast(state, pid, voter, option, weight, role, delegators, now)

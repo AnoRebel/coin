@@ -91,34 +91,37 @@ type Action struct {
 
 // Vote records one voter's choice and weight.
 type Vote struct {
-	Option Option `json:"option"`
-	Weight uint64 `json:"weight"`
-	At     uint64 `json:"at"`
+	Option     Option            `json:"option"`
+	Weight     uint64            `json:"weight"`
+	At         uint64            `json:"at"`
+	Role       string            `json:"role,omitempty"`
+	Delegators map[string]uint64 `json:"delegators,omitempty"`
 }
 
 // Proposal is one governance proposal.
 type Proposal struct {
-	ID               string          `json:"id"`
-	Network          string          `json:"network"`
-	Kind             Kind            `json:"kind"`
-	Proposer         string          `json:"proposer"`
-	Nonce            uint64          `json:"nonce"`
-	Title            string          `json:"title"`
-	Actions          []Action        `json:"actions"`
-	Deposit          uint64          `json:"deposit"`
-	Status           Status          `json:"status"`
-	CreatedAt        uint64          `json:"created_at"`
-	VotingStart      uint64          `json:"voting_start"`
-	VotingEnd        uint64          `json:"voting_end"`
-	TimelockEnd      uint64          `json:"timelock_end"`
-	ActivationHeight uint64          `json:"activation_height"`
-	TotalPower       uint64          `json:"total_power"`
-	Yes              uint64          `json:"yes"`
-	No               uint64          `json:"no"`
-	Abstain          uint64          `json:"abstain"`
-	Votes            map[string]Vote `json:"votes"`
-	Refunded         bool            `json:"refunded"`
-	ExecutionError   string          `json:"execution_error,omitempty"`
+	ID               string            `json:"id"`
+	Network          string            `json:"network"`
+	Kind             Kind              `json:"kind"`
+	Proposer         string            `json:"proposer"`
+	Nonce            uint64            `json:"nonce"`
+	Title            string            `json:"title"`
+	Actions          []Action          `json:"actions"`
+	Deposit          uint64            `json:"deposit"`
+	Status           Status            `json:"status"`
+	CreatedAt        uint64            `json:"created_at"`
+	VotingStart      uint64            `json:"voting_start"`
+	VotingEnd        uint64            `json:"voting_end"`
+	TimelockEnd      uint64            `json:"timelock_end"`
+	ActivationHeight uint64            `json:"activation_height"`
+	TotalPower       uint64            `json:"total_power"`
+	Yes              uint64            `json:"yes"`
+	No               uint64            `json:"no"`
+	Abstain          uint64            `json:"abstain"`
+	Votes            map[string]Vote   `json:"votes"`
+	Attributed       map[string]string `json:"attributed,omitempty"`
+	Refunded         bool              `json:"refunded"`
+	ExecutionError   string            `json:"execution_error,omitempty"`
 }
 
 // ProposalID derives the stable ID: first 16 bytes of
@@ -208,6 +211,7 @@ func (s *State) Submit(p Proposal, totalPower, now uint64) error {
 	p.VotingEnd = p.VotingStart + s.Params.VotingPeriod
 	p.TotalPower = totalPower
 	p.Votes = map[string]Vote{}
+	p.Attributed = map[string]string{}
 	if s.Params.DepositPeriod == 0 {
 		p.Status = Voting
 	}
@@ -266,9 +270,12 @@ func (s *State) tally(p *Proposal) {
 	p.Status = Passed
 }
 
-// Vote adds one voter's weight. A voter cannot vote twice, and total cast
-// weight cannot exceed the snapshot power.
+// Vote adds one voter's explicit weight.
 func (s *State) Vote(id, voter string, option Option, weight, now uint64) error {
+	return s.cast(id, voter, option, weight, "", nil, now)
+}
+
+func (s *State) cast(id, voter string, option Option, weight uint64, role string, delegators map[string]uint64, now uint64) error {
 	p, ok := s.Proposals[id]
 	if !ok {
 		return fmt.Errorf("%w: proposal %s", ErrUnknown, id)
@@ -288,10 +295,25 @@ func (s *State) Vote(id, voter string, option Option, weight, now uint64) error 
 	if _, voted := p.Votes[voter]; voted {
 		return fmt.Errorf("%w: voter %s", ErrVoted, voter)
 	}
+	if p.Attributed == nil {
+		p.Attributed = map[string]string{}
+	}
+	if _, used := p.Attributed[voter]; used {
+		return fmt.Errorf("%w: voter %s already voted through a delegate", ErrVoted, voter)
+	}
+	for delegator := range delegators {
+		if _, used := p.Attributed[delegator]; used {
+			return fmt.Errorf("%w: delegator %s already voted", ErrVoted, delegator)
+		}
+	}
 	if p.Yes+p.No+p.Abstain+weight > p.TotalPower {
 		return fmt.Errorf("%w: cast above snapshot power", ErrPower)
 	}
-	p.Votes[voter] = Vote{Option: option, Weight: weight, At: now}
+	p.Votes[voter] = Vote{Option: option, Weight: weight, At: now, Role: role, Delegators: delegators}
+	p.Attributed[voter] = voter
+	for delegator := range delegators {
+		p.Attributed[delegator] = voter
+	}
 	switch option {
 	case Yes:
 		p.Yes += weight

@@ -1,0 +1,123 @@
+{
+  "network": "arne:devnet",
+  "params": {
+    "min_deposit": 100,
+    "deposit_period": 0,
+    "voting_period": 100,
+    "timelock": 50,
+    "quorum_bps": 5000,
+    "threshold_bps": 5000,
+    "constitutional_threshold_bps": 6667,
+    "constitutional_timelock": 500,
+    "max_actions": 8
+  },
+  "cases": [
+    {
+      "name": "stake weight is capped at max_voter_bps of total",
+      "max_voter_bps": 5000,
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 600},
+        {"op": "set_stake", "member": "b", "amount": 500},
+        {"op": "ballot", "voter": "a", "weight": 550},
+        {"op": "ballot", "voter": "b", "weight": 500}
+      ]
+    },
+    {
+      "name": "delegated stake moves to the delegate and leaves the delegator empty",
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 300},
+        {"op": "set_stake", "member": "b", "amount": 200},
+        {"op": "set_delegation", "delegator": "a", "delegate": "b"},
+        {"op": "ballot", "voter": "b", "weight": 500, "delegators": {"a": 300}},
+        {"op": "ballot", "voter": "a", "weight": 0}
+      ]
+    },
+    {
+      "name": "cap applies after delegation",
+      "max_voter_bps": 5000,
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 300},
+        {"op": "set_stake", "member": "b", "amount": 200},
+        {"op": "set_delegation", "delegator": "a", "delegate": "b"},
+        {"op": "ballot", "voter": "b", "weight": 250, "delegators": {"a": 300}}
+      ]
+    },
+    {
+      "name": "redelegating cannot vote the same stake twice",
+      "total_power": 500,
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 300},
+        {"op": "set_stake", "member": "b", "amount": 100},
+        {"op": "set_stake", "member": "c", "amount": 100},
+        {"op": "set_delegation", "delegator": "a", "delegate": "b"},
+        {"op": "vote", "voter": "b", "option": "yes", "at": 110},
+        {"op": "set_delegation", "delegator": "a", "delegate": "c"},
+        {"op": "vote", "voter": "c", "option": "yes", "at": 111, "error": "voted"},
+        {"op": "vote", "voter": "a", "option": "no", "at": 112, "error": "power"}
+      ],
+      "expect": {"status": "voting", "yes": 400}
+    },
+    {
+      "name": "consortium roles vote by charter weight",
+      "consortium": true,
+      "total_power": 4,
+      "steps": [
+        {"op": "set_role", "member": "a", "role": "operator", "weight": 3},
+        {"op": "set_role", "member": "b", "role": "observer", "weight": 1},
+        {"op": "ballot", "voter": "a", "weight": 3, "role": "operator"},
+        {"op": "ballot", "voter": "b", "weight": 1, "role": "observer"},
+        {"op": "vote", "voter": "a", "option": "yes", "at": 110},
+        {"op": "vote", "voter": "b", "option": "no", "at": 111},
+        {"op": "advance", "at": 200}
+      ],
+      "expect": {"status": "passed", "yes": 3, "no": 1}
+    },
+    {
+      "name": "role weight already assigned to another member is shared",
+      "consortium": true,
+      "steps": [
+        {"op": "set_role", "member": "a", "role": "operator", "weight": 3},
+        {"op": "set_role", "member": "b", "role": "operator", "weight": 3},
+        {"op": "ballot", "voter": "b", "weight": 3, "role": "operator"}
+      ]
+    },
+    {
+      "name": "delegation cycles, self-delegation, and unknown members are rejected",
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 100},
+        {"op": "set_stake", "member": "b", "amount": 100},
+        {"op": "set_delegation", "delegator": "a", "delegate": "b"},
+        {"op": "set_delegation", "delegator": "b", "delegate": "a", "error": "invalid"},
+        {"op": "set_delegation", "delegator": "a", "delegate": "a", "error": "invalid"},
+        {"op": "set_delegation", "delegator": "z", "delegate": "b", "error": "invalid"},
+        {"op": "set_delegation", "delegator": "a", "delegate": "z", "error": "invalid"},
+        {"op": "ballot", "voter": "b", "weight": 200, "delegators": {"a": 100}}
+      ]
+    },
+    {
+      "name": "abstain counts for quorum but cannot pass a proposal",
+      "total_power": 1000,
+      "steps": [
+        {"op": "set_stake", "member": "a", "amount": 600},
+        {"op": "vote", "voter": "a", "option": "abstain", "at": 110},
+        {"op": "advance", "at": 200}
+      ],
+      "expect": {"status": "rejected", "abstain": 600}
+    },
+    {
+      "name": "a voter without stake cannot vote",
+      "total_power": 10,
+      "steps": [
+        {"op": "vote", "voter": "ghost", "option": "yes", "at": 110, "error": "power"}
+      ],
+      "expect": {"status": "voting"}
+    },
+    {
+      "name": "role weights must be positive",
+      "consortium": true,
+      "steps": [
+        {"op": "set_role", "member": "a", "role": "operator", "weight": 0, "error": "invalid"}
+      ]
+    }
+  ]
+}

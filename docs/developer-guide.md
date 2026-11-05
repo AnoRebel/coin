@@ -1661,6 +1661,74 @@ err = cfg.ValidatePayment(isoFields)           // ISO 20022 identifiers
 `shortcut:` the profiles are validation libraries only; asset registration and
 payment submission do not call them yet.
 
+## Governance
+
+`internal/governance` (mirrored by `python/arne/governance.py`) is the proposal
+engine. It owns lifecycle and tallying; the node owns balances and the
+consensus engine owns block production.
+
+```go
+state, err := governance.New("arne:devnet", governance.Params{
+    MinDeposit: 10_000, VotingPeriod: 100_000, Timelock: 50_000,
+    QuorumBps: 3333, ThresholdBps: 5000,
+    ConstitutionalThresholdBps: 6667, ConstitutionalTimelock: 500_000,
+    MaxActions: 8,
+})
+state.Submit(proposal, totalPower, now)
+state.Vote(id, voter, governance.Yes, weight, now)
+state.Advance(now)
+state.Queue(id, now)      // starts the timelock
+state.Execute(id, now, registry)
+```
+
+- The proposal ID is the first 16 bytes of
+  `SHA-256("arne-proposal-v1" || 0 || network || 0 || proposer || 0 || nonce)`.
+- Quorum counts every cast vote, including abstentions, against the snapshot
+  power. Threshold counts yes against yes plus no, so abstain helps quorum but
+  cannot pass a proposal.
+- Constitutional proposals compare against `constitutional_threshold_bps` and
+  wait out `constitutional_timelock`. With the defaults above, 60% yes is
+  rejected and 70% yes passes.
+- Execution is atomic through a `Registry` of action handlers. A missing
+  handler is rejected before anything runs; a failing handler undoes its own
+  partial work and every earlier action, and the proposal is marked `failed`
+  with `execution_error`.
+- Only the proposer may cancel. The deposit is refunded only when nobody voted.
+
+### Voting power
+
+`governance.VotingPower` turns bonded stake or consortium roles into ballots:
+
+```go
+power := governance.NewVotingPower()
+power.SetStake("member-a", 300)
+power.SetStake("member-b", 200)
+power.SetDelegation("member-a", "member-b")   // a's stake joins b's ballot
+state.CastVote(id, "member-b", governance.Yes, power, now)
+```
+
+- Delegation moves the stake, not the identity: the delegate votes with the
+  delegated amount and `Vote.Delegators` records who it came from. A delegator
+  with active delegation has no own weight.
+- Delegation rejects self-delegation, unknown members, and cycles.
+- `MaxVoterBps` caps one ballot at that share of total power. It applies after
+  delegation, so a delegate cannot accumulate an unbounded block.
+- Role voting is for consortium networks: `SetRole(member, role, weight)` gives
+  every member with that role the charter weight. Role weight replaces stake
+  weight for that member. An unknown role has no weight.
+- A proposal records who voted through whom. Redelegating after a vote does not
+  free the stake: a second delegate is rejected with `voted`, and the original
+  delegator is rejected with `power` because its own ballot is empty.
+
+`spec/vectors/governance.json` and `spec/vectors/governance-voting.json` are
+read by both implementations. Cases cover quorum and threshold failure, the
+constitutional supermajority and timelock, cancellation and refund, atomic undo,
+the stake cap, delegation, redelegation double voting, role weights, cycles, and
+abstention.
+
+`shortcut:` governance is a library: proposals are not yet submitted through
+the ledger, and no API or CLI exposes them.
+
 ## Known shortcuts
 
 Search the tree for `shortcut:`:
