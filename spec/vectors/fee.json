@@ -1,0 +1,161 @@
+{
+  "fee_market": {
+    "base": 1000,
+    "min": 100,
+    "max": 10000,
+    "target": 100,
+    "max_change_bps": 1250,
+    "cases": [
+      {
+        "name": "at target is unchanged",
+        "used": 100,
+        "next": 1000
+      },
+      {
+        "name": "spare capacity lowers the fee",
+        "used": 95,
+        "next": 950
+      },
+      {
+        "name": "congestion raises the fee",
+        "used": 200,
+        "next": 1125
+      },
+      {
+        "name": "empty block is bounded",
+        "used": 0,
+        "next": 875
+      },
+      {
+        "name": "the ceiling clamps",
+        "base": 9500,
+        "used": 1000,
+        "next": 10000
+      },
+      {
+        "name": "the floor clamps",
+        "base": 100,
+        "used": 0,
+        "next": 100
+      }
+    ]
+  },
+  "fee": [
+    {
+      "name": "priority fee is added",
+      "base": 1000,
+      "priority": 500,
+      "max_priority": 1000000,
+      "min": 1000,
+      "fee": 1500
+    },
+    {
+      "name": "priority fee above the cap is refused",
+      "base": 1000,
+      "priority": 1000001,
+      "max_priority": 1000000,
+      "min": 1000,
+      "error": "fee"
+    },
+    {
+      "name": "the minimum applies",
+      "base": 100,
+      "priority": 0,
+      "max_priority": 1000000,
+      "min": 1000,
+      "fee": 1000
+    }
+  ],
+  "split": [
+    {
+      "name": "default split",
+      "fee": 1000,
+      "burn_bps": 5000,
+      "validator_bps": 3000,
+      "burn": 500,
+      "validators": 300,
+      "treasury": 200
+    },
+    {
+      "name": "rounding goes to treasury",
+      "fee": 1000,
+      "burn_bps": 3333,
+      "validator_bps": 3333,
+      "burn": 333,
+      "validators": 333,
+      "treasury": 334
+    },
+    {
+      "name": "zero fee",
+      "fee": 0,
+      "burn_bps": 5000,
+      "validator_bps": 3000,
+      "burn": 0,
+      "validators": 0,
+      "treasury": 0
+    },
+    {
+      "name": "split above 10000 is refused",
+      "fee": 1000,
+      "burn_bps": 6000,
+      "validator_bps": 5000,
+      "error": "invalid"
+    }
+  ],
+  "sponsorship": [
+    {
+      "name": "budget and expiry",
+      "sponsor": "arce1sponsor",
+      "sponsored": "arce1user",
+      "asset": "arce",
+      "budget": 1000,
+      "expires_at": 100,
+      "steps": [
+        {
+          "op": "pay",
+          "amount": 600,
+          "at": 50
+        },
+        {
+          "op": "remaining",
+          "at": 50,
+          "expect": 400
+        },
+        {
+          "op": "pay",
+          "amount": 500,
+          "at": 60,
+          "error": "budget"
+        },
+        {
+          "op": "pay",
+          "amount": 100,
+          "at": 100,
+          "error": "expired"
+        },
+        {
+          "op": "pay",
+          "amount": 400,
+          "at": 99
+        },
+        {
+          "op": "remaining",
+          "at": 99,
+          "expect": 0
+        }
+      ],
+      "expect": {
+        "spent": 1000
+      }
+    },
+    {
+      "name": "self sponsorship is refused",
+      "sponsor": "arce1same",
+      "sponsored": "arce1same",
+      "asset": "arce",
+      "budget": 1,
+      "expires_at": 10,
+      "error": "invalid"
+    }
+  ]
+}

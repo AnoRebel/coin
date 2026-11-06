@@ -131,6 +131,54 @@ Split mechanics:
 There is no fee market adjustment algorithm yet; `base_fee` is a genesis
 parameter. Congestion-based base-fee updates are specified.
 
+### Base-fee market
+
+`internal/economics` (mirrored by `python/arne/economics.py`) implements the
+deterministic congestion rule:
+
+```go
+market, err := economics.NewFeeMarket(base, min, max, targetUnits, maxChangeBps)
+next := market.Next(unitsUsed)          // the base fee for the next block
+fee, err := economics.EffectiveFee(next, priority, maxPriority, minFee)
+split, err := economics.SplitFee(fee, burnBps, validatorBps)
+```
+
+- If a block uses exactly `targetUnits`, the base fee is unchanged.
+- Otherwise the fee moves by `|used - target| / target` of the current base fee,
+  in the direction of the imbalance.
+- One block moves the fee by at most `maxChangeBps` (default 1250, 12.5%), and
+  the result is clamped to `[min, max]`. So a completely empty block lowers the
+  fee by at most 12.5%, not to the floor in one step.
+- `EffectiveFee` adds the priority fee, refuses a priority above
+  `max_priority_fee` with `fee`, and applies `min_fee` as a floor.
+- `SplitFee` divides the paid fee by basis points. The treasury receives the
+  rounding remainder so burn + validators + treasury always equals the fee. A
+  split whose basis points exceed 10,000 is refused.
+
+### Fee sponsorship
+
+A sponsorship pays fees for another account from a declared budget:
+
+```go
+sponsorship, err := economics.NewSponsorship(
+    sponsor, sponsored, "arce", budget, expiresAt,
+)
+err = sponsorship.Pay(fee, now)         // charged to the sponsor's budget
+sponsorship.Remaining(now)
+```
+
+- Sponsor, sponsored, and asset are required, and an account cannot sponsor
+  itself.
+- The budget is a hard cap. An over-budget payment is refused with `budget`; a
+  payment at or after `expires_at` is refused with `expired`; a non-positive
+  amount with `invalid`.
+- The type has no method that moves the sponsored account's funds. A sponsored
+  transaction still needs its own signature; sponsorship only covers the fee.
+
+`shortcut:` the fee market, split, and sponsorship are libraries. The ledger
+still uses the genesis `base_fee` and its own split parameters, and no CLI or API
+creates a sponsorship yet.
+
 ## Paying fees in other assets
 
 An asset can pay fees only if:

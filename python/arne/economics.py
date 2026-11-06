@@ -169,3 +169,94 @@ class Vesting:
         self.completed = True
         self.events.append(VestingEvent("vested", now, self.schedule.amount))
         return True
+
+
+DEFAULT_MAX_CHANGE_BPS = 1250
+
+
+class FeeMarket:
+    """Deterministic congestion rule for the next base fee."""
+
+    def __init__(
+        self, base: int, minimum: int, maximum: int, target: int, max_change_bps: int
+    ) -> None:
+        if base <= 0 or target <= 0 or minimum <= 0 or not minimum <= base <= maximum:
+            _fail("invalid", "base, min, max and target must be ordered and positive")
+        if not 1 <= max_change_bps <= 10_000:
+            _fail("invalid", "max_change_bps must be 1..10000")
+        self.base_fee = base
+        self.min_base_fee = minimum
+        self.max_base_fee = maximum
+        self.target_units = target
+        self.max_change_bps = max_change_bps
+
+    def next(self, used: int) -> int:
+        if used == self.target_units:
+            return self.base_fee
+        over = used > self.target_units
+        diff = abs(used - self.target_units)
+        change = self.base_fee * diff // self.target_units
+        change = min(change, self.base_fee * self.max_change_bps // 10_000)
+        value = self.base_fee + change if over else self.base_fee - change
+        return max(self.min_base_fee, min(value, self.max_base_fee))
+
+
+def effective_fee(base: int, priority: int, max_priority: int, min_fee: int) -> int:
+    if priority > max_priority:
+        _fail("fee", "priority fee above cap")
+    fee = base + priority
+    return max(fee, min_fee)
+
+
+@dataclass(frozen=True)
+class Split:
+    burn: int
+    validators: int
+    treasury: int
+
+
+def split_fee(fee: int, burn_bps: int, validator_bps: int) -> Split:
+    if burn_bps + validator_bps > 10_000:
+        _fail("invalid", "fee bps above 10000")
+    burn = fee * burn_bps // 10_000
+    validators = fee * validator_bps // 10_000
+    return Split(burn=burn, validators=validators, treasury=fee - burn - validators)
+
+
+class Sponsorship:
+    """A bounded fee budget. It cannot move the sponsored account's funds."""
+
+    def __init__(
+        self,
+        sponsor: str,
+        sponsored: str,
+        asset: str,
+        budget: int,
+        expires_at: int,
+    ) -> None:
+        if not sponsor.strip() or not sponsored.strip() or not asset.strip():
+            _fail("invalid", "sponsor, sponsored and asset are required")
+        if sponsor == sponsored:
+            _fail("invalid", "an account cannot sponsor itself")
+        if budget <= 0:
+            _fail("invalid", "budget must be positive")
+        self.sponsor = sponsor
+        self.sponsored = sponsored
+        self.asset = asset
+        self.budget = budget
+        self.spent = 0
+        self.expires_at = expires_at
+
+    def remaining(self, now: int) -> int:
+        if now >= self.expires_at:
+            return 0
+        return self.budget - self.spent
+
+    def pay(self, amount: int, now: int) -> None:
+        if amount <= 0:
+            _fail("invalid", "amount must be positive")
+        if now >= self.expires_at:
+            _fail("expired", f"sponsorship ended at {self.expires_at}")
+        if amount > self.budget - self.spent:
+            _fail("budget", f"{self.budget - self.spent} left, {amount} requested")
+        self.spent += amount

@@ -197,6 +197,12 @@ func codeOf(err error) string {
 		return "purpose"
 	case errors.Is(err, ErrRate):
 		return "rate"
+	case errors.Is(err, ErrFee):
+		return "fee"
+	case errors.Is(err, ErrExpired):
+		return "expired"
+	case errors.Is(err, ErrBudget):
+		return "budget"
 	default:
 		return "other"
 	}
