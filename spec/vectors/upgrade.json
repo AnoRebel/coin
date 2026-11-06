@@ -1,0 +1,181 @@
+{
+  "cases": [
+    {
+      "name": "matched binary activates",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "error": "",
+      "expect": {
+        "target": "binary",
+        "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "version": "v2.0.0"
+      }
+    },
+    {
+      "name": "hash mismatch blocks activation",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "error": "hash",
+      "expect": {}
+    },
+    {
+      "name": "matched wasm activates",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "wasm",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "error": "",
+      "expect": {
+        "target": "wasm"
+      }
+    },
+    {
+      "name": "uppercase hash is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "short hash is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "prefixed hash is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "missing migration is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "blank rollback is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "   ",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "unknown target is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "container",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    },
+    {
+      "name": "missing previous hash is refused",
+      "action": {
+        "type": "code_upgrade",
+        "params": {
+          "target": "binary",
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previous_hash": "",
+          "migration": "export state, replay from height 900",
+          "rollback": "run the previous release with the snapshot",
+          "version": "v2.0.0"
+        }
+      },
+      "running": "",
+      "error": "invalid",
+      "expect": {}
+    }
+  ]
+}

@@ -23,7 +23,7 @@ make test
 | `internal/protocol` | CBOR, types, addresses, keys, signing |
 | `internal/smt` | 256-bit sparse Merkle tree and proofs |
 | `internal/ledger` | Params, state, execution, fees, blocks, genesis |
-| `internal/governance` | Proposal lifecycle, deposit, voting, timelock, atomic execution |
+| `internal/governance` | Proposals, voting, timelock, atomic execution, code upgrade checks |
 | `internal/memo` | Opt-in sealed memos (X25519 + ChaCha20-Poly1305) |
 | `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
 | `internal/preview` | Pre-signing preview and safety warnings |
@@ -1725,11 +1725,44 @@ state.CastVote(id, "member-b", governance.Yes, power, now)
   free the stake: a second delegate is rejected with `voted`, and the original
   delegator is rejected with `power` because its own ballot is empty.
 
-`spec/vectors/governance.json` and `spec/vectors/governance-voting.json` are
-read by both implementations. Cases cover quorum and threshold failure, the
-constitutional supermajority and timelock, cancellation and refund, atomic undo,
-the stake cap, delegation, redelegation double voting, role weights, cycles, and
-abstention.
+### Code upgrades
+
+A `code_upgrade` proposal must carry a `code_upgrade` action with a complete
+plan. Validation happens at submission, so an incomplete plan cannot reach a
+vote:
+
+```go
+governance.Action{Type: "code_upgrade", Params: map[string]any{
+    "target":        "binary",          // or "wasm"
+    "hash":          runningHash,       // SHA-256 of the approved artifact
+    "previous_hash": previousHash,      // the artifact to roll back to
+    "migration":     "export state and replay from height 900",
+    "rollback":      "run the previous release against the snapshot",
+    "version":       "v2.0.0",
+}}
+```
+
+- `hash` and `previous_hash` are 64 lowercase hex characters. Anything else,
+  including an uppercase or `0x`-prefixed digest, is refused with `invalid`.
+- The migration and rollback plans are mandatory non-blank strings.
+- `code_upgrade` actions are only accepted on a proposal whose kind is
+  `code_upgrade`, and such a proposal needs at least one.
+- At execution, `Upgrader` hashes the artifact the node would run
+  (`SelfHash` for the running binary) and compares it with the approved hash.
+  A mismatch returns `hash`, marks the proposal `failed`, and records the
+  mismatch in `execution_error`; nothing is activated.
+- `Upgrader.Applied` holds the approved plan with the proposal ID and
+  activation height, plus the previous hash and rollback plan an operator
+  needs if the new release fails its health checks.
+- The timelock is the ordinary or constitutional one depending on the proposal
+  kind. An upgrade can still be cancelled by its proposer before execution.
+
+`spec/vectors/governance.json`, `spec/vectors/governance-voting.json` and
+`spec/vectors/upgrade.json` are read by both implementations. Cases cover
+quorum and threshold failure, the constitutional supermajority and timelock,
+cancellation and refund, atomic undo, the stake cap, delegation, redelegation
+double voting, role weights, cycles, abstention, and upgrade plans including
+hash mismatch.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.

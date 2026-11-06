@@ -7,6 +7,9 @@ and action handlers. A failing action reverts every earlier action.
 from __future__ import annotations
 
 import hashlib
+import os
+import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -171,6 +174,8 @@ def submit(state: State, proposal: Proposal, total_power: int, now: int) -> None
     for action in proposal.actions:
         if not action.type.strip():
             _fail("invalid", "action type is required")
+        if action.type == "code_upgrade" and proposal.kind != CODE_UPGRADE:
+            _fail("invalid", "code_upgrade requires a code upgrade proposal")
         if (
             action.type == "set_parameter"
             and proposal.kind != CONSTITUTIONAL
@@ -180,6 +185,8 @@ def submit(state: State, proposal: Proposal, total_power: int, now: int) -> None
                 "constitutional",
                 f"{action.params['name']} requires a constitutional proposal",
             )
+    if proposal.kind == CODE_UPGRADE:
+        _validate_code_upgrade(proposal)
     if not proposal.id:
         proposal.id = proposal_id(state.network, proposal.proposer, proposal.nonce)
     if proposal.id in state.proposals:
@@ -359,6 +366,119 @@ def cancel(state: State, pid: str, actor: str, now: int) -> None:
         _fail("status", f"proposal is {proposal.status}")
     proposal.refunded = proposal.yes + proposal.no + proposal.abstain == 0
     proposal.status = CANCELLED
+
+
+HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True)
+class Upgrade:
+    """The approved code-upgrade plan carried by a code_upgrade action.
+
+    ``target`` is "binary" or "wasm"; ``hash`` is the SHA-256 of the artifact.
+    """
+
+    target: str
+    hash: str
+    previous_hash: str
+    migration: str
+    rollback: str
+    version: str = ""
+    proposal: str = ""
+    activation_height: int = 0
+
+
+def new_upgrade(action: Action) -> Upgrade:
+    """Validate and read a code_upgrade action."""
+    if action.type != "code_upgrade":
+        _fail("invalid", f"action {action.type} is not a code upgrade")
+    values: dict[str, str] = {}
+    for name in ("target", "hash", "previous_hash", "migration", "rollback", "version"):
+        value = action.params.get(name, "")
+        if not isinstance(value, str):
+            _fail("invalid", f"{name} must be a string")
+        values[name] = value.strip()
+    if values["target"] not in ("binary", "wasm"):
+        _fail("invalid", "target must be binary or wasm")
+    for name in ("hash", "previous_hash"):
+        if not HASH_RE.fullmatch(values[name]):
+            _fail("invalid", f"{name} must be 64 lowercase hex characters")
+    if not values["migration"]:
+        _fail("invalid", "migration plan is required")
+    if not values["rollback"]:
+        _fail("invalid", "rollback plan is required")
+    return Upgrade(
+        target=values["target"],
+        hash=values["hash"],
+        previous_hash=values["previous_hash"],
+        migration=values["migration"],
+        rollback=values["rollback"],
+        version=values["version"],
+    )
+
+
+def verify(upgrade: Upgrade, running: str) -> None:
+    """Refuse an artifact that is not the one governance approved."""
+    if running.lower() != upgrade.hash:
+        _fail(
+            "hash",
+            f"{upgrade.target} hash is {running}, governance approved {upgrade.hash}",
+        )
+
+
+def file_hash(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def self_hash() -> str:
+    return file_hash(os.path.realpath(sys.argv[0]))
+
+
+class Upgrader:
+    """Registers the code_upgrade action and records the approved plan."""
+
+    def __init__(self, running: Callable[[], str] | None = None) -> None:
+        self.running = running or self_hash
+        self.applied: Upgrade | None = None
+
+    def register(self, registry: Registry) -> None:
+        def handler(action: Action, proposal: Proposal) -> Callable[[], None]:
+            plan = new_upgrade(action)
+            verify(plan, self.running())
+            plan = Upgrade(
+                target=plan.target,
+                hash=plan.hash,
+                previous_hash=plan.previous_hash,
+                migration=plan.migration,
+                rollback=plan.rollback,
+                version=plan.version,
+                proposal=proposal.id,
+                activation_height=proposal.activation_height,
+            )
+            previous = self.applied
+            self.applied = plan
+
+            def undo() -> None:
+                self.applied = previous
+
+            return undo
+
+        registry.register("code_upgrade", handler)
+
+
+def _validate_code_upgrade(proposal: Proposal) -> None:
+    found = False
+    for action in proposal.actions:
+        if action.type != "code_upgrade":
+            continue
+        new_upgrade(action)
+        found = True
+    if not found:
+        _fail("invalid", "a code upgrade proposal needs a code_upgrade action")
 
 
 @dataclass

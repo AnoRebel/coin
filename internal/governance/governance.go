@@ -222,10 +222,18 @@ func (s *State) Submit(p Proposal, totalPower, now uint64) error {
 		if strings.TrimSpace(action.Type) == "" {
 			return fmt.Errorf("%w: action type is required", ErrInvalid)
 		}
+		if action.Type == "code_upgrade" && p.Kind != CodeUpgrade {
+			return fmt.Errorf("%w: code_upgrade requires a code upgrade proposal", ErrInvalid)
+		}
 		if action.Type == "set_parameter" && p.Kind != Constitutional {
 			if name, _ := action.Params["name"].(string); s.isInvariant(name) {
 				return fmt.Errorf("%w: %s requires a constitutional proposal", ErrConstitutional, name)
 			}
+		}
+	}
+	if p.Kind == CodeUpgrade {
+		if err := validateCodeUpgrade(p); err != nil {
+			return err
 		}
 	}
 	if p.ID == "" {

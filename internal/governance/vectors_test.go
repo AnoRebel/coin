@@ -180,6 +180,8 @@ func codeOf(err error) string {
 		return "action"
 	case errors.Is(err, ErrConstitutional):
 		return "constitutional"
+	case errors.Is(err, ErrHash):
+		return "hash"
 	case strings.Contains(err.Error(), "boom"):
 		return "boom"
 	default:
