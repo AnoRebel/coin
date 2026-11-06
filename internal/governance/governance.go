@@ -60,14 +60,15 @@ const (
 )
 
 var (
-	ErrInvalid      = errors.New("invalid")
-	ErrDuplicate    = errors.New("duplicate")
-	ErrUnknown      = errors.New("unknown")
-	ErrStatus       = errors.New("status")
-	ErrVoted        = errors.New("voted")
-	ErrPower        = errors.New("power")
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrAction       = errors.New("action")
+	ErrInvalid        = errors.New("invalid")
+	ErrDuplicate      = errors.New("duplicate")
+	ErrUnknown        = errors.New("unknown")
+	ErrStatus         = errors.New("status")
+	ErrVoted          = errors.New("voted")
+	ErrPower          = errors.New("power")
+	ErrUnauthorized   = errors.New("unauthorized")
+	ErrAction         = errors.New("action")
+	ErrConstitutional = errors.New("constitutional")
 )
 
 // Params are the governance parameters. BPS values are out of 10000.
@@ -140,9 +141,32 @@ func ProposalID(network, proposer string, nonce uint64) string {
 
 // State is the proposal set for one network.
 type State struct {
-	Network   string               `json:"network"`
-	Params    Params               `json:"params"`
-	Proposals map[string]*Proposal `json:"proposals"`
+	Network    string               `json:"network"`
+	Params     Params               `json:"params"`
+	Invariants map[string]bool      `json:"invariants,omitempty"`
+	Proposals  map[string]*Proposal `json:"proposals"`
+}
+
+// DefaultInvariants lists the parameters only a constitutional proposal may
+// change. They are the supply cap, value conservation, the cryptographic suite
+// floor, and shielded-pool solvency.
+func DefaultInvariants() map[string]bool {
+	return map[string]bool{
+		"supply_cap":             true,
+		"value_conservation":     true,
+		"crypto_suite_floor":     true,
+		"shielded_pool_solvency": true,
+	}
+}
+
+func (s *State) isInvariant(name string) bool {
+	if name == "" {
+		return false
+	}
+	if s.Invariants == nil {
+		return DefaultInvariants()[name]
+	}
+	return s.Invariants[name]
 }
 
 // New returns an empty state. Parameters are validated before use.
@@ -168,7 +192,8 @@ func New(network string, params Params) (*State, error) {
 	}
 	return &State{
 		Network: network, Params: params,
-		Proposals: map[string]*Proposal{},
+		Invariants: DefaultInvariants(),
+		Proposals:  map[string]*Proposal{},
 	}, nil
 }
 
@@ -196,6 +221,11 @@ func (s *State) Submit(p Proposal, totalPower, now uint64) error {
 	for _, action := range p.Actions {
 		if strings.TrimSpace(action.Type) == "" {
 			return fmt.Errorf("%w: action type is required", ErrInvalid)
+		}
+		if action.Type == "set_parameter" && p.Kind != Constitutional {
+			if name, _ := action.Params["name"].(string); s.isInvariant(name) {
+				return fmt.Errorf("%w: %s requires a constitutional proposal", ErrConstitutional, name)
+			}
 		}
 	}
 	if p.ID == "" {

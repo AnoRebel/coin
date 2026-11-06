@@ -178,6 +178,8 @@ func codeOf(err error) string {
 		return "unauthorized"
 	case errors.Is(err, ErrAction):
 		return "action"
+	case errors.Is(err, ErrConstitutional):
+		return "constitutional"
 	case strings.Contains(err.Error(), "boom"):
 		return "boom"
 	default:

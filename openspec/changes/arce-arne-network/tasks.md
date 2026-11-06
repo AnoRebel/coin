@@ -71,7 +71,7 @@
 
 - [x] 7.1 Implement proposal types, deposit, voting, quorum, threshold, timelock, execution, and cancellation; verify each lifecycle path
 - [x] 7.2 Implement stake-weighted and consortium role-weighted voting with delegation and double-vote rejection; verify weights and rejection
-- [ ] 7.3 Implement constitutional invariants with supermajority and extended timelock; verify a simple majority cannot change the supply cap
+- [x] 7.3 Implement constitutional invariants with supermajority and extended timelock; verify a simple majority cannot change the supply cap
 - [ ] 7.4 Implement timelocked code upgrades with binary-hash verification and rollback metadata; verify hash mismatch blocks activation
 - [ ] 7.5 Implement treasury inflows, budgeted outflows, and reconciliation; verify overspend rejection and period reports
 - [ ] 7.6 Implement the emergency committee pause/veto with multi-party threshold, auto-expiry, and on-chain records; verify expiry and audit

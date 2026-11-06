@@ -26,6 +26,13 @@ KINDS = {
     SUITE_CHANGE: True, CONSTITUTIONAL: True,
 }
 
+DEFAULT_INVARIANTS = {
+    "supply_cap": True,
+    "value_conservation": True,
+    "crypto_suite_floor": True,
+    "shielded_pool_solvency": True,
+}
+
 YES = "yes"
 NO = "no"
 ABSTAIN = "abstain"
@@ -122,6 +129,9 @@ def proposal_id(network: str, proposer: str, nonce: int) -> str:
 class State:
     network: str
     params: Params
+    invariants: dict[str, bool] = field(
+        default_factory=lambda: dict(DEFAULT_INVARIANTS)
+    )
     proposals: dict[str, Proposal] = field(default_factory=dict)
 
 
@@ -161,6 +171,15 @@ def submit(state: State, proposal: Proposal, total_power: int, now: int) -> None
     for action in proposal.actions:
         if not action.type.strip():
             _fail("invalid", "action type is required")
+        if (
+            action.type == "set_parameter"
+            and proposal.kind != CONSTITUTIONAL
+            and state.invariants.get(action.params.get("name", ""), False)
+        ):
+            _fail(
+                "constitutional",
+                f"{action.params['name']} requires a constitutional proposal",
+            )
     if not proposal.id:
         proposal.id = proposal_id(state.network, proposal.proposer, proposal.nonce)
     if proposal.id in state.proposals:

@@ -238,6 +238,24 @@
       },
       "steps": [],
       "expect": {}
+    },
+    {
+      "name": "ordinary proposal cannot change the supply cap",
+      "submit_error": "constitutional",
+      "submit": {
+        "kind": "parameter",
+        "proposer": "arce-devnet1proposer",
+        "nonce": 1,
+        "actions": [
+          {"type": "set_parameter", "params": {"name": "supply_cap", "value": 4000000000000000000}}
+        ],
+        "deposit": 100,
+        "activation_height": 500,
+        "total_power": 1000,
+        "at": 100
+      },
+      "steps": [],
+      "expect": {}
     }
   ]
 }

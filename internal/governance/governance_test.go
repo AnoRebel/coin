@@ -261,3 +261,23 @@ func TestSubmitValidation(t *testing.T) {
 		t.Fatalf("duplicate: %v", err)
 	}
 }
+
+func TestInvariantsRequireConstitutionalProposal(t *testing.T) {
+	s := newTestState(t)
+	ordinary := proposal(Parameter, 1)
+	ordinary.Actions = []Action{{Type: "set_parameter", Params: map[string]any{"name": "supply_cap", "value": 1}}}
+	if err := s.Submit(ordinary, 1000, 100); !errors.Is(err, ErrConstitutional) {
+		t.Fatalf("ordinary supply cap: %v", err)
+	}
+	constitutional := ordinary
+	constitutional.Kind = Constitutional
+	if err := s.Submit(constitutional, 1000, 100); err != nil {
+		t.Fatalf("constitutional supply cap: %v", err)
+	}
+	s.Invariants["max_memo_bytes"] = true
+	ordinary = proposal(Parameter, 2)
+	ordinary.Actions = []Action{{Type: "set_parameter", Params: map[string]any{"name": "max_memo_bytes", "value": 512}}}
+	if err := s.Submit(ordinary, 1000, 100); !errors.Is(err, ErrConstitutional) {
+		t.Fatalf("configured invariant: %v", err)
+	}
+}

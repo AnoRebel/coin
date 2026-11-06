@@ -1689,6 +1689,11 @@ state.Execute(id, now, registry)
 - Constitutional proposals compare against `constitutional_threshold_bps` and
   wait out `constitutional_timelock`. With the defaults above, 60% yes is
   rejected and 70% yes passes.
+- `supply_cap`, `value_conservation`, `crypto_suite_floor`, and
+  `shielded_pool_solvency` are invariants: a `set_parameter` action that names
+  one is rejected with `constitutional` unless the proposal kind is
+  `constitutional`. A deployment can add or remove names through
+  `State.Invariants`; an empty map turns the check off and is not recommended.
 - Execution is atomic through a `Registry` of action handlers. A missing
   handler is rejected before anything runs; a failing handler undoes its own
   partial work and every earlier action, and the proposal is marked `failed`
