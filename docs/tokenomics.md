@@ -16,13 +16,15 @@
 | Max ARCE supply | 1,000,000,000 ARCE |
 | Base units | 1e17 (8 decimals) |
 | Genesis supply | Sum of genesis allocations + pools; nothing is implicitly minted |
-| Tail emission | **Not implemented**; the current policy is capped |
-| Mint authority | No issuer; ARCE cannot be minted after genesis |
+| Tail emission | Bounded: starts at the cap, at most 5% a year, security purposes only |
+| Mint authority | No issuer; ordinary mints stop at the cap |
 
 The native asset is created in genesis with `policy: capped` and
 `max_supply: native_max_supply`. `mint` rejects it because the native asset has
-no issuer and its policy is not mintable. Changing the cap requires a genesis
-change and a new network; governance for that is specified, not shipped.
+no issuer and its policy is not mintable. Changing the cap is a constitutional
+change and then a new genesis; ordinary governance cannot raise it. That rule
+is implemented as the `supply_cap` invariant and applied when a proposal is
+submitted.
 
 Devnet genesis (for reference only, not a mainnet allocation):
 
@@ -42,6 +44,58 @@ curl -s http://127.0.0.1:8080/v1/assets/arce:devnet
 
 `supply = balances + escrow_held + burned` for every asset, checked after each
 transaction and block. A violation halts the node.
+
+## Tail emission
+
+`internal/economics` (mirrored by `python/arne/economics.py`) implements the
+terminal emission policy:
+
+- Ordinary mints stop at the cap. A mint that would pass it is refused with
+  `cap`; it is never silently reduced.
+- Tail emission starts only once circulating supply has reached the cap.
+- The annual rate is governance-set in basis points but hard-bounded at 500 bps
+  (5%). A rate above the bound is refused with `rate`.
+- Each epoch's mint is checked against the rate:
+  `amount × 365 days × 10000 ≤ supply × rate_bps × epoch_seconds`. A mint above
+  the annualized allowance is refused with `rate`.
+- Only `validator_rewards` and `protocol_security` are accepted purposes; any
+  other purpose is refused with `purpose`, so tail emission cannot fund grants
+  or marketing.
+- Every ordinary mint, tail mint, and burn is appended to the supply journal
+  with its amount, purpose, and time.
+
+The node does not call the tail-emission module yet; `native_max_supply` and
+the ledger's ordinary mint cap are the live checks.
+
+## Genesis allocation and vesting
+
+A genesis allocation is published in full: beneficiary, category, amount,
+cliff, and duration. Categories are `community`, `contributors`, `treasury`,
+`validators`, and `liquidity`. Validation refuses a blank beneficiary, an
+unknown category, a zero amount, and a total above the cap.
+
+`Vesting` gates one schedule:
+
+- Nothing is transferable before `cliff`.
+- Between `cliff` and `cliff + duration`, the unlocked amount grows linearly;
+  a duration of zero unlocks the whole schedule at the cliff.
+- A transfer above the unlocked amount is refused with `locked`.
+- When the schedule has fully elapsed, `Advance` records one `vested` event and
+  the remaining units become transferable.
+
+```go
+schedule := economics.Schedule{
+    Beneficiary: "arce1team", Category: "contributors", Amount: 300,
+    Cliff: launch + 365*24*60*60, Duration: 2 * 365 * 24 * 60 * 60,
+}
+vesting, err := economics.NewVesting(schedule)
+err = vesting.Transfer(100, now)   // locked: 0 unlocked before the cliff
+vesting.Unlocked(now)              // linear after the cliff
+vesting.Advance(now)               // true once, when fully vested
+```
+
+The ledger stores genesis balances today; the vesting gate is not wired into
+transfer validation yet.
 
 ## Fees
 

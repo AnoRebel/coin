@@ -1,0 +1,386 @@
+{
+  "genesis": [
+    {
+      "name": "allocation is published",
+      "cap": 1000,
+      "schedules": [
+        {
+          "beneficiary": "arce-devnet1community",
+          "category": "community",
+          "amount": 400,
+          "cliff": 100,
+          "duration": 100
+        },
+        {
+          "beneficiary": "arce-devnet1team",
+          "category": "contributors",
+          "amount": 300,
+          "cliff": 200,
+          "duration": 0
+        }
+      ],
+      "total": 700
+    },
+    {
+      "name": "over cap is refused",
+      "cap": 100,
+      "schedules": [
+        {
+          "beneficiary": "a",
+          "category": "community",
+          "amount": 101,
+          "cliff": 0,
+          "duration": 0
+        }
+      ],
+      "error": "cap"
+    },
+    {
+      "name": "unknown category is refused",
+      "cap": 100,
+      "schedules": [
+        {
+          "beneficiary": "a",
+          "category": "marketing",
+          "amount": 10,
+          "cliff": 0,
+          "duration": 0
+        }
+      ],
+      "error": "invalid"
+    },
+    {
+      "name": "blank beneficiary is refused",
+      "cap": 100,
+      "schedules": [
+        {
+          "beneficiary": "  ",
+          "category": "community",
+          "amount": 10,
+          "cliff": 0,
+          "duration": 0
+        }
+      ],
+      "error": "invalid"
+    },
+    {
+      "name": "zero amount is refused",
+      "cap": 100,
+      "schedules": [
+        {
+          "beneficiary": "a",
+          "category": "community",
+          "amount": 0,
+          "cliff": 0,
+          "duration": 0
+        }
+      ],
+      "error": "invalid"
+    }
+  ],
+  "supply": [
+    {
+      "name": "ordinary mints stop at the cap",
+      "cap": 1000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 600,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "mint",
+          "amount": 400,
+          "purpose": "genesis",
+          "at": 2
+        },
+        {
+          "op": "mint",
+          "amount": 1,
+          "purpose": "overflow",
+          "at": 3,
+          "error": "cap"
+        },
+        {
+          "op": "burn",
+          "amount": 100,
+          "at": 4
+        }
+      ],
+      "expect": {
+        "total": 900,
+        "minted": 1000,
+        "burned": 100,
+        "tail": 0
+      }
+    },
+    {
+      "name": "tail needs a reached cap",
+      "cap": 1000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 500,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "set_tail_rate",
+          "bps": 500
+        },
+        {
+          "op": "tail",
+          "amount": 1,
+          "epoch": 31536000,
+          "at": 2,
+          "error": "cap"
+        }
+      ],
+      "expect": {
+        "total": 500,
+        "minted": 500,
+        "burned": 0,
+        "tail": 0
+      }
+    },
+    {
+      "name": "tail is security only",
+      "cap": 10,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 10,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "set_tail_rate",
+          "bps": 500
+        },
+        {
+          "op": "tail_for",
+          "amount": 1,
+          "epoch": 31536000,
+          "at": 2,
+          "purpose": "marketing",
+          "error": "purpose"
+        }
+      ],
+      "expect": {
+        "total": 10,
+        "minted": 10,
+        "burned": 0,
+        "tail": 0
+      }
+    },
+    {
+      "name": "tail rate is hard bounded",
+      "cap": 1000000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 1000000,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "set_tail_rate",
+          "bps": 501,
+          "error": "rate"
+        }
+      ],
+      "expect": {
+        "total": 1000000,
+        "minted": 1000000,
+        "burned": 0,
+        "tail": 0
+      }
+    },
+    {
+      "name": "tail above the annual rate is refused",
+      "cap": 1000000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 1000000,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "set_tail_rate",
+          "bps": 500
+        },
+        {
+          "op": "tail",
+          "amount": 60000,
+          "epoch": 31536000,
+          "at": 2,
+          "error": "rate"
+        }
+      ],
+      "expect": {
+        "total": 1000000,
+        "minted": 1000000,
+        "burned": 0,
+        "tail": 0
+      }
+    },
+    {
+      "name": "bounded tail is issued",
+      "cap": 1000000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 1000000,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "set_tail_rate",
+          "bps": 500
+        },
+        {
+          "op": "tail_for",
+          "amount": 50000,
+          "epoch": 31536000,
+          "at": 2,
+          "purpose": "validator_rewards"
+        }
+      ],
+      "expect": {
+        "total": 1050000,
+        "minted": 1000000,
+        "tail": 50000,
+        "entries": 2
+      }
+    },
+    {
+      "name": "burning above supply is refused",
+      "cap": 1000,
+      "steps": [
+        {
+          "op": "mint",
+          "amount": 10,
+          "purpose": "genesis",
+          "at": 1
+        },
+        {
+          "op": "burn",
+          "amount": 11,
+          "at": 2,
+          "error": "invalid"
+        }
+      ],
+      "expect": {
+        "total": 10,
+        "minted": 10,
+        "burned": 0,
+        "tail": 0
+      }
+    }
+  ],
+  "vesting": [
+    {
+      "name": "cliff then linear unlock",
+      "schedule": {
+        "beneficiary": "arce-devnet1team",
+        "category": "contributors",
+        "amount": 1000,
+        "cliff": 100,
+        "duration": 100
+      },
+      "steps": [
+        {
+          "op": "unlocked",
+          "at": 99,
+          "expect": 0
+        },
+        {
+          "op": "transfer",
+          "amount": 1,
+          "at": 99,
+          "error": "locked"
+        },
+        {
+          "op": "unlocked",
+          "at": 150,
+          "expect": 500
+        },
+        {
+          "op": "transfer",
+          "amount": 400,
+          "at": 150
+        },
+        {
+          "op": "transfer",
+          "amount": 200,
+          "at": 150,
+          "error": "locked"
+        },
+        {
+          "op": "advance",
+          "at": 200,
+          "completed": true,
+          "events": [
+            {
+              "kind": "vested",
+              "at": 200,
+              "amount": 1000
+            }
+          ]
+        },
+        {
+          "op": "advance",
+          "at": 201,
+          "completed": false
+        },
+        {
+          "op": "transferable",
+          "at": 200,
+          "expect": 600
+        }
+      ],
+      "expect": {
+        "transferred": 400,
+        "completed": true
+      }
+    },
+    {
+      "name": "no cliff means the whole schedule at the cliff",
+      "schedule": {
+        "beneficiary": "a",
+        "category": "community",
+        "amount": 1000,
+        "cliff": 100,
+        "duration": 0
+      },
+      "steps": [
+        {
+          "op": "unlocked",
+          "at": 99,
+          "expect": 0
+        },
+        {
+          "op": "unlocked",
+          "at": 100,
+          "expect": 1000
+        },
+        {
+          "op": "transfer",
+          "amount": 1000,
+          "at": 100
+        },
+        {
+          "op": "advance",
+          "at": 100,
+          "completed": true
+        }
+      ],
+      "expect": {
+        "transferred": 1000,
+        "completed": true
+      }
+    }
+  ]
+}
