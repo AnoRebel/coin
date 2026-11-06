@@ -1,0 +1,221 @@
+{
+  "members": [
+    "a",
+    "b",
+    "c"
+  ],
+  "threshold": 2,
+  "period": 100,
+  "steps": [
+    {
+      "op": "pause",
+      "signers": [
+        "c",
+        "a"
+      ],
+      "operations": [
+        "transfers"
+      ],
+      "reason": "bridge incident",
+      "at": 10,
+      "expect": {
+        "kind": "pause",
+        "status": "active",
+        "expires_at": 110,
+        "signers": [
+          "a",
+          "c"
+        ],
+        "paused": "transfers",
+        "audit": [
+          "pause"
+        ]
+      }
+    },
+    {
+      "op": "veto",
+      "signers": [
+        "b",
+        "a"
+      ],
+      "proposal": "prop-1",
+      "reason": "malicious proposal",
+      "at": 20,
+      "expect": {
+        "kind": "veto",
+        "status": "active",
+        "expires_at": 120,
+        "signers": [
+          "a",
+          "b"
+        ],
+        "vetoed": "prop-1",
+        "audit": [
+          "veto"
+        ]
+      }
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a"
+      ],
+      "operations": [
+        "transfers"
+      ],
+      "reason": "too few",
+      "at": 30,
+      "error": "threshold"
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a",
+        "z"
+      ],
+      "operations": [
+        "transfers"
+      ],
+      "reason": "outsider",
+      "at": 31,
+      "error": "signer"
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a",
+        "a"
+      ],
+      "operations": [
+        "transfers"
+      ],
+      "reason": "duplicate",
+      "at": 32,
+      "error": "signer"
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a",
+        "b"
+      ],
+      "operations": [],
+      "reason": "nothing",
+      "at": 33,
+      "error": "invalid"
+    },
+    {
+      "op": "advance",
+      "at": 110,
+      "expect": {
+        "statuses": {
+          "pause": "expired"
+        },
+        "not_paused": "transfers",
+        "vetoed": "prop-1",
+        "audit": [
+          "expire"
+        ]
+      }
+    },
+    {
+      "op": "advance",
+      "at": 120,
+      "expect": {
+        "statuses": {
+          "veto": "expired"
+        },
+        "not_vetoed": "prop-1",
+        "audit": [
+          "expire"
+        ]
+      }
+    },
+    {
+      "op": "veto",
+      "signers": [
+        "a",
+        "b"
+      ],
+      "proposal": "prop-2",
+      "reason": "second incident",
+      "at": 130,
+      "expect": {
+        "kind": "veto",
+        "status": "active",
+        "expires_at": 230,
+        "audit": [
+          "veto"
+        ]
+      }
+    },
+    {
+      "op": "revoke",
+      "target_kind": "veto",
+      "signers": [
+        "b",
+        "c"
+      ],
+      "reason": "false alarm",
+      "at": 140,
+      "expect": {
+        "statuses": {
+          "veto": "revoked"
+        },
+        "not_vetoed": "prop-2",
+        "audit": [
+          "revoke"
+        ]
+      }
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a",
+        "b"
+      ],
+      "operations": [
+        "all"
+      ],
+      "reason": "maintenance",
+      "at": 200,
+      "expect": {
+        "kind": "pause",
+        "status": "active",
+        "expires_at": 300,
+        "paused": "withdrawals",
+        "audit": [
+          "pause"
+        ]
+      }
+    },
+    {
+      "op": "ratify",
+      "target_kind": "pause",
+      "proposal": "gov-1",
+      "at": 201,
+      "expect": {
+        "statuses": {
+          "pause": "ratified"
+        },
+        "not_paused": "transfers",
+        "audit": [
+          "ratify"
+        ]
+      }
+    },
+    {
+      "op": "pause",
+      "signers": [
+        "a",
+        "b"
+      ],
+      "operations": [
+        "transfers"
+      ],
+      "reason": "",
+      "at": 210,
+      "error": "invalid"
+    }
+  ]
+}

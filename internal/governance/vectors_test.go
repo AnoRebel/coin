@@ -188,6 +188,10 @@ func codeOf(err error) string {
 		return "budget"
 	case errors.Is(err, ErrReconcile):
 		return "reconcile"
+	case errors.Is(err, ErrThreshold):
+		return "threshold"
+	case errors.Is(err, ErrSigner):
+		return "signer"
 	case strings.Contains(err.Error(), "boom"):
 		return "boom"
 	default:

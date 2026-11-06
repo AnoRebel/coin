@@ -1785,13 +1785,57 @@ book.Spend(proposalID, "arce", 250_000, "arce1grant", "grant", "grants", now)
   `SHA-256("arne-treasury-v1" || 0 || proposal || 0 || direction || 0 || asset ||
   0 || amount || 0 || at || 0 || sequence)`.
 
+### Emergency committee
+
+`Emergency` is the bounded intervention path for a multi-party committee:
+
+```go
+committee, err := governance.NewEmergency(
+    []string{"alice", "bob", "carol"}, 2, 24*60*60, // members, threshold, seconds
+)
+action, err := committee.Pause(
+    []string{"carol", "alice"}, []string{"transfers"}, "bridge incident", now,
+)
+committee.Paused("transfers", now)     // true until now+period
+committee.Vetoed(proposalID, now)      // vetoes are checked the same way
+committee.Advance(now)                // expires elapsed actions
+committee.Ratify(action.ID, proposalID, now)
+```
+
+- A committee needs at least two members; the threshold is at least two and no
+  more than the member count. Members are distinct and non-blank.
+- Every action needs the threshold of distinct members, a public reason, and
+  lands in the journal with the signers sorted, the duration, and an
+  `expires_at` timestamp. An unknown, blank, or repeated signer is rejected
+  with `signer`; too few signers with `threshold`.
+- `Pause` takes one or more operations. The operation `all` is a wildcard, so a
+  pause can stop settlement without listing every operation.
+- `Veto` names one proposal. The caller checks `Vetoed` before executing it;
+  a veto is not a proposal state change.
+- Expiry is automatic once `now >= expires_at`: `Advance` marks records
+  `expired` and emits an event, and `Paused`/`Vetoed` treat an elapsed action as
+  inactive even before `Advance` runs.
+- `Revoke` ends an active action early with the threshold of signers.
+  `Ratify` records the governance proposal that confirmed an active or expired
+  action; a ratified action no longer pauses or vetoes anything.
+- `Audit` receives one event for each pause, veto, expiry, revocation, and
+  ratification. The same information is kept in `Actions`.
+- The action ID is the first 16 bytes of
+  `SHA-256("arne-emergency-v1" || 0 || kind || 0 || proposal || 0 ||
+  operations || 0 || signers || 0 || reason || 0 || at)`, with both lists
+  sorted first.
+
+`shortcut:` the committee is a library. The node does not consult `Paused` or
+`Vetoed` yet, and the journal is in memory.
+
 `spec/vectors/governance.json`, `spec/vectors/governance-voting.json`,
-`spec/vectors/upgrade.json` and `spec/vectors/treasury.json` are read by both
-implementations. Cases cover quorum and threshold failure, the constitutional
-supermajority and timelock, cancellation and refund, atomic undo, the stake cap,
-delegation, redelegation double voting, role weights, cycles, abstention,
-upgrade plans including hash mismatch, and treasury overspend, budget, and
-report reconciliation.
+`spec/vectors/upgrade.json`, `spec/vectors/treasury.json` and
+`spec/vectors/emergency.json` are read by both implementations. Cases cover
+quorum and threshold failure, the constitutional supermajority and timelock,
+cancellation and refund, atomic undo, the stake cap, delegation, redelegation
+double voting, role weights, cycles, abstention, upgrade plans including hash
+mismatch, treasury overspend, budget, report reconciliation, and emergency
+thresholds, expiry, revocation, ratification and audit.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.
