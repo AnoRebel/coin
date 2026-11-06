@@ -34,6 +34,13 @@ export default defineNuxtConfig({
     ],
   },
 
+  // Icons named only in app.config strings aren't found by the scan; bundle them.
+  icon: {
+    clientBundle: {
+      icons: ["lucide:wallet", "lucide:code", "lucide:server", "lucide:files", "lucide:file-text"],
+    },
+  },
+
   // The layer draws social preview images while rendering; this site runs as a
   // server, so the renderer has no native dependency to satisfy.
   ogImage: { enabled: false },
