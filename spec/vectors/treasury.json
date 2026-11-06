@@ -1,0 +1,120 @@
+{
+  "limits": [
+    {
+      "category": "grants",
+      "asset": "arce",
+      "limit": 500
+    },
+    {
+      "category": "ops",
+      "asset": "arce",
+      "limit": 10000
+    }
+  ],
+  "steps": [
+    {
+      "op": "deposit",
+      "asset": "arce",
+      "amount": 1000,
+      "source": "fees",
+      "purpose": "fee income",
+      "at": 10
+    },
+    {
+      "op": "spend",
+      "proposal": "p1",
+      "asset": "arce",
+      "amount": 300,
+      "recipient": "arce1grant",
+      "purpose": "grant",
+      "category": "grants",
+      "at": 20
+    },
+    {
+      "op": "spend",
+      "proposal": "p2",
+      "asset": "arce",
+      "amount": 300,
+      "recipient": "arce1grant2",
+      "purpose": "grant",
+      "category": "grants",
+      "at": 21,
+      "error": "budget"
+    },
+    {
+      "op": "spend",
+      "proposal": "p3",
+      "asset": "usd",
+      "amount": 100,
+      "recipient": "arce1grant3",
+      "purpose": "grant",
+      "category": "grants",
+      "at": 22,
+      "error": "budget"
+    },
+    {
+      "op": "spend",
+      "proposal": "p4",
+      "asset": "arce",
+      "amount": 800,
+      "recipient": "arce1ops",
+      "purpose": "hosting",
+      "category": "ops",
+      "at": 24,
+      "error": "overspend"
+    },
+    {
+      "op": "spend",
+      "proposal": "p5",
+      "asset": "arce",
+      "amount": 200,
+      "recipient": "arce1ops",
+      "purpose": "hosting",
+      "category": "ops",
+      "at": 30
+    },
+    {
+      "op": "report",
+      "from": 15,
+      "to": 25,
+      "expect": {
+        "inflows": {},
+        "outflows": {
+          "arce": 300
+        },
+        "categories": {
+          "grants": 300
+        },
+        "opening": {
+          "arce": 1000
+        },
+        "closing": {
+          "arce": 700
+        }
+      }
+    },
+    {
+      "op": "report",
+      "from": 0,
+      "to": 100,
+      "expect": {
+        "inflows": {
+          "arce": 1000
+        },
+        "outflows": {
+          "arce": 500
+        },
+        "categories": {
+          "grants": 300,
+          "ops": 200
+        },
+        "opening": {
+          "arce": 0
+        },
+        "closing": {
+          "arce": 500
+        }
+      }
+    }
+  ]
+}

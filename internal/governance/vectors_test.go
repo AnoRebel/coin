@@ -182,6 +182,12 @@ func codeOf(err error) string {
 		return "constitutional"
 	case errors.Is(err, ErrHash):
 		return "hash"
+	case errors.Is(err, ErrOverspend):
+		return "overspend"
+	case errors.Is(err, ErrBudget):
+		return "budget"
+	case errors.Is(err, ErrReconcile):
+		return "reconcile"
 	case strings.Contains(err.Error(), "boom"):
 		return "boom"
 	default:

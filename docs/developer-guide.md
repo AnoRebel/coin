@@ -23,7 +23,7 @@ make test
 | `internal/protocol` | CBOR, types, addresses, keys, signing |
 | `internal/smt` | 256-bit sparse Merkle tree and proofs |
 | `internal/ledger` | Params, state, execution, fees, blocks, genesis |
-| `internal/governance` | Proposals, voting, timelock, atomic execution, code upgrade checks |
+| `internal/governance` | Proposals, voting, timelock, code upgrades, treasury, atomic execution |
 | `internal/memo` | Opt-in sealed memos (X25519 + ChaCha20-Poly1305) |
 | `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
 | `internal/preview` | Pre-signing preview and safety warnings |
@@ -1757,12 +1757,41 @@ governance.Action{Type: "code_upgrade", Params: map[string]any{
 - The timelock is the ordinary or constitutional one depending on the proposal
   kind. An upgrade can still be cancelled by its proposer before execution.
 
-`spec/vectors/governance.json`, `spec/vectors/governance-voting.json` and
-`spec/vectors/upgrade.json` are read by both implementations. Cases cover
-quorum and threshold failure, the constitutional supermajority and timelock,
-cancellation and refund, atomic undo, the stake cap, delegation, redelegation
-double voting, role weights, cycles, abstention, and upgrade plans including
-hash mismatch.
+### Treasury
+
+`TreasuryBook` keeps asset balances, cumulative category limits, and a flow
+journal. Inflows and outflows name a purpose, and outflows name a recipient,
+category, and the proposal that approved them:
+
+```go
+book := governance.NewTreasuryBook()
+book.SetBudget("grants", "arce", 500_000)         // category, asset, cumulative cap
+book.Deposit("arce", 2_000_000, "fees", "fee income", now)
+book.Spend(proposalID, "arce", 250_000, "arce1grant", "grant", "grants", now)
+```
+
+- `treasury_spend` is registered like any other action and refuses a proposal
+  whose kind is not `treasury`.
+- A spend needs a configured category limit. An unknown category is rejected
+  with `budget`; so is a spend that would exceed the category's cumulative
+  limit. A spend above the balance is rejected with `overspend`. Nothing is
+  recorded when either check fails, so a failed proposal leaves the balance
+  untouched.
+- `Report(from, to)` reconciles the half-open window `[from, to)`: opening
+  balance, inflows, outflows, per-category outflow, and closing balance. A
+  window that does not add up is rejected with `reconcile` instead of being
+  reported.
+- The entry ID is the first 16 bytes of
+  `SHA-256("arne-treasury-v1" || 0 || proposal || 0 || direction || 0 || asset ||
+  0 || amount || 0 || at || 0 || sequence)`.
+
+`spec/vectors/governance.json`, `spec/vectors/governance-voting.json`,
+`spec/vectors/upgrade.json` and `spec/vectors/treasury.json` are read by both
+implementations. Cases cover quorum and threshold failure, the constitutional
+supermajority and timelock, cancellation and refund, atomic undo, the stake cap,
+delegation, redelegation double voting, role weights, cycles, abstention,
+upgrade plans including hash mismatch, and treasury overspend, budget, and
+report reconciliation.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.
