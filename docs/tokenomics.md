@@ -197,6 +197,46 @@ Routes are an operator/governance action today (no CLI). A route is a price and
 carries risk: an incorrect rate over- or under-charges, and the pool can be
 drained. Treat route setting as privileged.
 
+### Reserve commitments
+
+`internal/economics` (mirrored by `python/arne/economics.py`) models a
+protocol-operated conversion route as a reserve and a set of liabilities:
+
+```go
+route, err := economics.NewReserve("usd:devnet", 100_000_000) // 1:1 with ARCE
+route.SetReserves(1_000)
+route.SetLiabilities(400)
+arce, err := route.Quote(100, 100)     // 100 ARCE, or slippage/unbacked
+proof := route.Commit(now)
+err = proof.Verify(1_000, 400)         // published commitment vs observed values
+```
+
+- Reserves and liabilities are ARCE base units. `Rate` is ARCE base units per
+  100,000,000 base units of the converted asset, matching the ledger's route
+  key.
+- A quote is refused when it delivers less than the caller's `minARCE`
+  (`slippage`) or asks for more than `reserves - liabilities` (`unbacked`).
+  The route never mints ARCE: it can only promise ARCE it already holds.
+- A route is disabled for new conversions whenever reserves are below
+  liabilities, and it stays disabled until `Recapitalize` brings reserves back
+  above the committed liabilities.
+- `Commit` publishes the asset, rate, reserves, liabilities, time, and a
+  digest. `Verify` recomputes the digest, requires the observed on-chain
+  reserves and liabilities to equal the commitment (`proof` otherwise), and
+  then requires coverage (`unbacked` otherwise). An auditor therefore checks
+  both that the numbers are the published ones and that they balance.
+- The digest is the first 16 bytes of
+  `SHA-256("arne-reserve-v1" || 0 || asset || 0 || rate || 0 || reserves || 0 ||
+  liabilities || 0 || at)`.
+
+`shortcut:` this is a reserve accounting library. The live ledger's
+`fee_swap` pool is still funded and checked directly, and no API publishes or
+verifies a commitment yet.
+
+ARCE is a utility asset for fees and staking. It is not a claim on any reserve
+and has no protocol-level redemption path for fiat, commodities, or any other
+asset. Nothing in the API or CLI redeems ARCE for an external asset.
+
 ## Staking, governance, and treasury
 
 Specified but not implemented:

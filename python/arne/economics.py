@@ -6,6 +6,7 @@ starts at the cap, only funds security, and stays within the hard annual bound.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 
 SECONDS_PER_YEAR = 365 * 24 * 60 * 60
@@ -260,3 +261,110 @@ class Sponsorship:
         if amount > self.budget - self.spent:
             _fail("budget", f"{self.budget - self.spent} left, {amount} requested")
         self.spent += amount
+
+
+CONVERSION_RATE_SCALE = 100_000_000
+
+
+def _proof_digest(
+    asset: str, rate: int, reserves: int, liabilities: int, at: int
+) -> str:
+    h = hashlib.sha256()
+    for part in ("arne-reserve-v1", asset, str(rate), str(reserves), str(liabilities), str(at)):
+        h.update(part.encode())
+        h.update(b"\x00")
+    return h.digest()[:16].hex()
+
+
+@dataclass
+class Proof:
+    """A published reserve and liability commitment for one route."""
+
+    asset: str
+    rate: int
+    reserves: int
+    liabilities: int
+    at: int
+    digest: str
+
+    def verify(self, reserves: int, liabilities: int) -> None:
+        """Check the commitment against observed values, then coverage."""
+        if self.digest != _proof_digest(
+            self.asset, self.rate, self.reserves, self.liabilities, self.at
+        ):
+            _fail("proof", "commitment digest does not match its fields")
+        if reserves != self.reserves or liabilities != self.liabilities:
+            _fail(
+                "proof",
+                f"observed {reserves}/{liabilities}, committed "
+                f"{self.reserves}/{self.liabilities}",
+            )
+        if reserves < liabilities:
+            _fail("unbacked", f"{reserves} reserves for {liabilities} liabilities")
+
+
+class Reserve:
+    """One protocol-operated conversion route.
+
+    Reserves and liabilities are ARCE base units. A route never mints ARCE; it
+    can only quote from its spare reserves.
+    """
+
+    def __init__(self, asset: str, rate: int) -> None:
+        if not asset.strip() or rate <= 0:
+            _fail("invalid", "asset and a positive rate are required")
+        self.asset = asset
+        self.rate = rate
+        self.reserves = 0
+        self.liabilities = 0
+
+    @property
+    def covered(self) -> bool:
+        return self.reserves >= self.liabilities
+
+    @property
+    def disabled(self) -> bool:
+        return not self.covered
+
+    @property
+    def spare(self) -> int:
+        if not self.covered:
+            return 0
+        return self.reserves - self.liabilities
+
+    def set_reserves(self, amount: int) -> None:
+        self.reserves = amount
+
+    def set_liabilities(self, amount: int) -> None:
+        self.liabilities = amount
+
+    def recapitalize(self, amount: int) -> None:
+        self.reserves += amount
+
+    def quote(self, asset_amount: int, min_arce: int) -> int:
+        if asset_amount <= 0:
+            _fail("invalid", "amount must be positive")
+        if self.disabled:
+            _fail(
+                "unbacked",
+                f"route {self.asset} has {self.reserves} reserves for "
+                f"{self.liabilities} liabilities",
+            )
+        arce = asset_amount * self.rate // CONVERSION_RATE_SCALE
+        if arce < min_arce:
+            _fail("slippage", f"{arce} ARCE below minimum {min_arce}")
+        if arce > self.spare:
+            _fail("unbacked", f"{arce} ARCE requested, {self.spare} spare")
+        return arce
+
+    def commit(self, at: int) -> Proof:
+        return Proof(
+            asset=self.asset,
+            rate=self.rate,
+            reserves=self.reserves,
+            liabilities=self.liabilities,
+            at=at,
+            digest=_proof_digest(
+                self.asset, self.rate, self.reserves, self.liabilities, at
+            ),
+        )

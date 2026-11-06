@@ -1,0 +1,169 @@
+{
+  "asset": "usd:devnet",
+  "rate": 100000000,
+  "invalid": [
+    {
+      "name": "blank asset is refused",
+      "asset": "   ",
+      "rate": 1,
+      "error": "invalid"
+    },
+    {
+      "name": "zero rate is refused",
+      "asset": "usd:devnet",
+      "rate": 0,
+      "error": "invalid"
+    }
+  ],
+  "steps": [
+    {
+      "op": "set_reserves",
+      "amount": 1000,
+      "expect": {
+        "covered": true,
+        "disabled": false,
+        "spare": 1000
+      }
+    },
+    {
+      "op": "set_liabilities",
+      "amount": 400,
+      "expect": {
+        "covered": true,
+        "disabled": false,
+        "spare": 600
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 100,
+      "expect": {
+        "arce": 100
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 700,
+      "min_arce": 0,
+      "error": "unbacked"
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 101,
+      "error": "slippage"
+    },
+    {
+      "op": "set_liabilities",
+      "amount": 1200,
+      "expect": {
+        "covered": false,
+        "disabled": true,
+        "spare": 0
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 0,
+      "error": "unbacked"
+    },
+    {
+      "op": "verify",
+      "at": 20,
+      "observed_reserves": 1000,
+      "observed_liabilities": 1200,
+      "error": "unbacked"
+    },
+    {
+      "op": "recapitalize",
+      "amount": 500,
+      "expect": {
+        "reserves": 1500,
+        "covered": true,
+        "disabled": false,
+        "spare": 300
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 100,
+      "expect": {
+        "arce": 100
+      }
+    },
+    {
+      "op": "verify",
+      "at": 20,
+      "observed_reserves": 1500,
+      "observed_liabilities": 1200
+    },
+    {
+      "op": "verify",
+      "at": 20,
+      "observed_reserves": 1400,
+      "observed_liabilities": 1200,
+      "error": "proof"
+    },
+    {
+      "op": "verify",
+      "at": 20,
+      "observed_reserves": 1500,
+      "observed_liabilities": 1200,
+      "digest": "00000000000000000000000000000000",
+      "error": "proof"
+    },
+    {
+      "op": "set_reserves",
+      "amount": 0,
+      "expect": {
+        "covered": false,
+        "disabled": true,
+        "spare": 0
+      }
+    },
+    {
+      "op": "verify",
+      "at": 30,
+      "observed_reserves": 0,
+      "observed_liabilities": 1200,
+      "error": "unbacked"
+    },
+    {
+      "op": "recapitalize",
+      "amount": 1200,
+      "expect": {
+        "reserves": 1200,
+        "covered": true,
+        "disabled": false,
+        "spare": 0
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 0,
+      "error": "unbacked"
+    },
+    {
+      "op": "recapitalize",
+      "amount": 100,
+      "expect": {
+        "reserves": 1300,
+        "covered": true,
+        "disabled": false,
+        "spare": 100
+      }
+    },
+    {
+      "op": "quote",
+      "asset_amount": 100,
+      "min_arce": 100,
+      "expect": {
+        "arce": 100
+      }
+    }
+  ]
+}

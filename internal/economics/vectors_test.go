@@ -203,6 +203,12 @@ func codeOf(err error) string {
 		return "expired"
 	case errors.Is(err, ErrBudget):
 		return "budget"
+	case errors.Is(err, ErrProof):
+		return "proof"
+	case errors.Is(err, ErrUnbacked):
+		return "unbacked"
+	case errors.Is(err, ErrSlippage):
+		return "slippage"
 	default:
 		return "other"
 	}

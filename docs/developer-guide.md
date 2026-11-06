@@ -24,7 +24,7 @@ make test
 | `internal/smt` | 256-bit sparse Merkle tree and proofs |
 | `internal/ledger` | Params, state, execution, fees, blocks, genesis |
 | `internal/governance` | Proposals, voting, timelock, code upgrades, treasury, atomic execution |
-| `internal/economics` | ARCE cap, tail emission, allocations, vesting, fee market, sponsorship |
+| `internal/economics` | ARCE cap, tail emission, allocations, vesting, fee market, sponsorship, conversion reserves |
 | `internal/memo` | Opt-in sealed memos (X25519 + ChaCha20-Poly1305) |
 | `internal/paymenturi` | Strict `arce:`/`arne:` payment URI parsing |
 | `internal/preview` | Pre-signing preview and safety warnings |
