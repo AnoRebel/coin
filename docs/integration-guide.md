@@ -195,6 +195,14 @@ earliest usable cursor. Python accepts `from_height` as an alias. A slow
 consumer drops events rather than stalling block production, so reconcile with
 block polling after a long disconnect.
 
+`stream=messages&channel=<name>` streams channel messages when the API is
+configured with a message store. Message event ids are sequence numbers, `from`
+is inclusive, and `Last-Event-ID` is exclusive. A cursor outside the channel
+retention window gets `cursor_expired` with the earliest available sequence.
+The stream polls the log as well as accepting hints, so a missed hint does not
+lose a message. Channel routes themselves are not exposed yet; embedded
+servers publish to the same store.
+
 ## 5. JSON-RPC
 
 `POST /rpc`, object or batch:

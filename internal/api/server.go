@@ -16,6 +16,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/anorebel/anorebelcoin/internal/channel"
 	"github.com/anorebel/anorebelcoin/internal/compliance/access"
 	"github.com/anorebel/anorebelcoin/internal/ledger"
 	"github.com/anorebel/anorebelcoin/internal/node"
@@ -34,6 +35,7 @@ type Config struct {
 	OIDC           *OIDCConfig // RS256 JWT validation; nil disables
 	AdminMTLS      bool        // a verified client certificate grants admin
 	Devnet         bool
+	Messages       *channel.Store // channel message log; nil disables the message stream
 }
 
 // Server serves the node API.

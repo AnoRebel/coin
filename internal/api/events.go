@@ -2,13 +2,16 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/anorebel/anorebelcoin/internal/channel"
 	"github.com/anorebel/anorebelcoin/internal/node"
 )
 
@@ -54,10 +57,10 @@ func writeEvent(w http.ResponseWriter, id, event string, payload any) {
 	fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", id, event, data)
 }
 
-// events streams finalized blocks or transaction receipts as server-sent
-// events. A reconnect resumes after Last-Event-ID (or ?from=), and a cursor
-// older than retention gets a cursor_expired event with the earliest cursor
-// before the replay starts.
+// events streams finalized blocks, transaction receipts, or channel messages
+// as server-sent events. A reconnect resumes after Last-Event-ID (or ?from=),
+// and a cursor older than retention gets a cursor_expired event with the
+// earliest cursor before the replay starts.
 func (s *Server) events(c *echo.Context) error {
 	stream := c.QueryParamOr("stream", "blocks")
 	switch stream {
@@ -65,8 +68,13 @@ func (s *Server) events(c *echo.Context) error {
 		stream = "blocks"
 	case "transaction", "transactions":
 		stream = "transactions"
+	case "message", "messages":
+		if s.cfg.Messages == nil {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "message stream is not configured")
+		}
+		return s.messageEvents(c)
 	default:
-		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "stream must be one of: blocks, transactions")
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "stream must be one of: blocks, transactions, messages")
 	}
 
 	cursorRaw := c.Request().Header.Get("Last-Event-ID")
@@ -174,6 +182,114 @@ func (s *Server) replayEvents(w http.ResponseWriter, flusher http.Flusher, strea
 		}
 	}
 	flusher.Flush()
+}
+
+// messageEvents streams one channel. Event ids are sequence numbers, so a
+// reconnect resumes with Last-Event-ID (exclusive) or ?from= (inclusive).
+// Hints are best-effort, so a ticker also polls the log and closes gaps.
+func (s *Server) messageEvents(c *echo.Context) error {
+	channelName := c.QueryParam("channel")
+	if channelName == "" {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "channel is required for the message stream")
+	}
+	cursorRaw := c.Request().Header.Get("Last-Event-ID")
+	fromQuery := false
+	if cursorRaw == "" {
+		cursorRaw = c.QueryParam("from")
+		fromQuery = cursorRaw != ""
+	}
+	// Validate the channel before writing SSE headers; an error response must
+	// still be JSON.
+	if _, err := s.cfg.Messages.Read(channelName, 0, 1); err != nil {
+		return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid channel")
+	}
+	var last uint64
+	if cursorRaw != "" {
+		seq, err := strconv.ParseUint(cursorRaw, 10, 64)
+		if err != nil {
+			return apiErr(http.StatusBadRequest, "INVALID_ARGUMENT", "message cursor must be a sequence number")
+		}
+		if fromQuery {
+			if seq > 0 {
+				last = seq - 1
+			}
+		} else {
+			last = seq
+		}
+	}
+
+	w := c.Response()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return apiErr(http.StatusInternalServerError, "UNSUPPORTED", "streaming unsupported")
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	// Subscribe before replay so a publish between the replay and the live
+	// loop still leaves a hint.
+	hints, cancel := s.cfg.Messages.Subscribe(channelName)
+	defer cancel()
+	flusher.Flush()
+	if err := s.replayMessages(w, flusher, channelName, &last); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.Request().Context().Done():
+			return nil
+		case _, ok := <-hints:
+			if !ok {
+				return nil
+			}
+		case <-ticker.C:
+		}
+		if err := s.replayMessages(w, flusher, channelName, &last); err != nil {
+			return err
+		}
+	}
+}
+
+// replayMessages sends everything after last and advances it. A cursor that
+// fell outside retention gets one cursor_expired event with the earliest
+// sequence, then replay restarts from there.
+func (s *Server) replayMessages(w http.ResponseWriter, flusher http.Flusher, channelName string, last *uint64) error {
+	for {
+		page, err := s.cfg.Messages.Read(channelName, *last, 1000)
+		if errors.Is(err, channel.ErrExpired) {
+			earliest := uint64(0)
+			if first, readErr := s.cfg.Messages.Read(channelName, 0, 1); readErr == nil && len(first) > 0 {
+				earliest = first[0].Seq
+			}
+			id := strconv.FormatUint(earliest, 10)
+			writeEvent(w, id, "cursor_expired", map[string]any{
+				"stream": "messages", "channel": channelName, "earliest": id,
+			})
+			if earliest > 0 {
+				*last = earliest - 1
+			} else {
+				*last = 0
+			}
+			flusher.Flush()
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, message := range page {
+			writeEvent(w, strconv.FormatUint(message.Seq, 10), "message", map[string]any{
+				"type": "message", "message": message,
+			})
+			*last = message.Seq
+		}
+		flusher.Flush()
+		return nil
+	}
 }
 
 // eventName is the wire event name; the stream stays plural in queries.

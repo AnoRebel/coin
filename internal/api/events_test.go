@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anorebel/anorebelcoin/internal/channel"
 	"github.com/anorebel/anorebelcoin/internal/protocol"
 )
 
@@ -156,6 +157,7 @@ func TestEventStreamValidation(t *testing.T) {
 	e := New(n, Config{})
 	for _, path := range []string{
 		"/v1/events?stream=messages",
+		"/v1/events?stream=messages&channel=team",
 		"/v1/events?from=abc",
 		"/v1/events?stream=transactions&from=1-x",
 		"/v1/events?stream=transactions&from=1--1",
@@ -173,6 +175,85 @@ func TestEventStreamValidation(t *testing.T) {
 			t.Fatalf("%s code = %q", path, body.Error.Code)
 		}
 	}
+}
+
+func TestMessageStreamReplaysAndExpires(t *testing.T) {
+	n, _ := newTestNode(t, 0)
+	now := time.Unix(1000, 0)
+	store, err := channel.New(channel.Config{
+		Retention: 10 * time.Second,
+		Now:       func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		if _, _, err := store.Publish(channel.Message{
+			Channel: "team", Sender: "alice", ClientID: id, Text: id,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := New(n, Config{Messages: store})
+
+	inclusive := replaySSE(t, e, "/v1/events?stream=messages&channel=team&from=2", nil)
+	if !strings.Contains(inclusive, "id: 2\nevent: message") || !strings.Contains(inclusive, "id: 3\nevent: message") {
+		t.Fatalf("message replay = %s", inclusive)
+	}
+	if strings.Contains(inclusive, "id: 1\nevent: message") {
+		t.Fatalf("inclusive replay started before from: %s", inclusive)
+	}
+	header := replaySSE(t, e, "/v1/events?stream=messages&channel=team", map[string]string{"Last-Event-ID": "1"})
+	if !strings.Contains(header, "id: 2\nevent: message") || strings.Contains(header, "id: 1\nevent: message") {
+		t.Fatalf("header replay = %s", header)
+	}
+
+	now = now.Add(20 * time.Second)
+	expired := replaySSE(t, e, "/v1/events?stream=messages&channel=team", map[string]string{"Last-Event-ID": "1"})
+	if !strings.Contains(expired, "event: cursor_expired") || !strings.Contains(expired, `"earliest":"0"`) {
+		t.Fatalf("expired cursor = %s", expired)
+	}
+}
+
+func TestLiveMessageStream(t *testing.T) {
+	n, _ := newTestNode(t, 0)
+	store, err := channel.New(channel.Config{Retention: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(n, Config{Messages: store}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		server.URL+"/v1/events?stream=messages&channel=team", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if _, _, err := store.Publish(channel.Message{
+		Channel: "team", Sender: "alice", ClientID: "live", Text: "hello",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reader := bufio.NewReader(response.Body)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(line) == "event: message" {
+			return
+		}
+	}
+	t.Fatal("no message event")
 }
 
 func TestLiveBlockStream(t *testing.T) {

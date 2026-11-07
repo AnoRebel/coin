@@ -1442,8 +1442,8 @@
         "tags": [
           "Events"
         ],
-        "summary": "Server-sent events for finalized blocks",
-        "description": "Streams `text/event-stream`. `stream=blocks` (default) emits one `block` event per finalized block; `stream=transactions` emits a `transaction` event with the receipt for each transaction in a block. Event ids are the block height, or `<height>-<index>` for transactions. Resume with `Last-Event-ID` (exclusive) or `from` (inclusive block height). A cursor older than the retained window gets a `cursor_expired` event carrying the earliest usable cursor. Message streams are not emitted until the workspace messaging subsystem exists.",
+        "summary": "Server-sent events for finalized blocks, transactions, and channel messages",
+        "description": "Streams `text/event-stream`. `stream=blocks` (default) emits one `block` event per finalized block; `stream=transactions` emits a `transaction` event with the receipt for each transaction in a block; `stream=messages` emits channel messages and requires `channel`. Block event ids are the block height, transaction ids are `<height>-<index>`, and message ids are sequence numbers. Resume with `Last-Event-ID` (exclusive) or `from` (inclusive). A cursor older than the retained window gets a `cursor_expired` event carrying the earliest usable cursor.",
         "parameters": [
           {
             "name": "stream",
@@ -1454,16 +1454,26 @@
               "type": "string",
               "enum": [
                 "blocks",
-                "transactions"
+                "transactions",
+                "messages"
               ],
               "default": "blocks"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "description": "Channel name for `stream=messages`; required for that stream.",
+            "schema": {
+              "type": "string"
             }
           },
           {
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Inclusive block height to replay from; `0` replays the retained window.",
+            "description": "Inclusive block height or message sequence to replay from; `0` replays the retained window.",
             "schema": {
               "type": "integer",
               "format": "uint64"
@@ -1481,7 +1491,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Event stream of `block` or `transaction` events, optionally preceded by `cursor_expired`.",
+            "description": "Event stream of `block`, `transaction`, or `message` events, optionally preceded by `cursor_expired`.",
             "content": {
               "text/event-stream": {
                 "schema": {
