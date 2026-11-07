@@ -492,6 +492,9 @@ logged. Access stops at `until` without any manual cleanup.
 - Session keys are scoped library grants: an app gets named scopes, allowed
   assets, a cumulative spending limit, and an expiry. A watch-only account can
   read balances and history but cannot sign. Neither is exposed in `arned` yet.
+- External signers use one interface: the device displays the canonical
+  network, recipient, asset, amount, fee, nonce, and expiry, then signs those
+  exact bytes. A device integration is not shipped; the adapter contract is.
 
 ## 13. What to do when something fails
 

@@ -1,0 +1,47 @@
+{
+  "details": {
+    "network": "arce:mainnet",
+    "account": "arce:mainnet:team",
+    "to": "arce:mainnet:supplier",
+    "asset": "arce",
+    "amount": 1000000,
+    "fee": 1000,
+    "fee_asset": "arce",
+    "nonce": 7,
+    "expires_at": 1700000000,
+    "memo": "invoice 42"
+  },
+  "payload": "arne-sign-v1\nnetwork: arce:mainnet\naccount: arce:mainnet:team\nto: arce:mainnet:supplier\nasset: arce\namount: 1000000\nfee: 1000 arce\nnonce: 7\nexpires: 1700000000\nmemo: \"invoice 42\"",
+  "invalid": [
+    {
+      "name": "empty recipient",
+      "overrides": {
+        "to": ""
+      }
+    },
+    {
+      "name": "zero amount",
+      "overrides": {
+        "amount": 0
+      }
+    },
+    {
+      "name": "zero expiry",
+      "overrides": {
+        "expires_at": 0
+      }
+    },
+    {
+      "name": "control in asset",
+      "overrides": {
+        "asset": "arce\n"
+      }
+    },
+    {
+      "name": "oversize memo",
+      "overrides": {
+        "memo": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}

@@ -59,6 +59,7 @@ make test
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
+| `internal/signer` | Common software/hardware signer interface with human-readable confirmation |
 | `internal/session` | Scoped, expiring session keys and watch-only accounts |
 | `internal/recovery` | Guardian threshold recovery with a timelock and owner cancellation |
 | `internal/channel` | Idempotent team channel messages, catch-up cursors, and retention |
@@ -1916,6 +1917,35 @@ thresholds, expiry, revocation, ratification and audit.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.
+
+## External signers
+
+`internal/signer` (mirrored by `python/arne/signer.py`) is the common signing
+interface:
+
+```go
+signature, err := hardware.Sign(signer.Details{
+    Network: "arce:mainnet", Account: account, To: recipient,
+    Asset: "arce", Amount: 1_000_000, Fee: 1_000, FeeAsset: "arce",
+    Nonce: 7, ExpiresAt: height,
+})
+```
+
+- `Details` carries only display-safe fields. `Human` renders the lines a
+  device shows, and `Payload` signs exactly `"arne-sign-v1\n" + Human`, so the
+  device signs what the user reviewed.
+- `Software` holds an in-process seed. `Hardware` wraps a `Device` transport:
+  it checks the suite, displays the details, requests a signature over the
+  payload, and verifies the result against the device public key. The device
+  receives no account seed.
+- An unsupported suite or oversized payload returns `unsupported`; a rejected
+  display returns `display`; a signature that does not verify returns
+  `signature`.
+- `spec/vectors/signer.json` fixes the canonical payload and rejection cases
+  for both implementations.
+
+`shortcut:` no hardware transport or WebAuthn bridge is included. `Hardware`
+is the adapter contract a device integration fills in.
 
 ## Session keys and watch-only accounts
 

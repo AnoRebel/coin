@@ -167,7 +167,7 @@
 - [x] 15.2 Implement HD accounts, multiple accounts, and mnemonic restore; verify cross-implementation derivation
 - [ ] 15.3 Implement passkey/WebAuthn scoped authorization; verify enrollment, signing, and wrong-origin rejection
 - [x] 15.4 Implement social recovery with guardian threshold, timelock, and cancellation; verify threshold and cancellation
-- [ ] 15.5 Implement hardware/external signer interface and human-readable confirmation; verify supported and unsupported signers
+- [x] 15.5 Implement hardware/external signer interface and human-readable confirmation; verify supported and unsupported signers
 - [x] 15.6 Implement scoped, expiring session keys and watch-only accounts; verify scope escalation and signing rejection
 - [x] 15.7 Implement `arce:`/`arne:` payment URIs with strict validation and inert memo handling; verify valid, mismatch, and malicious memo
 - [x] 15.8 Implement transaction previews and address-poisoning/unknown-asset warnings; verify preview and warning cases
