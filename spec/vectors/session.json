@@ -1,0 +1,192 @@
+{
+  "note": "Seeds are test-only inputs; implementations derive Ed25519 keys from them.",
+  "account": "arce:mainnet:team",
+  "session_seed": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+  "other_seed": "909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+  "cases": [
+    {
+      "name": "read within scope",
+      "grant": {
+        "scopes": [
+          "read"
+        ],
+        "expires_at": 100
+      },
+      "request": {
+        "scope": "read",
+        "at": 10
+      }
+    },
+    {
+      "name": "scope escalation",
+      "grant": {
+        "scopes": [
+          "read"
+        ],
+        "expires_at": 100
+      },
+      "request": {
+        "scope": "transfer",
+        "asset": "arce",
+        "amount": 1,
+        "at": 10
+      },
+      "error": "scope"
+    },
+    {
+      "name": "expiry is exclusive",
+      "grant": {
+        "scopes": [
+          "read"
+        ],
+        "expires_at": 100
+      },
+      "request": {
+        "scope": "read",
+        "at": 100
+      },
+      "error": "expired"
+    },
+    {
+      "name": "wrong account",
+      "grant": {
+        "scopes": [
+          "read"
+        ],
+        "expires_at": 100
+      },
+      "request": {
+        "account": "arce:mainnet:other",
+        "scope": "read",
+        "at": 10
+      },
+      "error": "account"
+    },
+    {
+      "name": "asset not granted",
+      "grant": {
+        "scopes": [
+          "transfer"
+        ],
+        "assets": [
+          "arce"
+        ],
+        "limit": 100,
+        "expires_at": 100
+      },
+      "request": {
+        "scope": "transfer",
+        "asset": "usdc",
+        "amount": 1,
+        "at": 10
+      },
+      "error": "asset"
+    },
+    {
+      "name": "zero amount",
+      "grant": {
+        "scopes": [
+          "transfer"
+        ],
+        "assets": [
+          "arce"
+        ],
+        "limit": 100,
+        "expires_at": 100
+      },
+      "request": {
+        "scope": "transfer",
+        "asset": "arce",
+        "amount": 0,
+        "at": 10
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "cumulative limit",
+      "grant": {
+        "scopes": [
+          "transfer"
+        ],
+        "assets": [
+          "arce"
+        ],
+        "limit": 100,
+        "expires_at": 100
+      },
+      "requests": [
+        {
+          "scope": "transfer",
+          "asset": "arce",
+          "amount": 40,
+          "at": 10
+        },
+        {
+          "scope": "transfer",
+          "asset": "arce",
+          "amount": 40,
+          "at": 20
+        },
+        {
+          "scope": "transfer",
+          "asset": "arce",
+          "amount": 30,
+          "at": 30
+        }
+      ],
+      "error": "limit",
+      "expect_remaining": 20
+    }
+  ],
+  "invalid_grants": [
+    {
+      "name": "no scopes",
+      "scopes": [],
+      "expires_at": 100
+    },
+    {
+      "name": "unknown scope",
+      "scopes": [
+        "admin"
+      ],
+      "expires_at": 100
+    },
+    {
+      "name": "spending without assets",
+      "scopes": [
+        "transfer"
+      ],
+      "limit": 10,
+      "expires_at": 100
+    },
+    {
+      "name": "spending without limit",
+      "scopes": [
+        "transfer"
+      ],
+      "assets": [
+        "arce"
+      ],
+      "expires_at": 100
+    },
+    {
+      "name": "zero expiry",
+      "scopes": [
+        "read"
+      ],
+      "expires_at": 0
+    },
+    {
+      "name": "duplicate asset",
+      "scopes": [
+        "transfer"
+      ],
+      "assets": [
+        "arce",
+        "arce"
+      ],
+      "limit": 10,
+      "expires_at": 100
+    }
+  ]
+}

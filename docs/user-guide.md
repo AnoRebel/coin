@@ -489,6 +489,9 @@ logged. Access stops at `until` without any manual cleanup.
   request, a threshold of at least two makes it ready, a delay must pass, and
   the owner can cancel before execution. The node does not yet change an
   account key from a recovery, and there is no CLI or REST route.
+- Session keys are scoped library grants: an app gets named scopes, allowed
+  assets, a cumulative spending limit, and an expiry. A watch-only account can
+  read balances and history but cannot sign. Neither is exposed in `arned` yet.
 
 ## 13. What to do when something fails
 

@@ -59,6 +59,7 @@ make test
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
+| `internal/session` | Scoped, expiring session keys and watch-only accounts |
 | `internal/recovery` | Guardian threshold recovery with a timelock and owner cancellation |
 | `internal/channel` | Idempotent team channel messages, catch-up cursors, and retention |
 | `internal/storage` | Pebble and in-memory stores |
@@ -1915,6 +1916,42 @@ thresholds, expiry, revocation, ratification and audit.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.
+
+## Session keys and watch-only accounts
+
+`internal/session` (mirrored by `python/arne/session.py`) enforces delegated
+wallet authority:
+
+```go
+session, err := session.New(session.Grant{
+    Account: account, PublicKey: sessionKeyHex,
+    Scopes: []session.Scope{session.ScopeTransfer},
+    Assets: []string{"arce"}, Limit: 100_000, ExpiresAt: height,
+})
+signature, err := session.Sign(seed, payload, session.Request{
+    Account: account, Scope: session.ScopeTransfer,
+    Asset: "arce", Amount: 1000, At: height,
+})
+```
+
+- A grant names one account, one session public key, explicit scopes, allowed
+  assets, a cumulative limit, and an expiry. Spending scopes require assets and
+  a positive limit.
+- `Authorize` rejects a request for another account, an ungranted scope, an
+  ungranted asset, a zero amount, an amount above the remaining limit, or a
+  request at or after the expiry. A successful spending request consumes the
+  limit.
+- `Sign` first checks that the seed derives the granted session key, then
+  authorizes, then signs. A wrong key does not consume the limit.
+- `Account` is a watch-only view by default choice: `WatchOnly` accounts always
+  return `watch_only` from `Sign`; a normal account checks that the seed matches
+  its public key.
+- `spec/vectors/session.json` covers scope escalation, expiry, wrong account,
+  asset scope, zero amount, cumulative limits, and invalid grants.
+
+`shortcut:` grants and spent limits are in memory and are not stored in the
+ledger. A restart forgets a session, and enforcement happens only where the
+library is called.
 
 ## Social recovery
 
