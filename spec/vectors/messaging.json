@@ -1,0 +1,186 @@
+{
+  "identity": [
+    {
+      "channel": "team",
+      "sender": "alice",
+      "client_id": "c1",
+      "id": "052ac92e7525a88fcca5f5b950c2b0cc"
+    },
+    {
+      "channel": "team",
+      "sender": "bob",
+      "client_id": "retry-1",
+      "id": "77c3d708f084fc3bcbbc268c6af21805"
+    },
+    {
+      "channel": "general",
+      "sender": "carol",
+      "client_id": "invoice_42",
+      "id": "519901f935de32d1663abcc490f7d21b"
+    }
+  ],
+  "valid": [
+    {
+      "name": "text",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "t1",
+        "text": "hello"
+      }
+    },
+    {
+      "name": "payment",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "p1",
+        "payment": "040ffd5925d40e11c67b7238a7fc9957850b8b9a46e9729fab88c24d6a98aff2"
+      }
+    },
+    {
+      "name": "notice",
+      "message": {
+        "channel": "team",
+        "sender": "ops",
+        "client_id": "n1",
+        "notice": "payroll approved"
+      }
+    },
+    {
+      "name": "file pointer",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "f1",
+        "file": {
+          "hash": "3b9c358f36f0a31b6ad3e14f309c7cf198ac9246e8316f9ce543d5b19ac02b80",
+          "pointer": "ipfs://bafy.../invoice.pdf",
+          "size": 1234,
+          "name": "invoice.pdf"
+        }
+      }
+    },
+    {
+      "name": "ciphertext",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "e1",
+        "kind": "text",
+        "ciphertext": "aGVsbG8="
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty channel",
+      "message": {
+        "channel": "",
+        "sender": "alice",
+        "client_id": "x",
+        "text": "hi"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "empty sender",
+      "message": {
+        "channel": "team",
+        "sender": "",
+        "client_id": "x",
+        "text": "hi"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "empty client id",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "",
+        "text": "hi"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "missing content",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "payment and file",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x",
+        "payment": "040ffd5925d40e11c67b7238a7fc9957850b8b9a46e9729fab88c24d6a98aff2",
+        "file": {
+          "hash": "3b9c358f36f0a31b6ad3e14f309c7cf198ac9246e8316f9ce543d5b19ac02b80",
+          "pointer": "ipfs://x"
+        }
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "bad payment reference",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x",
+        "payment": "abc"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "bad file hash",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x",
+        "file": {
+          "hash": "xyz",
+          "pointer": "ipfs://x"
+        }
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "ciphertext with plaintext",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x",
+        "kind": "text",
+        "ciphertext": "aGVsbG8=",
+        "text": "hi"
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "unknown kind",
+      "message": {
+        "channel": "team",
+        "sender": "alice",
+        "client_id": "x",
+        "kind": "voice",
+        "ciphertext": "aGVsbG8="
+      },
+      "error": "invalid"
+    },
+    {
+      "name": "control character in sender",
+      "message": {
+        "channel": "team",
+        "sender": "alice\n",
+        "client_id": "x",
+        "text": "hi"
+      },
+      "error": "invalid"
+    }
+  ]
+}

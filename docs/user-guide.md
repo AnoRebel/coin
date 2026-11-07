@@ -500,3 +500,25 @@ logged. Access stops at `until` without any manual cleanup.
 - `WRONG_NETWORK`: address or transaction built for another network.
 
 Full error table: [api-reference.md](api-reference.md#error-codes).
+
+## 14. Team channels (developer preview)
+
+Team channels are not yet available from the `arned` CLI or the REST API. The
+message log exists as `internal/channel` in Go and `arne.channel` in Python for
+embedding and testing.
+
+What the log guarantees today:
+
+- A sender retries with the same client ID and the message is stored once. The
+  retry returns the original message instead of creating a duplicate.
+- Members page through messages with a sequence cursor and can catch up after
+  being offline. A cursor older than the channel retention window fails with
+  `cursor_expired`, so the member restarts from the oldest available message.
+- A message can carry text, a payment reference, a system notice, or a file
+  pointer. File bytes stay off the channel; only the content hash and a
+  retrieval pointer are stored.
+- Retention is per channel. Expired messages are no longer returned.
+
+Channels are **not end-to-end encrypted** yet: MLS group state (task 10.6) is
+not implemented, and the log is in memory. Do not send sensitive content or
+treat channels as durable until that work lands.

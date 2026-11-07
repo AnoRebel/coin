@@ -59,6 +59,7 @@ make test
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
+| `internal/channel` | Idempotent team channel messages, catch-up cursors, and retention |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
 | `internal/p2p` | Peer policy: network identity, discovery mode, allowlists, handshake versions |
@@ -768,6 +769,47 @@ owner. The API wraps payment submit/read and workspace routes with
 `shortcut:` the audit log is held in memory as well as appended to disk; stream
 it when audit volume makes that costly. Membership storage is a JSON file, not
 an external IAM system.
+
+## Team channels and messages
+
+`internal/channel` (mirrored by `python/arne/channel.py`) is the channel message
+log. It is a library: the node does not yet expose channel routes or a CLI.
+
+```go
+store, err := channel.New(channel.Config{Retention: 30 * 24 * time.Hour})
+stored, duplicate, err := store.Publish(channel.Message{
+    Channel: "team", Sender: "alice", ClientID: "invoice-42", Text: "sent",
+})
+page, err := store.Read("team", 0, 100) // after=0 starts at the oldest
+```
+
+- A message ID is the first 16 bytes of `SHA-256("arne-message-v1\0" || ...)`
+  over the length-prefixed channel, sender, and client ID. Retrying with the
+  same client ID returns the stored message (`duplicate` is true) instead of
+  appending. Reusing a client ID with different content is
+  `ErrConflict` / `conflict`.
+- Plaintext messages carry text, a payment reference, a system notice, or a
+  file pointer. Payment references and file hashes are 64 lowercase hex
+  characters. The file pointer carries only a hash and retrieval pointer; the
+  store never holds file bytes. A notice is marked `system` and a message may
+  carry a payment or a file, not both.
+- Encrypted channels set `Ciphertext` (up to 64 KiB) and leave the plaintext
+  fields empty. The store does not encrypt; MLS (10.6) supplies the ciphertext.
+- Ordering is a per-channel sequence. `Read(channel, after, limit)` returns
+  messages after the cursor. Delivery is at-least-once because the log is
+  append-only until retention and a reader can fetch the same page again.
+  `Subscribe` returns best-effort sequence hints, not a durable queue; a reader
+  that misses a hint catches up with `Read`.
+- Retention is per channel (`SetRetention`) with a store default. Expired
+  messages are never returned, `Prune` drops them, and a cursor that missed
+  them returns `ErrExpired` / `cursor_expired`. Restart from the oldest
+  available sequence.
+- `spec/vectors/messaging.json` holds ID, payload, and rejection cases used by
+  both implementations.
+
+`shortcut:` the log is in memory, subscriptions are hints, and no MLS group
+state is implemented. Do not describe channels as end-to-end encrypted or
+durable until 10.6 lands and the store is backed by persistent storage.
 
 ## Sanctions screening
 
