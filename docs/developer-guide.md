@@ -58,6 +58,7 @@ make test
 | `internal/slashing` | Equivocation verification, downtime penalties, reporter/burn/treasury splits |
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
+| `internal/audit` | Append-only hash-chained audit records with verified export |
 | `internal/workspace` | Roles, permissions, and the audit log |
 | `internal/passkey` | WebAuthn assertion verification with scope-bound challenges |
 | `internal/signer` | Common software/hardware signer interface with human-readable confirmation |
@@ -814,6 +815,39 @@ page, err := store.Read("team", 0, 100) // after=0 starts at the oldest
 `shortcut:` the log is in memory, subscriptions are hints, and no MLS group
 state is implemented. Do not describe channels as end-to-end encrypted or
 durable until 10.6 lands and the store is backed by persistent storage.
+
+## Hash-chained audit logs
+
+`internal/audit` (mirrored by `python/arne/audit.py`) is an append-only log
+where each record commits to the previous hash:
+
+```go
+log := audit.New(nil)
+record, err := log.Append(audit.Entry{
+    Actor: "alice", Action: "payment.write", Target: "tx-42", Result: "allow",
+})
+err = log.Export(w)            // one JSON record per line
+reopened, err := audit.Open(r, nil) // verifies the whole chain first
+```
+
+- A record hash is `SHA-256("arne-audit-v1\0" || prev || seq || time ||
+  actor || action || target || result || detail)`. The link is the 32 raw bytes
+  of the previous hash; the first record links to 64 zeros (`Genesis`). Every
+  string is length-prefixed in UTF-8 bytes.
+- The log assigns the sequence and time. Actor, action, and result are
+  required display-safe labels; target and detail are optional.
+- `Verify` checks sequence, link, and hash in that order, so a changed field is
+  `hash`, a changed link is `chain`, and a removed or reordered record is
+  `sequence`. A changed `prev` can also leave the sequence intact; the link
+  check catches it before the hash is recomputed.
+- `Export` writes newline-delimited JSON and `Open` refuses a chain that does
+  not verify. Reopened logs continue after the imported head.
+- `spec/vectors/audit.json` fixes three records, the head hash, and nine
+  tampering cases for both implementations.
+
+`shortcut:` the workspace audit JSONL is not migrated to this chain, and the
+chain is unsigned. Publish or sign `Head` if you need to detect truncation of
+the newest records; verification alone cannot see a shorter valid prefix.
 
 ## Sanctions screening
 

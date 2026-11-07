@@ -184,7 +184,7 @@
 - [ ] 16.1 Implement metrics for consensus, mempool, peers, storage, API, connectors, and resources; verify scrape output and stable labels
 - [ ] 16.2 Implement W3C Trace Context propagation and privacy-safe spans; verify end-to-end trace and secret redaction
 - [ ] 16.3 Implement structured correlated logs with runtime level changes and redaction; verify correlation and redaction
-- [ ] 16.4 Implement append-only hash-chained audit logs with export; verify tamper detection
+- [x] 16.4 Implement append-only hash-chained audit logs with export; verify tamper detection
 - [ ] 16.5 Ship dashboards, alert rules, runbook links, and SLO reports; verify finality, liveness, and expiry alerts
 - [ ] 16.6 Protect debug/profiling endpoints; verify production default and authorized access
 - [ ] 16.7 Implement telemetry minimization, consortium opt-out, and aggregation thresholds; verify no memo or re-identification leakage

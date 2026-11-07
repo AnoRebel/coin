@@ -478,6 +478,12 @@ curl -X POST -H "Authorization: Bearer key-alice" \
 Reads outside that window or asset fail with `AUDIT_SCOPE`, and the attempt is
 logged. Access stops at `until` without any manual cleanup.
 
+Audit records can be exported as a hash-chained log: each record commits to the
+previous one, so an edited, reordered, or removed entry fails verification.
+This export is a library today (`internal/audit`, `arne.audit`); the workspace
+JSONL file is not chained yet. Anchoring the newest hash somewhere external is
+what detects truncation.
+
 ## 12. Recovery and key safety
 
 - Restore with the mnemonic and the same network ID and account index.

@@ -1,0 +1,373 @@
+{
+  "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+  "inputs": [
+    {
+      "actor": "alice",
+      "action": "payment.write",
+      "target": "tx-42",
+      "result": "allow",
+      "detail": "invoice 42"
+    },
+    {
+      "actor": "bob",
+      "action": "member.manage",
+      "target": "carol",
+      "result": "deny",
+      "detail": "role change rejected"
+    },
+    {
+      "actor": "auditor",
+      "action": "audit.read",
+      "target": "grant-7",
+      "result": "allow",
+      "detail": ""
+    }
+  ],
+  "records": [
+    {
+      "seq": 1,
+      "time": 1001,
+      "actor": "alice",
+      "action": "payment.write",
+      "target": "tx-42",
+      "result": "allow",
+      "detail": "invoice 42",
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+    },
+    {
+      "seq": 2,
+      "time": 1002,
+      "actor": "bob",
+      "action": "member.manage",
+      "target": "carol",
+      "result": "deny",
+      "detail": "role change rejected",
+      "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+      "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+    },
+    {
+      "seq": 3,
+      "time": 1003,
+      "actor": "auditor",
+      "action": "audit.read",
+      "target": "grant-7",
+      "result": "allow",
+      "detail": "",
+      "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+      "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+    }
+  ],
+  "head": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a",
+  "tampered": [
+    {
+      "name": "changed detail",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "invoice 43",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "name": "changed actor",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "mallory",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "name": "changed time",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 3,
+          "time": 9999,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "name": "changed hash",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "name": "changed link",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "chain"
+    },
+    {
+      "name": "changed sequence",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 7,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "sequence"
+    },
+    {
+      "name": "dropped middle",
+      "records": [
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "sequence"
+    },
+    {
+      "name": "reordered",
+      "records": [
+        {
+          "seq": 2,
+          "time": 1002,
+          "actor": "bob",
+          "action": "member.manage",
+          "target": "carol",
+          "result": "deny",
+          "detail": "role change rejected",
+          "prev": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f",
+          "hash": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7"
+        },
+        {
+          "seq": 1,
+          "time": 1001,
+          "actor": "alice",
+          "action": "payment.write",
+          "target": "tx-42",
+          "result": "allow",
+          "detail": "invoice 42",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "44be4e5ac14129511141752bd0bf697c168c01f8b45ff4e656e1b5eb72357e4f"
+        },
+        {
+          "seq": 3,
+          "time": 1003,
+          "actor": "auditor",
+          "action": "audit.read",
+          "target": "grant-7",
+          "result": "allow",
+          "detail": "",
+          "prev": "ca776c2823ff3138b0fa47edfe3a0a8ee8f17609ad815faddd4d057389ad61c7",
+          "hash": "386a0cc8c70294c24dcb3f23108e19e456a1adf463241d95ada7dc6441730b8a"
+        }
+      ],
+      "error": "sequence"
+    },
+    {
+      "name": "edited exported text",
+      "jsonl_edit": [
+        "alice",
+        "mallory"
+      ],
+      "error": "hash"
+    }
+  ]
+}
