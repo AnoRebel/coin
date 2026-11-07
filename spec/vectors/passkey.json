@@ -1,0 +1,538 @@
+{
+  "challenges": [
+    {
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "challenge": "G5y1kl_cizErN8V6up2jknVW_AXg5ShkxcwxRyOHnCo"
+    },
+    {
+      "scope": {
+        "purpose": "transaction",
+        "payload": "d020570c63c69a647ce53c495d774e8a49a5c246bade9625582656955dbf4115",
+        "expires_at": 1700000600,
+        "nonce": "tx-42"
+      },
+      "challenge": "3drLw9mIr_hrn8KC_30VNuWaPrbRMb_aMYU8guK9ukk"
+    },
+    {
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1,
+        "nonce": "n"
+      },
+      "challenge": "CzSqmZkhBZvQztoSv4fr1A1iZHuidLN_Nl6JLtaQaq0"
+    }
+  ],
+  "invalid_scopes": [
+    {
+      "name": "unknown purpose",
+      "scope": {
+        "purpose": "payment",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "transaction without payload",
+      "scope": {
+        "purpose": "transaction",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "session with payload",
+      "scope": {
+        "purpose": "session",
+        "payload": "d020570c63c69a647ce53c495d774e8a49a5c246bade9625582656955dbf4115",
+        "expires_at": 1700000600,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "uppercase payload",
+      "scope": {
+        "purpose": "transaction",
+        "payload": "D020570C63C69A647CE53C495D774E8A49A5C246BADE9625582656955DBF4115",
+        "expires_at": 1700000600,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "short payload",
+      "scope": {
+        "purpose": "transaction",
+        "payload": "abcd",
+        "expires_at": 1700000600,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "zero expiry",
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 0,
+        "nonce": "n"
+      }
+    },
+    {
+      "name": "empty nonce",
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": ""
+      }
+    },
+    {
+      "name": "control in nonce",
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "a\n"
+      }
+    }
+  ],
+  "invalid_credentials": [
+    {
+      "name": "empty id",
+      "credential": {
+        "id": "",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "id with padding",
+      "credential": {
+        "id": "cred==",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "empty account",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "origin with path",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net/app",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "origin without scheme",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "unknown algorithm",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "rs256",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "short ed25519 key",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "abcd",
+        "user_verification": true,
+        "counter": 0
+      }
+    },
+    {
+      "name": "off-curve es256 key",
+      "credential": {
+        "id": "cred-es256",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "es256",
+        "public_key": "0400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "user_verification": false,
+        "counter": 0
+      }
+    },
+    {
+      "name": "ed25519 key on es256",
+      "credential": {
+        "id": "cred-es256",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "es256",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": false,
+        "counter": 0
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "session with Ed25519",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "oF+I8bIr3JadtTUVNGYLZpZkg9H+4st3/vQxU68/jjlLp6mbzndIe85m9HVgDNJX2nfJ38isrrveHW1737ULAA==",
+      "expect_counter": 1
+    },
+    {
+      "name": "transaction with ES256",
+      "credential": {
+        "id": "cred-es256",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "es256",
+        "public_key": "049fad84aeae08bbef7f010014d82cef6a09de2b0cf871b5ce0c4f1d13a59a593407cb45769f1070e2c2470fe5b1bfe63133c0b0cdc64ea4bf3791a8ec2a07fd4f",
+        "user_verification": false,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "transaction",
+        "payload": "d020570c63c69a647ce53c495d774e8a49a5c246bade9625582656955dbf4115",
+        "expires_at": 1700000600,
+        "nonce": "tx-42"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiM2RyTHc5bUlyX2hybjhLQ18zMFZOdVdhUHJiUk1iX2FNWVU4Z3VLOXVrayIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "MEUCIEcM3+ctj8H3RBr29UbvIXeNpKH/i9UYJKWkvUiBIGiiAiEA8xN38YkfojtNLzH6cixrvP6OxLXhmYg1C8LkGLjRlSg=",
+      "expect_counter": 1
+    },
+    {
+      "name": "wrong origin",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vZXZpbC5leGFtcGxlIn0=",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "nHu1KQ7hI/lys1LjU3BlgMf7Nogbm9ORtybGvgFZL0Ybz9AvcbU7wypu1/jamCaanUMFZhO5b8GflFc14HZwBg==",
+      "error": "origin"
+    },
+    {
+      "name": "wrong challenge",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiM2RyTHc5bUlyX2hybjhLQ18zMFZOdVdhUHJiUk1iX2FNWVU4Z3VLOXVrayIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "TcTO5M+AHppb+2E/q4EGxcdWVg8VihCFFlDj783YNia3+GH18zNYI3avytpfu+b33p7lQWKj0d6xWnpJctCCBg==",
+      "error": "challenge"
+    },
+    {
+      "name": "expired scope",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000000,
+        "nonce": "login-2"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiaWFMdDgzMmpEYVZpMVV0bmxaSzJGZDktMGxQSENqWnJoNy11aUUwNXFfOCIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "FkEz/LZxWEznCSJFbwW4TlQZVjeaGxCQGYKWCxXV154L6Jolxxs9pw+6f+NXDp+Sl4eyNTvvfATU3x0AG9VpDw==",
+      "error": "expired"
+    },
+    {
+      "name": "creation ceremony replayed",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "1DcxQ5i47YyduKLQJJ/4PlyQsI5f/cjvV0fNWWw6P9WBdaHevujLaLGQdqU59IfvkzmmyifitGRxX0n4RyYfCA==",
+      "error": "client_data"
+    },
+    {
+      "name": "malformed client data",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "e25vdCBqc29u",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "TSzM8co9BMOlxZ8dRUmZgkVTFm3eDPU/5mhK453EEUQqcGg701V3UAvgd8T1vGC6RpeTfx3qmzbcW7nf9Vs1Bw==",
+      "error": "client_data"
+    },
+    {
+      "name": "wrong relying party",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "nBgN4M1pnueIl8R8/bPn7h11kG4xt3RqR0fepTaQmDcFAAAAAQ==",
+      "signature": "cbsbwdtjfismZY7tzX8CmTMZ0eWH79/Xc9OHjnzW93qTj/Q2ycLktgdnr8rRshZkMEbzs1iCmZn5iufbALIsCQ==",
+      "error": "rp_id"
+    },
+    {
+      "name": "user verification missing",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oBAAAAAQ==",
+      "signature": "UcTOvsLIoxOrvModldExtAA5kaKVkg2+OunThmlC7xVafTwIapf/6lbj77goyT/WbN6h7v6wUcGirrtALA3xDg==",
+      "error": "flags"
+    },
+    {
+      "name": "user presence missing",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oEAAAAAQ==",
+      "signature": "BfcbM2lDk7/PTQXUFdI9t3rhn5pBP5CUaeUwCUQBORkfy8wBwVq3gs9ZvDnS9rjeF+XskEDLAEfcr10mgRv6DA==",
+      "error": "flags"
+    },
+    {
+      "name": "counter did not advance",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 1
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "oF+I8bIr3JadtTUVNGYLZpZkg9H+4st3/vQxU68/jjlLp6mbzndIe85m9HVgDNJX2nfJ38isrrveHW1737ULAA==",
+      "error": "counter"
+    },
+    {
+      "name": "signature mutated",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "session",
+        "payload": "",
+        "expires_at": 1700000600,
+        "nonce": "login-1"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRzV5MWtsX2NpekVyTjhWNnVwMmprblZXX0FYZzVTaGt4Y3d4UnlPSG5DbyIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "X1+I8bIr3JadtTUVNGYLZpZkg9H+4st3/vQxU68/jjlLp6mbzndIe85m9HVgDNJX2nfJ38isrrveHW1737ULAA==",
+      "error": "signature"
+    },
+    {
+      "name": "payload swapped after signing",
+      "credential": {
+        "id": "cred-ed25519",
+        "account": "arce:mainnet:team",
+        "rpid": "coin.anorebel.net",
+        "origin": "https://coin.anorebel.net",
+        "alg": "ed25519",
+        "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "user_verification": true,
+        "counter": 0
+      },
+      "scope": {
+        "purpose": "transaction",
+        "payload": "d020570c63c69a647ce53c495d774e8a49a5c246bade9625582656955dbf4115",
+        "expires_at": 1700000600,
+        "nonce": "tx-42"
+      },
+      "at": 1700000100,
+      "client_data": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiM2RyTHc5bUlyX2hybjhLQ18zMFZOdVdhUHJiUk1iX2FNWVU4Z3VLOXVrayIsIm9yaWdpbiI6Imh0dHBzOi8vY29pbi5hbm9yZWJlbC5uZXQifQ==",
+      "authenticator_data": "kvbj9jrMlWWkIzOR3u6eeKlzC2fB12FrAXd4H4LtA1oFAAAAAQ==",
+      "signature": "oF+I8bIr3JadtTUVNGYLZpZkg9H+4st3/vQxU68/jjlLp6mbzndIe85m9HVgDNJX2nfJ38isrrveHW1737ULAA==",
+      "error": "signature"
+    }
+  ]
+}

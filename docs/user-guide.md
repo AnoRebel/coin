@@ -495,6 +495,13 @@ logged. Access stops at `until` without any manual cleanup.
 - External signers use one interface: the device displays the canonical
   network, recipient, asset, amount, fee, nonce, and expiry, then signs those
   exact bytes. A device integration is not shipped; the adapter contract is.
+- Passkeys authorize a scoped session or one transaction. The wallet asks the
+  authenticator to sign a challenge derived from that scope, so an approval
+  cannot be reused for another payment. A different site origin, a different
+  relying party, an expired request, or a replayed signature counter is
+  rejected. Passkeys are a wallet library today; no CLI or web route is wired.
+  Enrollment parses the credential fields; attestation formats are not
+  implemented.
 
 ## 13. What to do when something fails
 

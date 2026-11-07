@@ -59,6 +59,7 @@ make test
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
+| `internal/passkey` | WebAuthn assertion verification with scope-bound challenges |
 | `internal/signer` | Common software/hardware signer interface with human-readable confirmation |
 | `internal/session` | Scoped, expiring session keys and watch-only accounts |
 | `internal/recovery` | Guardian threshold recovery with a timelock and owner cancellation |
@@ -1946,6 +1947,42 @@ signature, err := hardware.Sign(signer.Details{
 
 `shortcut:` no hardware transport or WebAuthn bridge is included. `Hardware`
 is the adapter contract a device integration fills in.
+
+## Passkey authorization
+
+`internal/passkey` (mirrored by `python/arne/passkey.py`) verifies WebAuthn
+assertions for a scoped session or a specific transaction:
+
+```go
+scope := passkey.Scope{Purpose: passkey.PurposeTransaction, Payload: txHash,
+    ExpiresAt: now + 300, Nonce: "checkout-7"}
+challenge, err := passkey.Challenge(scope) // put this in the WebAuthn request
+credential, err := manager.Authorize(credentialID, scope, assertion, now)
+```
+
+- The challenge is `base64url(SHA-256("arne-passkey-v1\0" || purpose || "\0" ||
+  payload || "\0" || expires_at || "\0" || nonce))`. `Authorize` recomputes it
+  from the scope it is asked to approve, so an approval for one session or
+  transaction cannot authorize another. A transaction scope requires a
+  64-lowercase-hex payload hash; a session scope must not carry one.
+- Enrollment records the credential ID, relying party ID, exact origin,
+  algorithm, and public key. Ed25519 (32-byte raw key) and ES256 (65-byte
+  uncompressed P-256 point) are supported; anything else is `invalid`.
+- Verification requires `type == "webauthn.get"`, the derived challenge, the
+  enrolled origin, the relying-party hash, the user-present flag, and the
+  user-verified flag when the credential requires it. An expired scope is
+  `expired`; a counter that does not advance is `counter` (with `0` meaning the
+  authenticator does not support one); a bad signature is `signature`.
+- The counter advances only after a successful verification, so a failed
+  assertion cannot lock out later attempts.
+- `spec/vectors/passkey.json` holds the challenge derivations, credential and
+  scope rejections, and signed Ed25519 and ES256 assertions used by both
+  implementations.
+
+`shortcut:` the package verifies assertions only. It does not parse attestation
+objects or COSE keys, and it does not generate WebAuthn options; the wallet
+layer extracts the credential fields at enrollment and serves the challenge.
+No CLI or REST route is wired yet.
 
 ## Session keys and watch-only accounts
 
