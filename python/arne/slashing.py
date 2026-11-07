@@ -32,6 +32,8 @@ class Params:
     reporter_bps: int
     downtime_threshold_bps: int
     downtime_min_blocks: int
+    reporter_cap: int = 0
+    burn_bps: int = 0
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,25 @@ class Result:
     treasury: int
     jail_until: int
     delegators: dict[str, int]
+    burn: int = 0
+
+
+@dataclass(frozen=True)
+class Split:
+    burn: int
+    reporter: int
+    treasury: int
+
+
+def split_penalty(slashed: int, params: Params) -> Split:
+    """Divide a slashed amount; the treasury takes the remainder."""
+    reporter = slashed * params.reporter_bps // 10_000
+    if 0 < params.reporter_cap < reporter:
+        reporter = params.reporter_cap
+    burn = slashed * params.burn_bps // 10_000
+    if reporter + burn > slashed:
+        burn = slashed - reporter
+    return Split(burn=burn, reporter=reporter, treasury=slashed - reporter - burn)
 
 
 @dataclass
@@ -87,6 +108,8 @@ def new(network: str, params: Params) -> Engine:
         _fail("invalid", "downtime_bps must be in 1..10000")
     if params.reporter_bps > 10_000:
         _fail("invalid", "reporter_bps above 10000")
+    if params.burn_bps > 10_000:
+        _fail("invalid", "burn_bps above 10000")
     return Engine(network=network, params=params, applied={})
 
 
@@ -165,11 +188,11 @@ def _apply(
     penalty = staking.penalize(state, validator, bps, at)
     jail_until = at + engine.params.jail_blocks
     staking.jail(state, validator, at, jail_until)
-    reporter = penalty.total * engine.params.reporter_bps // 10_000
+    split = split_penalty(penalty.total, engine.params)
     return Result(
         kind=kind, validator=validator, slashed=penalty.total,
-        reporter=reporter, treasury=penalty.total - reporter,
-        jail_until=jail_until, delegators=dict(penalty.delegators),
+        reporter=split.reporter, treasury=split.treasury,
+        jail_until=jail_until, delegators=dict(penalty.delegators), burn=split.burn,
     )
 
 

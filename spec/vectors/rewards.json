@@ -1,0 +1,147 @@
+{
+  "cases": [
+    {
+      "name": "proportional with commission and jailed exclusion",
+      "budget": 10000,
+      "treasury_bps": 1000,
+      "epoch": 3,
+      "validators": [
+        {
+          "address": "v1",
+          "status": "active",
+          "commission_bps": 1000,
+          "delegations": {
+            "v1": 1000,
+            "d1": 1000
+          }
+        },
+        {
+          "address": "v2",
+          "status": "active",
+          "commission_bps": 0,
+          "delegations": {
+            "v2": 2000
+          }
+        },
+        {
+          "address": "v3",
+          "status": "jailed",
+          "commission_bps": 500,
+          "delegations": {
+            "v3": 3000
+          }
+        }
+      ],
+      "expect": {
+        "treasury": 1000,
+        "total": 10000,
+        "validators": {
+          "v1": {
+            "stake": 2000,
+            "commission": 450,
+            "total": 4500,
+            "delegators": {
+              "v1": 2025,
+              "d1": 2025
+            }
+          },
+          "v2": {
+            "stake": 2000,
+            "commission": 0,
+            "total": 4500,
+            "delegators": {
+              "v2": 4500
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rounding dust goes to treasury",
+      "budget": 1000,
+      "treasury_bps": 333,
+      "validators": [
+        {
+          "address": "v1",
+          "status": "active",
+          "commission_bps": 3333,
+          "delegations": {
+            "v1": 1
+          }
+        },
+        {
+          "address": "v2",
+          "status": "active",
+          "commission_bps": 0,
+          "delegations": {
+            "v2": 2
+          }
+        }
+      ],
+      "expect": {
+        "treasury": 34,
+        "total": 1000,
+        "validators": {
+          "v1": {
+            "stake": 1,
+            "commission": 107,
+            "total": 322,
+            "delegators": {
+              "v1": 215
+            }
+          },
+          "v2": {
+            "stake": 2,
+            "commission": 0,
+            "total": 644,
+            "delegators": {
+              "v2": 644
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no eligible validator pays treasury",
+      "budget": 1000,
+      "treasury_bps": 0,
+      "validators": [
+        {
+          "address": "v1",
+          "status": "jailed",
+          "commission_bps": 100,
+          "delegations": {
+            "v1": 500
+          }
+        },
+        {
+          "address": "v2",
+          "status": "pending",
+          "commission_bps": 100,
+          "delegations": {
+            "v2": 500
+          }
+        }
+      ],
+      "expect": {
+        "treasury": 1000,
+        "total": 1000,
+        "validators": {}
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "zero budget is refused",
+      "budget": 0,
+      "treasury_bps": 0,
+      "error": "invalid"
+    },
+    {
+      "name": "treasury above 10000 is refused",
+      "budget": 1000,
+      "treasury_bps": 10001,
+      "error": "invalid"
+    }
+  ]
+}

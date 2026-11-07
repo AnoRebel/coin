@@ -1,0 +1,64 @@
+{
+  "cases": [
+    {
+      "name": "default reporter only",
+      "slashed": 100,
+      "reporter_bps": 1000,
+      "reporter_cap": 0,
+      "burn_bps": 0,
+      "expect": {
+        "reporter": 10,
+        "burn": 0,
+        "treasury": 90
+      }
+    },
+    {
+      "name": "reporter cap redirects to treasury",
+      "slashed": 100,
+      "reporter_bps": 5000,
+      "reporter_cap": 20,
+      "burn_bps": 2000,
+      "expect": {
+        "reporter": 20,
+        "burn": 20,
+        "treasury": 60
+      }
+    },
+    {
+      "name": "cap above the share changes nothing",
+      "slashed": 100,
+      "reporter_bps": 5000,
+      "reporter_cap": 5000,
+      "burn_bps": 2000,
+      "expect": {
+        "reporter": 50,
+        "burn": 20,
+        "treasury": 30
+      }
+    },
+    {
+      "name": "burn is clamped to the remainder",
+      "slashed": 100,
+      "reporter_bps": 9000,
+      "reporter_cap": 0,
+      "burn_bps": 2000,
+      "expect": {
+        "reporter": 90,
+        "burn": 10,
+        "treasury": 0
+      }
+    },
+    {
+      "name": "zero slash splits to zero",
+      "slashed": 0,
+      "reporter_bps": 1000,
+      "reporter_cap": 0,
+      "burn_bps": 2000,
+      "expect": {
+        "reporter": 0,
+        "burn": 0,
+        "treasury": 0
+      }
+    }
+  ]
+}

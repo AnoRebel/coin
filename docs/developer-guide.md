@@ -55,7 +55,7 @@ make test
 | `internal/snapshot` | Full/incremental app-store snapshots with digests and restore |
 | `internal/indexer` | Optional Postgres read model with reorg-safe, idempotent writes |
 | `internal/staking` | Validator lifecycle, stake, delegation, and epoch-boundary set changes |
-| `internal/slashing` | Equivocation verification, downtime penalties, and reporter rewards |
+| `internal/slashing` | Equivocation verification, downtime penalties, reporter/burn/treasury splits |
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
@@ -649,15 +649,46 @@ delegations and undelegations are visible immediately in `Stake` but not in
 mid-epoch delegation, the voting-power cap, self-bond removal, jail/unjail,
 unbonding, and rejection cases. Keys and PoPs come from `spec/vectors/bls.json`.
 
+### Epoch rewards
+
+`DistributeRewards(budget, treasuryBps)` settles one epoch. `treasuryBps` of the
+budget goes to the treasury; the rest is shared by bonded stake across
+validators whose status is `active`. Jailed, pending, unbonding, and unbonded
+validators are excluded, so a validator jailed for part of an epoch and its
+delegators earn nothing for that epoch.
+
+Each validator keeps its commission from its gross share. The remainder is
+split across its delegations by stake, including the validator's own
+delegation. Rounding dust goes to the treasury, and the function refuses to
+return a distribution whose parts do not sum to the budget. If no validator is
+eligible, the treasury takes the whole budget.
+
+`spec/vectors/rewards.json` covers proportional splits, commission, jailed
+exclusion, rounding dust, and the empty active set.
+
 `shortcut:` the package tracks stake accounting, not ledger balances, and the
-node still gives CometBFT a static validator set. Wire `AdvanceEpoch` into
-`FinalizeBlock` validator updates before treating on-chain staking as live.
+node still gives CometBFT a static validator set. Wire `AdvanceEpoch` and
+`DistributeRewards` into `FinalizeBlock` before treating on-chain staking or
+rewards as live.
 
 ## Slashing
 
 `internal/slashing` (mirrored by `python/arne/slashing.py`) accepts evidence,
 applies the penalty through `staking.Penalize`, and jails the validator. Every
-penalty is split into a reporter share and a treasury remainder.
+penalty is split into reporter, treasury, and burn shares by `SplitPenalty`:
+
+```go
+split := slashing.SplitPenalty(slashed, slashing.Params{
+    ReporterBps: 1000, ReporterCap: 500, BurnBps: 2000,
+})
+```
+
+- The reporter gets `ReporterBps` of the slashed amount, capped at
+  `ReporterCap` when it is non-zero.
+- The burn gets `BurnBps` of the slashed amount. If the reporter and burn would
+  exceed the slash, the burn is reduced.
+- The treasury takes the rest, including the reporter-cap excess, so the parts
+  always sum to the slashed amount.
 
 Double-sign evidence contains two signed votes at the same height and round
 with different block hashes. Both signatures are checked against the
@@ -673,9 +704,10 @@ finalized commit data; the library cannot prove an absence from signatures, so
 do not accept downtime evidence from an untrusted caller.
 
 `spec/vectors/slashing.json` covers valid, stale, duplicate, forged, and
-below-threshold cases in both implementations. `shortcut:` penalties are
-computed but not moved in the ledger, and the engine is not yet fed by
-CometBFT evidence.
+below-threshold cases in both implementations, and `spec/vectors/slashsplit.json`
+covers the reporter cap, burn share, treasury remainder, and zero slash.
+`shortcut:` penalties are computed but not moved in the ledger, and the engine
+is not yet fed by CometBFT evidence.
 
 ## Light client
 

@@ -123,7 +123,7 @@ func TestVectors(t *testing.T) {
 				if step.Expect.Result != nil {
 					want := *step.Expect.Result
 					if result.Kind != want.Kind || result.Slashed != want.Slashed ||
-						result.Reporter != want.Reporter || result.Treasury != want.Treasury ||
+						result.Reporter != want.Reporter || result.Treasury != want.Treasury || result.Burn != want.Burn ||
 						result.JailUntil != want.JailUntil {
 						t.Fatalf("result = %+v, want %+v", result, want)
 					}

@@ -237,11 +237,52 @@ ARCE is a utility asset for fees and staking. It is not a claim on any reserve
 and has no protocol-level redemption path for fiat, commodities, or any other
 asset. Nothing in the API or CLI redeems ARCE for an external asset.
 
-## Staking, governance, and treasury
+## Staking rewards and slashing
 
-Specified but not implemented:
+`internal/staking` (mirrored by `python/arne/staking.py`) splits an epoch
+budget across the active validator set:
 
-- validator bonding, delegation, epochs, rewards, jailing, slashing;
+```go
+distribution, err := state.DistributeRewards(budget, treasuryBps)
+```
+
+- `treasuryBps` of the budget goes to the treasury. The rest is weighted by each
+  active validator's bonded stake.
+- Jailed, pending, unbonding, and unbonded validators earn nothing. A validator
+  jailed for part of an epoch therefore earns nothing for that epoch, and its
+  delegators earn nothing either.
+- Each validator keeps its commission from its gross share. The rest is shared
+  among its delegators by stake; the validator's own delegation is one of them,
+  so it receives commission plus its self-delegation share.
+- Rounding dust is added to the treasury. The distribution fails rather than
+  report if the treasury plus every validator share does not equal the budget.
+- With no eligible validator, the whole budget goes to the treasury.
+
+`internal/slashing` splits a penalty by policy:
+
+```go
+split := slashing.SplitPenalty(slashed, slashing.Params{
+    ReporterBps: 1000, ReporterCap: 500, BurnBps: 2000,
+})
+```
+
+- The reporter receives `ReporterBps` of the slashed amount, capped at
+  `ReporterCap` when the cap is non-zero.
+- The burn receives `BurnBps` of the slashed amount. If the reporter and burn
+  shares would exceed the slash, the burn is reduced.
+- The treasury receives the remainder, including anything the reporter cap
+  removed. The three parts always sum to the slashed amount and are recorded in
+  the penalty result beside the evidence.
+
+`spec/vectors/rewards.json` and `spec/vectors/slashsplit.json` are read by both
+implementations. `shortcut:` both are accounting libraries. The node does not
+distribute live rewards or move slashed stake, and CometBFT still holds a static
+validator set.
+
+## Governance and treasury
+
+Specified and implemented as libraries but not wired into the live node:
+
 - proposal deposits, stake-weighted voting, timelocks, upgrades;
 - treasury budgets and outflows;
 - tail emission and vesting.

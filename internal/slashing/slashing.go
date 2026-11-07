@@ -33,6 +33,8 @@ type Params struct {
 	DoubleSignBps        uint32 `json:"double_sign_bps"`
 	DowntimeBps          uint32 `json:"downtime_bps"`
 	ReporterBps          uint32 `json:"reporter_bps"`
+	ReporterCap          uint64 `json:"reporter_cap"` // 0 = uncapped
+	BurnBps              uint32 `json:"burn_bps"`
 	DowntimeThresholdBps uint32 `json:"downtime_threshold_bps"`
 	DowntimeMinBlocks    uint64 `json:"downtime_min_blocks"`
 }
@@ -70,6 +72,7 @@ type Result struct {
 	Slashed    uint64            `json:"slashed"`
 	Reporter   uint64            `json:"reporter"`
 	Treasury   uint64            `json:"treasury"`
+	Burn       uint64            `json:"burn"`
 	JailUntil  uint64            `json:"jail_until"`
 	Delegators map[string]uint64 `json:"delegators"`
 }
@@ -97,6 +100,9 @@ func New(network string, params Params) (*Engine, error) {
 	}
 	if params.ReporterBps > 10_000 {
 		return nil, fmt.Errorf("%w: reporter_bps above 10000", ErrInvalid)
+	}
+	if params.BurnBps > 10_000 {
+		return nil, fmt.Errorf("%w: burn_bps above 10000", ErrInvalid)
 	}
 	return &Engine{network: network, params: params, applied: map[string]bool{}}, nil
 }
@@ -210,6 +216,28 @@ func (e *Engine) verifyVote(keyHex, validator string, vote Vote) error {
 	return nil
 }
 
+// Split is a slashed amount divided between the treasury, reporter, and burn.
+type Split struct {
+	Burn     uint64 `json:"burn"`
+	Reporter uint64 `json:"reporter"`
+	Treasury uint64 `json:"treasury"`
+}
+
+// SplitPenalty divides a slashed amount by policy. The reporter share is
+// capped, the burn share is a fixed percentage, and the treasury takes the
+// remainder, including any reporter-cap excess.
+func SplitPenalty(slashed uint64, params Params) Split {
+	reporter := slashed * uint64(params.ReporterBps) / 10_000
+	if params.ReporterCap > 0 && reporter > params.ReporterCap {
+		reporter = params.ReporterCap
+	}
+	burn := slashed * uint64(params.BurnBps) / 10_000
+	if reporter+burn > slashed {
+		burn = slashed - reporter
+	}
+	return Split{Burn: burn, Reporter: reporter, Treasury: slashed - reporter - burn}
+}
+
 func (e *Engine) apply(st *staking.State, kind, validator string, bps uint32, at uint64) (Result, error) {
 	penalty, err := st.Penalize(validator, bps, at)
 	if err != nil {
@@ -219,7 +247,7 @@ func (e *Engine) apply(st *staking.State, kind, validator string, bps uint32, at
 	if err := st.Jail(validator, at, jailUntil); err != nil {
 		return Result{}, err
 	}
-	reporter := penalty.Total * uint64(e.params.ReporterBps) / 10_000
+	split := SplitPenalty(penalty.Total, e.params)
 	// Copy the map so a later staking change cannot mutate a result.
 	delegators := make(map[string]uint64, len(penalty.Delegators))
 	for address, amount := range penalty.Delegators {
@@ -227,7 +255,7 @@ func (e *Engine) apply(st *staking.State, kind, validator string, bps uint32, at
 	}
 	return Result{
 		Kind: kind, Validator: validator, Slashed: penalty.Total,
-		Reporter: reporter, Treasury: penalty.Total - reporter,
+		Reporter: split.Reporter, Treasury: split.Treasury, Burn: split.Burn,
 		JailUntil: jailUntil, Delegators: delegators,
 	}, nil
 }

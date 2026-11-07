@@ -310,3 +310,107 @@ def snapshot(state: State) -> dict:
         "validators": views,
         "unbonding": [u.__dict__ for u in unbonding],
     }
+
+
+@dataclass(frozen=True)
+class DelegatorReward:
+    address: str
+    stake: int
+    amount: int
+
+
+@dataclass(frozen=True)
+class ValidatorReward:
+    validator: str
+    stake: int
+    commission_bps: int
+    commission: int
+    delegators: list[DelegatorReward]
+    total: int
+
+
+@dataclass(frozen=True)
+class RewardDistribution:
+    epoch: int
+    budget: int
+    treasury: int
+    validators: list[ValidatorReward]
+    total: int
+
+
+def distribute_rewards(
+    state: State, budget: int, treasury_bps: int
+) -> RewardDistribution:
+    """Split an epoch budget across active validators by bonded stake.
+
+    Jailed, pending, unbonding, and unbonded validators earn nothing. Each
+    validator keeps its commission and the rest is shared among its delegators;
+    rounding dust goes to the treasury so the parts always sum to the budget.
+    """
+    if budget <= 0:
+        _fail("invalid", "budget must be positive")
+    if treasury_bps > 10_000:
+        _fail("invalid", "treasury_bps above 10000")
+    treasury = budget * treasury_bps // 10_000
+    remaining = budget - treasury
+
+    addresses = []
+    weight = 0
+    for address, validator in state.validators.items():
+        if validator.status != ACTIVE:
+            continue
+        stake = state.delegations.get(address, {})
+        total = sum(stake.values())
+        if total == 0:
+            continue
+        addresses.append(address)
+        weight += total
+    addresses.sort()
+
+    if weight == 0:
+        return RewardDistribution(
+            epoch=state.epoch, budget=budget, treasury=budget, validators=[], total=budget
+        )
+
+    distributed = 0
+    rewards: list[ValidatorReward] = []
+    for address in addresses:
+        validator = state.validators[address]
+        delegations = state.delegations[address]
+        stake = sum(delegations.values())
+        gross = remaining * stake // weight
+        commission = gross * validator.commission_bps // 10_000
+        pool = gross - commission
+        paid = 0
+        shares: list[DelegatorReward] = []
+        delegators = sorted(delegations)
+        for index, delegator in enumerate(delegators):
+            amount = delegations[delegator]
+            share = pool * amount // stake
+            if index == len(delegators) - 1:
+                share = pool - paid
+            shares.append(DelegatorReward(delegator, amount, share))
+            paid += share
+        rewards.append(
+            ValidatorReward(
+                validator=address,
+                stake=stake,
+                commission_bps=validator.commission_bps,
+                commission=commission,
+                delegators=shares,
+                total=commission + paid,
+            )
+        )
+        distributed += gross
+
+    treasury += remaining - distributed
+    result = RewardDistribution(
+        epoch=state.epoch,
+        budget=budget,
+        treasury=treasury,
+        validators=rewards,
+        total=treasury + sum(reward.total for reward in rewards),
+    )
+    if result.total != budget:
+        _fail("invalid", f"distributed {result.total} of {budget}")
+    return result

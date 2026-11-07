@@ -78,7 +78,7 @@
 - [x] 7.7 Implement ARCE supply, genesis allocation, vesting, tail emission, and constitutional bounds; verify cap and early-unlock rejection
 - [x] 7.8 Implement the base-fee market, burn/validator/treasury split, priority fee, and fee sponsorship; verify congestion, split, and budget vectors
 - [x] 7.9 Implement auto-conversion reserves and liability commitments; verify reserve proof and unbacked-route disablement
-- [ ] 7.10 Implement staking reward distribution and slashing splits; verify epoch reconciliation and jailed-validator exclusion
+- [x] 7.10 Implement staking reward distribution and slashing splits; verify epoch reconciliation and jailed-validator exclusion
 
 ## 8. Programmability
 
