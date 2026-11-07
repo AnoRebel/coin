@@ -166,7 +166,7 @@
 - [x] 15.1 Implement Bech32m network-scoped addresses with checksums; verify valid, mutated, and wrong-network cases
 - [x] 15.2 Implement HD accounts, multiple accounts, and mnemonic restore; verify cross-implementation derivation
 - [ ] 15.3 Implement passkey/WebAuthn scoped authorization; verify enrollment, signing, and wrong-origin rejection
-- [ ] 15.4 Implement social recovery with guardian threshold, timelock, and cancellation; verify threshold and cancellation
+- [x] 15.4 Implement social recovery with guardian threshold, timelock, and cancellation; verify threshold and cancellation
 - [ ] 15.5 Implement hardware/external signer interface and human-readable confirmation; verify supported and unsupported signers
 - [ ] 15.6 Implement scoped, expiring session keys and watch-only accounts; verify scope escalation and signing rejection
 - [x] 15.7 Implement `arce:`/`arne:` payment URIs with strict validation and inert memo handling; verify valid, mismatch, and malicious memo

@@ -1,0 +1,277 @@
+{
+  "note": "Seeds are test-only inputs; implementations derive Ed25519 keys from them.",
+  "seeds": {
+    "owner": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "alice": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+    "bob": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "carol": "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f",
+    "mallory": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "alice-copy": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+    "new": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+  },
+  "policy": {
+    "account": "arce:mainnet:treasury",
+    "threshold": 2,
+    "delay": 60,
+    "guardians": [
+      {
+        "id": "alice",
+        "seed": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+      },
+      {
+        "id": "bob",
+        "seed": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      },
+      {
+        "id": "carol",
+        "seed": "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f"
+      }
+    ]
+  },
+  "new_seed": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+  "cases": [
+    {
+      "name": "threshold and execute",
+      "nonce": "r1",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "approve",
+          "guardian": "bob"
+        },
+        {
+          "op": "execute",
+          "at": 1060
+        }
+      ],
+      "expect_state": "executed"
+    },
+    {
+      "name": "execute before the delay",
+      "nonce": "r2",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "approve",
+          "guardian": "bob"
+        },
+        {
+          "op": "execute",
+          "at": 1059
+        }
+      ],
+      "error": "timelock",
+      "expect_state": "ready"
+    },
+    {
+      "name": "single guardian cannot execute",
+      "nonce": "r3",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "execute",
+          "at": 2000
+        }
+      ],
+      "error": "threshold",
+      "expect_state": "pending"
+    },
+    {
+      "name": "duplicate approval",
+      "nonce": "r4",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "approve",
+          "guardian": "alice"
+        }
+      ],
+      "error": "duplicate",
+      "expect_state": "pending"
+    },
+    {
+      "name": "non guardian rejected",
+      "nonce": "r5",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "mallory"
+        }
+      ],
+      "error": "guardian",
+      "expect_state": "pending"
+    },
+    {
+      "name": "bad signature rejected",
+      "nonce": "r6",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve_bad",
+          "guardian": "alice"
+        }
+      ],
+      "error": "signature",
+      "expect_state": "pending"
+    },
+    {
+      "name": "owner cancels during the timelock",
+      "nonce": "r7",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "cancel",
+          "at": 1010
+        }
+      ],
+      "expect_state": "cancelled"
+    },
+    {
+      "name": "cancel after execute",
+      "nonce": "r8",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "approve",
+          "guardian": "bob"
+        },
+        {
+          "op": "execute",
+          "at": 1060
+        },
+        {
+          "op": "cancel",
+          "at": 1070
+        }
+      ],
+      "error": "state",
+      "expect_state": "executed"
+    },
+    {
+      "name": "execute after cancel",
+      "nonce": "r9",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "approve",
+          "guardian": "alice"
+        },
+        {
+          "op": "approve",
+          "guardian": "bob"
+        },
+        {
+          "op": "cancel",
+          "at": 1010
+        },
+        {
+          "op": "execute",
+          "at": 2000
+        }
+      ],
+      "error": "state",
+      "expect_state": "cancelled"
+    },
+    {
+      "name": "start is idempotent",
+      "nonce": "r10",
+      "created_at": 1000,
+      "ops": [
+        {
+          "op": "start"
+        },
+        {
+          "op": "start"
+        }
+      ],
+      "expect_state": "pending",
+      "expect_requests": 1
+    }
+  ],
+  "invalid_policies": [
+    {
+      "name": "threshold below two",
+      "threshold": 1,
+      "guardians": [
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "name": "threshold above guardians",
+      "threshold": 4,
+      "guardians": [
+        "alice",
+        "bob",
+        "carol"
+      ]
+    },
+    {
+      "name": "zero delay",
+      "delay": 0,
+      "guardians": [
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "name": "duplicate guardian id",
+      "threshold": 2,
+      "guardians": [
+        "alice",
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "name": "duplicate guardian key",
+      "threshold": 2,
+      "guardians": [
+        "alice",
+        "alice-copy",
+        "bob"
+      ]
+    },
+    {
+      "name": "owner is a guardian",
+      "threshold": 2,
+      "guardians": [
+        "owner",
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "name": "too few guardians",
+      "threshold": 2,
+      "guardians": [
+        "alice"
+      ]
+    }
+  ]
+}

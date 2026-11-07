@@ -59,6 +59,7 @@ make test
 | `internal/lightclient` | Commit certificates, validator-set proofs, and state inclusion |
 | `internal/admission` | Public join and threshold-based consortium validator approval |
 | `internal/workspace` | Roles, permissions, and the audit log |
+| `internal/recovery` | Guardian threshold recovery with a timelock and owner cancellation |
 | `internal/channel` | Idempotent team channel messages, catch-up cursors, and retention |
 | `internal/storage` | Pebble and in-memory stores |
 | `internal/node` | Mempool, block production, events, faucet |
@@ -1914,6 +1915,39 @@ thresholds, expiry, revocation, ratification and audit.
 
 `shortcut:` governance is a library: proposals are not yet submitted through
 the ledger, and no API or CLI exposes them.
+
+## Social recovery
+
+`internal/recovery` (mirrored by `python/arne/recovery.py`) is a signed state
+machine for guardian recovery:
+
+```go
+manager, err := recovery.New(recovery.Policy{
+    Account: "arce:mainnet:team", OwnerPublicKey: ownerHex,
+    Guardians: guardians, Threshold: 2, Delay: 3600,
+})
+request, err := manager.Start(newKeyHex, "case-42", now)
+```
+
+- A policy requires at least two guardians, a threshold of at least two, a
+  positive delay, unique guardian IDs and keys, and an owner who is not a
+  guardian. A single guardian can never execute.
+- The request ID is derived from the account, new key, and nonce, so a retry
+  returns the existing request. Guardians sign
+  `"arne-recovery-approval-v1\n" + id + "\n" + account + "\n" + newKey`;
+  the owner signs `"arne-recovery-cancel-v1\n" + id + "\n" + account`.
+- Approvals are deduplicated and sorted. Reaching the threshold moves the
+  request to `ready`; before that `Execute` returns `threshold`.
+- `Execute` waits until `created_at + delay`; early calls return `timelock`.
+- The owner can cancel a `pending` or `ready` request at any time before it
+  executes. Executed and cancelled requests reject further operations.
+- `spec/vectors/recovery.json` drives both implementations through threshold,
+  timelock, cancellation, duplicate, non-guardian, bad-signature, and invalid
+  policy cases.
+
+`shortcut:` this does not change an account key in the ledger. The executed new
+key must be applied by wallet and account code, and there is no CLI or REST
+route yet.
 
 ## Known shortcuts
 

@@ -484,8 +484,11 @@ logged. Access stops at `until` without any manual cleanup.
 - The same mnemonic produces different addresses on mainnet and devnet; this is
   intentional, not a bug.
 - Keys live only where you sign. The node never needs your mnemonic.
-- Passkeys, social recovery, and hardware-signer workflows are specified but not
-  implemented.
+- Passkeys and hardware-signer workflows are specified but not implemented.
+- Social recovery is a wallet library workflow today: guardians sign a recovery
+  request, a threshold of at least two makes it ready, a delay must pass, and
+  the owner can cancel before execution. The node does not yet change an
+  account key from a recovery, and there is no CLI or REST route.
 
 ## 13. What to do when something fails
 
